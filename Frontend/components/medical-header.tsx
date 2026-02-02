@@ -26,14 +26,6 @@ const Calendar = () => (
   </svg>
 )
 
-const Database = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <ellipse cx="12" cy="5" rx="9" ry="3" />
-    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-  </svg>
-)
-
 const Clock = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <circle cx="12" cy="12" r="10" />
@@ -118,7 +110,6 @@ const MedicalHeader = () => {
   const [appointmentFormError, setAppointmentFormError] = useState("")
   const [selectedPatientId, setSelectedPatientId] = useState<number | null>(null)
   const [calendarMonth, setCalendarMonth] = useState(new Date())
-  const [isSyncing, setIsSyncing] = useState(false)
 
   const router = useRouter()
   const { toast } = useToast()
@@ -315,42 +306,6 @@ const MedicalHeader = () => {
     }
   }
 
-  const handleSyncData = async () => {
-    try {
-      setIsSyncing(true)
-      const response = await apiClient.syncAllDataToGoogle()
-
-      if (response.success) {
-        toast({
-          title: "Sauvegarde Réussie",
-          description: response.data?.message || "Données sauvegardées sur Google Drive",
-        })
-      } else if (response.data?.needs_auth || response.message?.includes("connect")) {
-        // Redirect to Google OAuth
-        localStorage.setItem("google_sync_return_to", window.location.pathname)
-        const authResponse = await apiClient.getGoogleAuthUrl()
-        if (authResponse.success && authResponse.data?.url) {
-          window.location.href = authResponse.data.url
-        }
-      } else {
-        toast({
-          title: "Erreur de Sauvegarde",
-          description: response.message || "Échec de la synchronisation",
-          variant: "destructive",
-        })
-      }
-    } catch (err) {
-      console.error("[v0] Error syncing with Google:", err)
-      toast({
-        title: "Erreur",
-        description: "Une erreur réseau est survenue",
-        variant: "destructive",
-      })
-    } finally {
-      setIsSyncing(false)
-    }
-  }
-
   const handlePatientSearch = async (term: string) => {
     setSearchTerm(term)
 
@@ -462,7 +417,7 @@ const MedicalHeader = () => {
     for (let day = 1; day <= daysInMonth; day++) {
       const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
       const isToday = dateString === new Date().toISOString().split("T")[0]
-      const count = appointmentCounts?.[dateString] || 0
+      const count = appointmentCounts[dateString] || 0
       const colorClass = getCountColor(count)
 
       days.push(
@@ -494,8 +449,7 @@ const MedicalHeader = () => {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          {/* Left Section: Back Button + Breadcrumb */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <Button variant="ghost" size="sm" className="text-gray-600 hover:bg-gray-100" onClick={() => router.back()}>
               <ChevronLeft />
@@ -509,263 +463,352 @@ const MedicalHeader = () => {
             </nav>
           </div>
 
-          {/* Center Section: Action Buttons */}
-          <div className="flex items-center space-x-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSyncData}
-              disabled={isSyncing}
-              className={`flex items-center gap-2 border-green-500 text-green-600 hover:bg-green-50 transition-all ${isSyncing ? "opacity-80" : ""}`}
-              title="Sauvegarder les données sur Google Drive"
-            >
-              <Database />
-              <span className="hidden sm:inline">{isSyncing ? "Sauvegarde..." : "Backup Drive"}</span>
-            </Button>
+          <div className="flex items-center space-x-6">
+            <div className="text-center">
+              <div className="flex items-center space-x-2">
+                <Clock className="text-blue-600" />
+                <span className="text-lg font-mono font-semibold text-gray-800">{formatTime(currentTime)}</span>
+              </div>
+              <div className="text-xs text-gray-500">{formatDate(currentTime)}</div>
+            </div>
+          </div>
 
-            <Dialog open={isPatientModalOpen} onOpenChange={setIsPatientModalOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="bg-[#007090] text-white hover:bg-[#005570] shadow-md transition-all hover:scale-105">
-                  <Plus />
-                  <span className="ml-2">Nouveau Patient</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle className="text-gray-900">Ajouter un Nouveau Patient</DialogTitle>
-                </DialogHeader>
-                {patientFormError && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p className="text-sm text-red-800">{patientFormError}</p>
-                  </div>
-                )}
-                <form onSubmit={handleAddPatient} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-1">
-                      <Label htmlFor="firstName" className="text-gray-700">
-                        Prénom
-                      </Label>
-                      <Input
-                        id="firstName"
-                        placeholder="Prénom"
-                        value={patientFormData.first_name}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, first_name: e.target.value })}
-                        required
-                      />
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <Dialog open={isPatientModalOpen} onOpenChange={setIsPatientModalOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="bg-[#007090] text-white hover:bg-[#005570] shadow-md transition-all hover:scale-105">
+                    <Plus />
+                    <span className="ml-2">Nouveau Patient</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle className="text-gray-900">Ajouter un Nouveau Patient</DialogTitle>
+                  </DialogHeader>
+                  {patientFormError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-800">{patientFormError}</p>
                     </div>
-                    <div className="col-span-1">
-                      <Label htmlFor="lastName" className="text-gray-700">
-                        Nom de famille
+                  )}
+                  <form onSubmit={handleAddPatient} className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-1">
+                        <Label htmlFor="firstName" className="text-gray-700">
+                          Prénom
+                        </Label>
+                        <Input
+                          id="firstName"
+                          placeholder="Prénom"
+                          value={patientFormData.first_name}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, first_name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Label htmlFor="lastName" className="text-gray-700">
+                          Nom de famille
+                        </Label>
+                        <Input
+                          id="lastName"
+                          placeholder="Nom de famille"
+                          value={patientFormData.last_name}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, last_name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="gender" className="text-gray-700">
+                          Sexe
+                        </Label>
+                        <Select
+                          value={patientFormData.gender}
+                          onValueChange={(value: "Male" | "Female") =>
+                            setPatientFormData({ ...patientFormData, gender: value })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Male">Homme</SelectItem>
+                            <SelectItem value="Female">Femme</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="birthDate" className="text-gray-700">
+                          Date de naissance
+                        </Label>
+                        <Input
+                          id="birthDate"
+                          type="date"
+                          value={patientFormData.birth_day}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, birth_day: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="cin" className="text-gray-700">
+                          CIN
+                        </Label>
+                        <Input
+                          id="cin"
+                          placeholder="CIN"
+                          value={patientFormData.CIN}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, CIN: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="phone" className="text-gray-700">
+                          Téléphone
+                        </Label>
+                        <Input
+                          id="phone"
+                          placeholder="01 23 45 67 89"
+                          value={patientFormData.phone_num}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, phone_num: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label htmlFor="email" className="text-gray-700">
+                          Email
+                        </Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="email@exemple.com"
+                          value={patientFormData.email}
+                          onChange={(e) => setPatientFormData({ ...patientFormData, email: e.target.value })}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <Label htmlFor="mutuelle" className="text-gray-700">
+                          Mutuelle
+                        </Label>
+                        <Select
+                          value={patientFormData.mutuelle}
+                          onValueChange={(value) => setPatientFormData({ ...patientFormData, mutuelle: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner une mutuelle" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Aucun">Aucun</SelectItem>
+                            <SelectItem value="CNSS">CNSS</SelectItem>
+                            <SelectItem value="CNOPS">CNOPS</SelectItem>
+                            <SelectItem value="FAR">FAR</SelectItem>
+                            <SelectItem value="ONE">ONE</SelectItem>
+                            <SelectItem value="AUTRE">AUTRE</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {patientFormData.mutuelle === "AUTRE" && (
+                          <div className="mt-2">
+                            <Label htmlFor="autre_mutuelle" className="text-gray-700">
+                              Sélectionner l'assurance
+                            </Label>
+                            <Select
+                              value={patientFormData.autre_mutuelle || ""}
+                              onValueChange={(value) =>
+                                setPatientFormData({ ...patientFormData, autre_mutuelle: value })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choisir une assurance" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="AXA">AXA</SelectItem>
+                                <SelectItem value="RMA">RMA</SelectItem>
+                                <SelectItem value="CHIM">CHIM</SelectItem>
+                                <SelectItem value="MASS">MASS</SelectItem>
+                                <SelectItem value="BP">BP</SelectItem>
+                                <SelectItem value="WAFA">WAFA</SelectItem>
+                                <SelectItem value="SAHAM">SAHAM</SelectItem>
+                                <SelectItem value="ATAL">ATAL</SelectItem>
+                                <SelectItem value="MGB">MGB</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="allergies" className="text-gray-700">
+                        Allergies
                       </Label>
-                      <Input
-                        id="lastName"
-                        placeholder="Nom de famille"
-                        value={patientFormData.last_name}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, last_name: e.target.value })}
-                        required
+                      <Textarea
+                        id="allergies"
+                        placeholder="Allergies"
+                        value={patientFormData.allergies}
+                        onChange={(e) => setPatientFormData({ ...patientFormData, allergies: e.target.value })}
                       />
                     </div>
                     <div>
-                      <Label htmlFor="gender" className="text-gray-700">
-                        Sexe
+                      <Label htmlFor="chronic" className="text-gray-700">
+                        Maladies chroniques
+                      </Label>
+                      <Textarea
+                        id="chronic"
+                        placeholder="Maladies chroniques"
+                        value={patientFormData.chronic_conditions}
+                        onChange={(e) => setPatientFormData({ ...patientFormData, chronic_conditions: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="notes" className="text-gray-700">
+                        Notes
+                      </Label>
+                      <Textarea
+                        id="notes"
+                        placeholder="Notes additionnelles..."
+                        value={patientFormData.notes}
+                        onChange={(e) => setPatientFormData({ ...patientFormData, notes: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                      <Button type="button" variant="outline" onClick={() => setIsPatientModalOpen(false)}>
+                        Annuler
+                      </Button>
+                      <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
+                        Ajouter Patient
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isAppointmentModalOpen} onOpenChange={setIsAppointmentModalOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-[#007090] text-[#007090] hover:bg-blue-50 bg-transparent"
+                  >
+                    <Calendar />
+                    <span className="ml-2">Nouveau RV</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="text-gray-900">Planifier un Rendez-vous</DialogTitle>
+                  </DialogHeader>
+                  {appointmentFormError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-800">{appointmentFormError}</p>
+                    </div>
+                  )}
+                  <form onSubmit={handleAddAppointment} className="space-y-4">
+                    <div>
+                      <Label htmlFor="patientSearch" className="text-gray-700">
+                        Rechercher un patient
+                      </Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          id="patientSearch"
+                          placeholder="Nom du patient..."
+                          className="pl-10"
+                          value={searchTerm}
+                          onChange={(e) => handlePatientSearch(e.target.value)}
+                          required
+                        />
+                      </div>
+                      {searchTerm && searchResults.length > 0 && (
+                        <div className="mt-2 border rounded-md max-h-32 overflow-y-auto bg-white">
+                          {searchResults.map((patient) => (
+                            <div
+                              key={patient.id}
+                              className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                              onClick={() => {
+                                setSearchTerm(`${patient.first_name} ${patient.last_name}`)
+                                setSelectedPatientId(patient.id)
+                                setSearchResults([])
+                              }}
+                            >
+                              <div className="font-medium text-gray-900">
+                                {patient.first_name} {patient.last_name}
+                              </div>
+                              <div className="text-sm text-gray-600">{patient.phone}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {isSearching && <div className="mt-2 text-sm text-gray-500">Recherche en cours...</div>}
+                      {searchTerm && !isSearching && searchResults.length === 0 && searchTerm.length >= 2 && (
+                        <div className="mt-2 text-sm text-gray-500">Aucun patient trouvé</div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="appointmentDate" className="text-gray-700">
+                          Date
+                        </Label>
+                        <Input
+                          id="appointmentDate"
+                          type="date"
+                          value={appointmentFormData.appointment_date}
+                          onChange={(e) =>
+                            setAppointmentFormData({ ...appointmentFormData, appointment_date: e.target.value })
+                          }
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          id="appointmentTime"
+                          type="time"
+                          value={appointmentFormData.appointment_time}
+                          onChange={(e) =>
+                            setAppointmentFormData({ ...appointmentFormData, appointment_time: e.target.value })
+                          }
+                          className="font-medium mt-6"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="appointmentType" className="text-gray-700">
+                        Type de consultation
                       </Label>
                       <Select
-                        value={patientFormData.gender}
-                        onValueChange={(value: "Male" | "Female") =>
-                          setPatientFormData({ ...patientFormData, gender: value })
+                        value={appointmentFormData.type}
+                        onValueChange={(value: "Consultation" | "Control") =>
+                          setAppointmentFormData({ ...appointmentFormData, type: value })
                         }
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner" />
+                          <SelectValue placeholder="Sélectionner le type" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Male">Homme</SelectItem>
-                          <SelectItem value="Female">Femme</SelectItem>
+                          <SelectItem value="Consultation">Consultation</SelectItem>
+                          <SelectItem value="Control">Contrôle</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
-                      <Label htmlFor="birthDate" className="text-gray-700">
-                        Date de naissance
+                      <Label htmlFor="appointmentNotes" className="text-gray-700">
+                        Notes
                       </Label>
-                      <Input
-                        type="date"
-                        id="birthDate"
-                        value={patientFormData.birth_day}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, birth_day: e.target.value })}
-                        required
+                      <Textarea
+                        id="appointmentNotes"
+                        placeholder="Notes additionnelles..."
+                        value={appointmentFormData.notes}
+                        onChange={(e) => setAppointmentFormData({ ...appointmentFormData, notes: e.target.value })}
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <Label htmlFor="cin" className="text-gray-700">
-                        CIN
-                      </Label>
-                      <Input
-                        id="cin"
-                        placeholder="CIN"
-                        value={patientFormData.CIN}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, CIN: e.target.value })}
-                      />
+                    <div className="flex justify-end space-x-2">
+                      <Button type="button" variant="outline" onClick={() => setIsAppointmentModalOpen(false)}>
+                        Annuler
+                      </Button>
+                      <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
+                        Planifier
+                      </Button>
                     </div>
-                    <div>
-                      <Label htmlFor="phone" className="text-gray-700">
-                        Téléphone
-                      </Label>
-                      <Input
-                        id="phone"
-                        placeholder="Téléphone"
-                        value={patientFormData.phone_num}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, phone_num: e.target.value })}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="email" className="text-gray-700">
-                        E-mail
-                      </Label>
-                      <Input
-                        type="email"
-                        id="email"
-                        placeholder="E-mail"
-                        value={patientFormData.email}
-                        onChange={(e) => setPatientFormData({ ...patientFormData, email: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end space-x-2">
-                    <Button type="button" variant="outline" onClick={() => setIsPatientModalOpen(false)}>
-                      Annuler
-                    </Button>
-                    <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
-                      Ajouter
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={isAppointmentModalOpen} onOpenChange={setIsAppointmentModalOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="bg-[#007090] text-white hover:bg-[#005570] shadow-md transition-all hover:scale-105">
-                  <Calendar />
-                  <span className="ml-2">Nouveau RV</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle className="text-gray-900">Planifier un Rendez-vous</DialogTitle>
-                </DialogHeader>
-                {appointmentFormError && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                    <p className="text-sm text-red-800">{appointmentFormError}</p>
-                  </div>
-                )}
-                <form onSubmit={handleAddAppointment} className="space-y-4">
-                  <div>
-                    <Label htmlFor="patientSearch" className="text-gray-700">
-                      Rechercher un Patient
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="patientSearch"
-                        placeholder="Nom, prénom ou téléphone..."
-                        value={searchTerm}
-                        onChange={(e) => handlePatientSearch(e.target.value)}
-                        className="pr-10"
-                      />
-                      {isSearching && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-                        </div>
-                      )}
-                    </div>
-                    {searchResults.length > 0 && (
-                      <div className="mt-2 border border-gray-200 rounded-md max-h-48 overflow-y-auto">
-                        {searchResults.map((patient: Patient) => (
-                          <button
-                            key={patient.ID_patient}
-                            type="button"
-                            onClick={() => {
-                              setAppointmentFormData({ ...appointmentFormData, ID_patient: patient.ID_patient })
-                              setSearchTerm(
-                                `${patient.first_name} ${patient.last_name} (${patient.phone_num})`,
-                              )
-                              setSearchResults([])
-                            }}
-                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between"
-                          >
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {patient.first_name} {patient.last_name}
-                              </div>
-                              <div className="text-sm text-gray-500">{patient.phone_num}</div>
-                            </div>
-                            {patient.mutuelle === 1 && (
-                              <Shield className="h-4 w-4 text-green-600" title="Mutuelle" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <Label htmlFor="appointmentDate" className="text-gray-700">
-                      Date et Heure
-                    </Label>
-                    <Input
-                      type="datetime-local"
-                      id="appointmentDate"
-                      value={appointmentFormData.appointment_date}
-                      onChange={(e) =>
-                        setAppointmentFormData({ ...appointmentFormData, appointment_date: e.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="appointmentType" className="text-gray-700">
-                      Type de consultation
-                    </Label>
-                    <Select
-                      value={appointmentFormData.type}
-                      onValueChange={(value: string) =>
-                        setAppointmentFormData({ ...appointmentFormData, type: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Sélectionner le type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="consultation">Consultation</SelectItem>
-                        <SelectItem value="contrôle">Contrôle</SelectItem>
-                        <SelectItem value="urgence">Urgence</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="appointmentNotes" className="text-gray-700">
-                      Notes
-                    </Label>
-                    <Textarea
-                      id="appointmentNotes"
-                      placeholder="Notes additionnelles..."
-                      value={appointmentFormData.notes}
-                      onChange={(e) => setAppointmentFormData({ ...appointmentFormData, notes: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex justify-end space-x-2">
-                    <Button type="button" variant="outline" onClick={() => setIsAppointmentModalOpen(false)}>
-                      Annuler
-                    </Button>
-                    <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
-                      Planifier
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
 
             <Popover>
               <PopoverTrigger asChild>
@@ -816,17 +859,6 @@ const MedicalHeader = () => {
                 </div>
               </PopoverContent>
             </Popover>
-          </div>
-
-          {/* Right Section: Time + User Info */}
-          <div className="flex items-center space-x-6">
-            <div className="text-center">
-              <div className="flex items-center space-x-2">
-                <Clock className="text-blue-600" />
-                <span className="text-lg font-mono font-semibold text-gray-800">{formatTime(currentTime)}</span>
-              </div>
-              <div className="text-xs text-gray-500">{formatDate(currentTime)}</div>
-            </div>
 
             <div className="flex items-center space-x-3">
               <div
@@ -838,7 +870,7 @@ const MedicalHeader = () => {
                   <div className="text-blue-600 text-xs font-medium">{user?.role || "Médecin"}</div>
                 </div>
                 <Avatar className="h-9 w-9 border-2 border-white shadow-sm ring-1 ring-gray-200">
-                  <AvatarImage src={user?.avatar || "/placeholder-user.jpg"} />
+                  <AvatarImage src={user?.avatar || "/professional-doctor-avatar.png"} />
                   <AvatarFallback className="bg-[#007090] text-white">
                     <User className="h-4 w-4" />
                   </AvatarFallback>

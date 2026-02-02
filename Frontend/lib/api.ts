@@ -217,7 +217,21 @@ class ApiClient {
   }
 
   async getMonthlyCounts(yearMonth: string): Promise<ApiResponse<Record<string, number>>> {
-    return this.request(`/appointments/monthly-counts/${yearMonth}`)
+    const response = await this.request<Record<string, number> | { data: Record<string, number> }>(
+      `/appointments/monthly-counts/${yearMonth}`,
+    )
+
+    if (response.success && response.data) {
+      const data = response.data as any
+      // If data has a 'data' property, extract it; otherwise use data directly
+      const counts = data.data || data
+      return {
+        success: true,
+        data: counts as Record<string, number>,
+      }
+    }
+
+    return response as ApiResponse<Record<string, number>>
   }
 
   async updateAppointmentStatus(
@@ -1138,21 +1152,6 @@ class ApiClient {
       success: res.success,
       message: res.message || (res.data && res.data.message),
     }
-  }
-
-  // Google Drive Sync
-  async getGoogleAuthUrl(): Promise<ApiResponse<{ url: string }>> {
-    return this.request("/google/auth-url")
-  }
-
-  async handleGoogleCallback(code: string): Promise<ApiResponse<{ success: boolean; message: string }>> {
-    return this.request(`/google/callback?code=${code}`)
-  }
-
-  async syncAllDataToGoogle(): Promise<ApiResponse<{ success: boolean; message: string; needs_auth?: boolean; file_id?: string }>> {
-    return this.request("/google/sync-all", {
-      method: "POST",
-    })
   }
 }
 

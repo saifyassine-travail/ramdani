@@ -9,26 +9,17 @@ use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\MedecinController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CertificateController;
-use App\Http\Controllers\GoogleAuthController;
-use App\Http\Controllers\GoogleDriveSyncController;
 use App\Http\Controllers\StatisticsController;
 
-Route::middleware(['api', 'auth:sanctum'])->group(function () {
-    Route::prefix('google')->group(function () {
-        Route::get('/auth-url', [GoogleAuthController::class, 'getAuthUrl']);
-        Route::get('/callback', [GoogleAuthController::class, 'handleCallback']);
-        // Note: The frontend callback might handle the code exchange via this endpoint
-        // or we might need a POST route if sending code in body. Let's keep GET for simplicity as shown in plan.
-        Route::post('/sync-all', [GoogleDriveSyncController::class, 'syncAllData']);
-    });
-});
+
+
 
 Route::middleware('api')->group(function () {
 
     // APPOINTMENTS
     Route::prefix('appointments')->group(function () {
-        Route::get('/monthly-counts/{yearMonth}', [AppointmentController::class, 'monthlyCounts']);
         Route::get('/{date?}', [AppointmentController::class, 'index']);
+        Route::get('/monthly-counts/{yearMonth}', [AppointmentController::class, 'monthlyCounts']);
         Route::post('/update-status', [AppointmentController::class, 'updateStatus']);
         Route::post('/toggle-mutuelle', [AppointmentController::class, 'toggleMutuelle']);
         Route::put('/{id}/details', [AppointmentController::class, 'editAppointmentDetails']);
