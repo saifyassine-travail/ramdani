@@ -408,16 +408,23 @@ if (!empty($caseData)) {
             $validated = $request->validate([
                 'appointment_id' => 'required|integer|exists:appointments,ID_RV',
                 'price' => 'required|numeric|min:0',
+                'medical_acts' => 'nullable|array',
             ]);
 
             $appointment = Appointment::findOrFail($validated['appointment_id']);
             $appointment->payement = $validated['price'];
+            
+            if (array_key_exists('medical_acts', $validated)) {
+                $appointment->medical_acts = $validated['medical_acts'];
+            }
+
             $appointment->save();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Price updated successfully',
                 'price' => $appointment->payement,
+                'medical_acts' => $appointment->medical_acts,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([

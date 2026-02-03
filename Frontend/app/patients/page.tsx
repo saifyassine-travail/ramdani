@@ -540,7 +540,7 @@ function PatientForm({
   const [formData, setFormData] = useState({
     first_name: initialData?.first_name || "",
     last_name: initialData?.last_name || "",
-    gender: initialData?.gender || "Male",
+    gender: initialData?.gender || "Female",
     birth_day: initialData?.birth_day || "",
     CIN: initialData?.CIN || "",
     phone_num: initialData?.phone_num || "",
@@ -640,8 +640,8 @@ function PatientForm({
               <SelectValue placeholder="Sélectionner" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Male">Homme</SelectItem>
               <SelectItem value="Female">Femme</SelectItem>
+              <SelectItem value="Male">Homme</SelectItem>
             </SelectContent>
           </Select>
         </div>

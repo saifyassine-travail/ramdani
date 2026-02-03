@@ -39,31 +39,35 @@ class PatientController extends Controller
     }
 
     public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255', 
-            'birth_day' => 'required|date',
-            'gender' => 'required|in:Male,Female',
-            'CIN' => 'required|string|max:255|unique:patients,CIN',
-            'phone_num' => 'required|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'mutuelle' => 'nullable|string',
-            'allergies' => 'nullable|string',
-            'chronic_conditions' => 'nullable|string',
-            'notes' => 'nullable|string',
-        ]);
+{
+    $validated = $request->validate([
+        'first_name' => 'required|string|max:255',
+        'last_name' => 'required|string|max:255',
+        'birth_day' => 'required|date',
+        'gender' => 'required|in:Male,Female',
+        'CIN' => 'required|string|max:255|unique:patients,CIN',
+        'phone_num' => 'required|string|max:255',
+        'email' => 'nullable|email|max:255',
+        'mutuelle' => 'nullable|string',
+        'allergies' => 'nullable|string',
+        'chronic_conditions' => 'nullable|string',
+        'notes' => 'nullable|string',
+    ]);
 
-        $validated['archived'] = false;
+    // Normalize values for DB
+    $validated['gender'] = ucfirst(strtolower($validated['gender']));
+    $validated['CIN'] = strtoupper($validated['CIN']);
+    $validated['archived'] = 0;
 
-        $patient = Patient::create($validated);
+    $patient = Patient::create($validated);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Patient ajouté avec succès!',
-            'patient' => $patient,
-        ], 201);
-    }
+    return response()->json([
+        'success' => true,
+        'message' => 'Patient ajouté avec succès!',
+        'patient' => $patient,
+    ], 201);
+}
+
 
     public function update(Request $request, $id)
     {

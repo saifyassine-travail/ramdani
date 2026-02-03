@@ -64,6 +64,7 @@ export interface Appointment {
   caseDescription?: CaseDescription
   medicaments?: Medicament[]
   analyses?: Analysis[]
+  medical_acts?: string[]
 }
 
 export interface CaseDescription {
@@ -329,7 +330,7 @@ class ApiClient {
     return this.request(`/appointments/${appointmentId}/last-info`)
   }
 
-  async updatePrice(appointmentId: number, price: number): Promise<ApiResponse<{ price: number }>> {
+  async updatePrice(appointmentId: number, price: number, medicalActs?: string[]): Promise<ApiResponse<{ price: number; medical_acts?: string[] }>> {
     return this.request("/appointments/update-price", {
       method: "POST",
       headers: {
@@ -338,6 +339,7 @@ class ApiClient {
       body: JSON.stringify({
         appointment_id: appointmentId,
         price,
+        medical_acts: medicalActs,
       }),
     })
   }
@@ -582,7 +584,9 @@ class ApiClient {
       CIN: patientData.CIN,
       phone_num: patientData.phone_num,
       email: patientData.email || null,
-      mutuelle: patientData.mutuelle || null,
+      mutuelle: patientData.mutuelle === 'AUTRE' && (patientData as any).autre_mutuelle
+        ? (patientData as any).autre_mutuelle
+        : (patientData.mutuelle || null),
       allergies: patientData.allergies || null,
       chronic_conditions: patientData.chronic_conditions || null,
       notes: patientData.notes || null,

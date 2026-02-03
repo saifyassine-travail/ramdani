@@ -18,7 +18,12 @@ class Appointment extends Model
         'consultation_started_at',
         'consultation_ended_at',
         'updated_at',
-        'ID_patient'];
+        'ID_patient',
+        'medical_acts'];
+
+    protected $casts = [
+        'medical_acts' => 'array',
+    ];
 
     protected $primaryKey = 'ID_RV';
 

@@ -34,6 +34,7 @@ import {
   Loader2,
   ChevronsUpDown,
   Check,
+  Stethoscope,
 } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
@@ -135,6 +136,82 @@ export default function AppointmentDetailsPage() {
     notes: "",
   })
   const [ddr, setDdr] = useState<string>("")
+
+  // Medical Acts List
+  const medicalActs = [
+    { name: "Consultation", price: 250 },
+    { name: "Aspiration", price: 2000 },
+    { name: "CG", price: 0 },
+    { name: "Échographie pelvienne", price: 400 },
+    { name: "Scopie", price: 300 },
+    { name: "Hysteroscopie (hscp)", price: 1500 },
+    { name: "Vaginisme", price: 400 },
+    { name: "Biopsie du sein", price: 700 },
+    { name: "Biopsie du col", price: 700 },
+    { name: "Polype", price: 500 },
+    { name: "Stérilet au cuivre", price: 800 },
+    { name: "Stérilet hormonal", price: 500 },
+    { name: "Échographie mammaire", price: 400 },
+    { name: "Insémination", price: 1000 },
+    { name: "Contrôle", price: 0 },
+  ]
+
+  const [selectedActs, setSelectedActs] = useState<string[]>([])
+  const [totalActsPrice, setTotalActsPrice] = useState(0)
+
+  useEffect(() => {
+    // If appointment type is "Contrôle", ensure "Consultation" is not selected 
+    // or handled appropriately.
+    // The user said "if its control disable it". 
+    // We can interpret this as: if appointment.type is "Contrôle", 
+    // disable the "Consultation" option or remove it from calculation.
+
+    if (appointment?.type === "Contrôle" && selectedActs.includes("Consultation")) {
+      setSelectedActs(prev => prev.filter(a => a !== "Consultation"))
+    }
+
+    const total = selectedActs.reduce((sum, actName) => {
+      const act = medicalActs.find((a) => a.name === actName)
+      return sum + (act ? act.price : 0)
+    }, 0)
+    setTotalActsPrice(total)
+  }, [selectedActs, appointment?.type])
+
+  const handleActToggle = (actName: string) => {
+    if (appointment?.type === "Contrôle" && actName === "Consultation") {
+      toast({
+        title: "Action non autorisée",
+        description: "La consultation est gratuite pour un contrôle.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    setSelectedActs((prev) =>
+      prev.includes(actName) ? prev.filter((a) => a !== actName) : [...prev, actName]
+    )
+  }
+
+  const handleUpdatePrice = async () => {
+    try {
+      setSaving(true)
+      const response = await apiClient.updatePrice(Number(appointmentId), totalActsPrice, selectedActs)
+      if (response.success) {
+        toast({
+          title: "Prix mis à jour",
+          description: `Le prix de la consultation a été mis à jour à ${totalActsPrice} DH`,
+        })
+      }
+    } catch (e) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de mettre à jour le prix",
+        variant: "destructive"
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handlePrintOrdonnance = useCallback(() => {
     try {
@@ -396,6 +473,9 @@ export default function AppointmentDetailsPage() {
         }
 
         setAppointment(appt)
+        if (appt.medical_acts && Array.isArray(appt.medical_acts)) {
+          setSelectedActs(appt.medical_acts)
+        }
         setAvailableMedicaments(available_medicaments || [])
         setAvailableAnalyses(available_analyses || [])
 
@@ -793,6 +873,76 @@ export default function AppointmentDetailsPage() {
             <span className="font-medium">{`${appointment.patient.first_name} ${appointment.patient.last_name}`}</span>
           </div>
         </div>
+
+        {/* Medical Acts Checklist Section */}
+        <div className="mt-4 md:mt-0 md:ml-auto mr-6">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="border-pink-200 text-pink-700 hover:bg-pink-50 hover:text-pink-800 gap-2">
+                <Stethoscope className="h-4 w-4" />
+                Actes Médicaux
+                <Badge className="ml-2 bg-pink-100 text-pink-700 hover:bg-pink-200 border-0">
+                  {totalActsPrice} DH
+                </Badge>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-0" align="end">
+              <div className="p-4 bg-pink-50 border-b border-pink-100">
+                <h4 className="font-medium text-pink-900 flex items-center gap-2">
+                  <Stethoscope className="h-4 w-4" />
+                  Actes Médicaux
+                </h4>
+                <p className="text-xs text-pink-600 mt-1">Sélectionnez les actes effectués</p>
+              </div>
+              <div className="p-2 max-h-[300px] overflow-y-auto">
+                {medicalActs.map((act) => (
+                  <div
+                    key={act.name}
+                    onClick={() => handleActToggle(act.name)}
+                    className={`
+                        cursor-pointer rounded-md p-2 flex items-center justify-between transition-colors
+                        ${selectedActs.includes(act.name)
+                        ? "bg-pink-50 text-pink-900"
+                        : "hover:bg-gray-50 text-gray-700"}
+                        ${appointment?.type === "Contrôle" && act.name === "Consultation" ? "opacity-50 cursor-not-allowed" : ""}
+                      `}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`
+                          w-4 h-4 rounded border flex items-center justify-center transition-colors
+                          ${selectedActs.includes(act.name) ? "bg-pink-500 border-pink-500" : "border-gray-300 bg-white"}
+                        `}>
+                        {selectedActs.includes(act.name) && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <span className="text-sm">{act.name}</span>
+                    </div>
+                    <span className="text-xs font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                      {act.price} DH
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 border-t bg-gray-50 flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleUpdatePrice}
+                  className="bg-pink-600 hover:bg-pink-700 text-white w-full"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enregistrement...
+                    </>
+                  ) : (
+                    `Appliquer (${totalActsPrice} DH)`
+                  )}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
         <div className="flex items-center space-x-4 mt-4 md:mt-0">
           <Badge variant="secondary" className="bg-blue-100 text-blue-800">
             <Calendar className="w-3 h-3 mr-1" />

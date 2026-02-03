@@ -74,6 +74,7 @@ export default function PatientDetailsPage() {
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+
   const priceDebounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
   useEffect(() => {
