@@ -1,4 +1,4 @@
-const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.4:8000/api"
 
 export interface User {
   id: number

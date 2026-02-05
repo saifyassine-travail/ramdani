@@ -1,5 +1,5 @@
 // const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.12:8000/api"
-const API_BASE_URL = "http://127.0.0.1:8000/api"
+const API_BASE_URL = "http://192.168.1.4:8000/api"
 
 
 // if (!process.env.NEXT_PUBLIC_API_URL) {

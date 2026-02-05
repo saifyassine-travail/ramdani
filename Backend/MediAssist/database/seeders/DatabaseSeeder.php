@@ -14,12 +14,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create 50 patients each with 3 appointments
-        Patient::factory()
-            ->count(50)
-            ->has(Appointment::factory()->count(3))
-            ->create();
-            
+
         Analysis::factory()->count(50)->create();
     }
 }
