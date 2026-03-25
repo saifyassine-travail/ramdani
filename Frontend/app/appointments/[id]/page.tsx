@@ -38,6 +38,7 @@ import {
 } from "lucide-react"
 import { cn } from "../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
+import { formatGlobalDate } from "../../../lib/format-date"
 
 interface MedicationForm {
   ID_Medicament: number | string
@@ -68,6 +69,12 @@ interface LastAppointmentData {
     name: string
   }>
   case_description?: string
+  weight?: string | number | null
+  tall?: string | number | null
+  temperature?: string | number | null
+  pulse?: string | number | null
+  blood_pressure?: string | null
+  custom_measures_values?: any
 }
 
 export default function AppointmentDetailsPage() {
@@ -94,7 +101,8 @@ export default function AppointmentDetailsPage() {
     show_pulse: true,
     show_temperature: true,
     show_pressure: true,
-    show_glycemia: true
+    show_glycemia: true,
+    custom_measures: [] as any[]
   })
 
   // Fetch settings on mount
@@ -102,14 +110,28 @@ export default function AppointmentDetailsPage() {
     const loadSettings = async () => {
       try {
         const response = await apiClient.getUserSettings()
-        if (response.success && response.data) {
+        if (response.success) {
+          const settingsData = response.data.data ? response.data.data : response.data;
+
+          let parsedMeasures = [];
+          if (settingsData.custom_measures) {
+            try {
+              parsedMeasures = typeof settingsData.custom_measures === 'string'
+                ? JSON.parse(settingsData.custom_measures)
+                : settingsData.custom_measures;
+            } catch (e) {
+              console.error("Failed to parse custom measures:", e);
+            }
+          }
+
           setCaseConfig({
-            show_weight: response.data.show_weight ?? true,
-            show_height: response.data.show_height ?? true,
-            show_pulse: response.data.show_pulse ?? true,
-            show_temperature: response.data.show_temperature ?? true,
-            show_pressure: response.data.show_pressure ?? true,
-            show_glycemia: response.data.show_glycemia ?? true
+            show_weight: settingsData.show_weight ?? true,
+            show_height: settingsData.show_height ?? true,
+            show_pulse: settingsData.show_pulse ?? true,
+            show_temperature: settingsData.show_temperature ?? true,
+            show_pressure: settingsData.show_pressure ?? true,
+            show_glycemia: settingsData.show_glycemia ?? true,
+            custom_measures: parsedMeasures
           })
         }
       } catch (error) {
@@ -134,6 +156,7 @@ export default function AppointmentDetailsPage() {
     blood_pressure: "",
     tall: "",
     notes: "",
+    custom_measures_values: {} as Record<string, string>,
   })
   const [ddr, setDdr] = useState<string>("")
 
@@ -483,6 +506,18 @@ export default function AppointmentDetailsPage() {
         setCaseDescription(caseDescValue)
 
         setDiagnostic(appt?.diagnostic || "")
+
+        let parsedCustomValues = {};
+        if (appt?.case_description?.custom_measures_values) {
+          try {
+            parsedCustomValues = typeof appt.case_description.custom_measures_values === 'string'
+              ? JSON.parse(appt.case_description.custom_measures_values)
+              : appt.case_description.custom_measures_values;
+          } catch (e) {
+            console.error("Failed to parse custom_measures_values:", e);
+          }
+        }
+
         setVitalSigns({
           weight: appt?.case_description?.weight?.toString() || "",
           pulse: appt?.case_description?.pulse?.toString() || "",
@@ -490,6 +525,7 @@ export default function AppointmentDetailsPage() {
           blood_pressure: appt?.case_description?.blood_pressure || "",
           tall: appt?.case_description?.tall?.toString() || "",
           notes: appt?.case_description?.notes || "",
+          custom_measures_values: parsedCustomValues,
         })
         setDdr(appt?.patient?.DDR || "")
 
@@ -551,11 +587,28 @@ export default function AppointmentDetailsPage() {
               analyses = rawData.data.analyses
             }
 
+            let parsedCustomValues = null;
+            if (rawData.custom_measures_values) {
+              try {
+                parsedCustomValues = typeof rawData.custom_measures_values === 'string'
+                  ? JSON.parse(rawData.custom_measures_values)
+                  : rawData.custom_measures_values;
+              } catch (e) {
+                console.error("Failed to parse previous custom_measures_values:", e);
+              }
+            }
+
             setLastAppointment({
               date,
               case_description: caseDesc,
               medicaments,
               analyses,
+              weight: rawData.weight,
+              tall: rawData.tall,
+              temperature: rawData.temperature,
+              pulse: rawData.pulse,
+              blood_pressure: rawData.blood_pressure,
+              custom_measures_values: parsedCustomValues,
             })
           }
         } catch (err) {
@@ -698,6 +751,7 @@ export default function AppointmentDetailsPage() {
           spo2: null,
           DDR: ddr || undefined,
           notes: vitalSigns.notes || undefined,
+          custom_measures_values: vitalSigns.custom_measures_values,
           diagnostic: diagnostic || "",
           medicaments: medicamentsData,
           analyses: analysesData,
@@ -738,11 +792,7 @@ export default function AppointmentDetailsPage() {
   )
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("fr-FR", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })
+    return formatGlobalDate(dateString)
   }
 
   const formatTime = (dateString: string) => {
@@ -981,28 +1031,29 @@ export default function AppointmentDetailsPage() {
                 />
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {caseConfig.show_height && (
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 mb-1">Taille (cm)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={vitalSigns.tall}
+                        onChange={(e) => setVitalSigns({ ...vitalSigns, tall: e.target.value })}
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                      />
+                    </div>
+                  )}
                   {caseConfig.show_weight && (
                     <div>
                       <label className="block text-xs font-medium text-blue-700 mb-1">Poids (kg)</label>
                       <Input
                         type="number"
+                        min="0"
                         step="0.1"
                         value={vitalSigns.weight}
                         onChange={(e) => setVitalSigns({ ...vitalSigns, weight: e.target.value })}
-                        placeholder="70.5"
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_pulse && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Pouls (bpm)</label>
-                      <Input
-                        type="number"
-                        value={vitalSigns.pulse}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, pulse: e.target.value })}
-                        placeholder="72"
-                        className={`h-8 border-2 ${getPulseColor(vitalSigns.pulse ? Number(vitalSigns.pulse) : null)} text-blue-700 bg-blue-50/50 placeholder:text-blue-300`}
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
                       />
                     </div>
                   )}
@@ -1011,50 +1062,77 @@ export default function AppointmentDetailsPage() {
                       <label className="block text-xs font-medium text-blue-700 mb-1">Température (°C)</label>
                       <Input
                         type="number"
+                        min="0"
                         step="0.1"
                         value={vitalSigns.temperature}
                         onChange={(e) => setVitalSigns({ ...vitalSigns, temperature: e.target.value })}
-                        placeholder="36.6"
-                        className={`h-8 border-2 ${getTemperatureColor(vitalSigns.temperature ? Number(vitalSigns.temperature) : null)} text-blue-700 bg-blue-50/50 placeholder:text-blue-300`}
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                  {caseConfig.show_pulse && (
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 mb-1">Pouls (bpm)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={vitalSigns.pulse}
+                        onChange={(e) => setVitalSigns({ ...vitalSigns, pulse: e.target.value })}
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
                       />
                     </div>
                   )}
                   {caseConfig.show_pressure && (
                     <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Tension</label>
+                      <label className="block text-xs font-medium text-blue-700 mb-1">Tension Artérielle</label>
                       <Input
+                        type="text"
                         value={vitalSigns.blood_pressure}
                         onChange={(e) => setVitalSigns({ ...vitalSigns, blood_pressure: e.target.value })}
-                        placeholder="120/80"
-                        className={`h-8 border-2 ${getTensionColor(vitalSigns.blood_pressure)} text-blue-700 bg-blue-50/50 placeholder:text-blue-300`}
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_height && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Taille (cm)</label>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={vitalSigns.tall}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, tall: e.target.value })}
-                        placeholder="175"
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
+                        placeholder="ex: 120/80"
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
                       />
                     </div>
                   )}
 
-                  {caseConfig.show_weight && caseConfig.show_height && (
-                    <div className="col-span-1">
-                      <label className="block text-xs font-medium text-blue-700 mb-1">IMC</label>
-                      <div className={`w-full px-3 py-1 flex items-center h-8 border-2 rounded-md bg-blue-50/50 font-semibold text-sm ${getBMIColor(bmi)}`}>
-                        {bmi ? bmi.toFixed(1) : "N/A"}
-                        {bmi && <span className={`ml-2 text-[10px] ${getBMIColor(bmi)}`}>({getBMIStatus(bmi)})</span>}
+                  {caseConfig.custom_measures && caseConfig.custom_measures.map((measure, idx) => {
+                    const measureKey = measure.name;
+                    const val = vitalSigns.custom_measures_values[measureKey] || vitalSigns.custom_measures_values[measure.short] || "";
+                    const numVal = parseFloat(val);
+                    let colorClass = "border-gray-200 focus-visible:ring-blue-500 placeholder:text-blue-300";
+
+                    if (val && !isNaN(numVal)) {
+                      if (measure.min_value && numVal < parseFloat(measure.min_value)) {
+                        colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
+                      } else if (measure.max_value && numVal > parseFloat(measure.max_value)) {
+                        colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
+                      } else {
+                        colorClass = "border-green-500 bg-green-50 text-green-700";
+                      }
+                    }
+
+                    return (
+                      <div key={idx}>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">
+                          {measure.name} {measure.short ? `(${measure.short})` : ''}
+                        </label>
+                        <Input
+                          type="text"
+                          value={val}
+                          onChange={(e) => setVitalSigns({
+                            ...vitalSigns,
+                            custom_measures_values: {
+                              ...vitalSigns.custom_measures_values,
+                              [measureKey]: e.target.value
+                            }
+                          })}
+                          placeholder={`Min: ${measure.min_value} | Max: ${measure.max_value}`}
+                          className={`h-8 border-2 ${colorClass} bg-blue-50/50`}
+                        />
                       </div>
-                    </div>
-                  )}
-
-
+                    );
+                  })}
                   {/* DDR Field */}
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-medium text-blue-700 mb-1">DDR (Date des Dernières Règles)</label>
@@ -1515,6 +1593,23 @@ export default function AppointmentDetailsPage() {
                         <div className="p-3 bg-gray-50 rounded border">
                           <strong className="block text-gray-800 mb-1">Notes du cas:</strong>
                           <p className="whitespace-pre-wrap">{lastAppointment.case_description}</p>
+                        </div>
+                      )}
+
+                      {(lastAppointment.tall || lastAppointment.weight || lastAppointment.temperature || lastAppointment.pulse || lastAppointment.blood_pressure || (lastAppointment.custom_measures_values && Object.keys(lastAppointment.custom_measures_values).length > 0)) && (
+                        <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
+                          <strong className="block text-blue-800 mb-2">Constantes vitales:</strong>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {lastAppointment.tall && <div><span className="text-gray-500">Taille:</span> <span className="font-medium text-gray-900">{lastAppointment.tall} cm</span></div>}
+                            {lastAppointment.weight && <div><span className="text-gray-500">Poids:</span> <span className="font-medium text-gray-900">{lastAppointment.weight} kg</span></div>}
+                            {lastAppointment.temperature && <div><span className="text-gray-500">Temp:</span> <span className="font-medium text-gray-900">{lastAppointment.temperature} °C</span></div>}
+                            {lastAppointment.pulse && <div><span className="text-gray-500">Pouls:</span> <span className="font-medium text-gray-900">{lastAppointment.pulse} bpm</span></div>}
+                            {lastAppointment.blood_pressure && <div><span className="text-gray-500">Tension:</span> <span className="font-medium text-gray-900">{lastAppointment.blood_pressure}</span></div>}
+
+                            {lastAppointment.custom_measures_values && Object.entries(lastAppointment.custom_measures_values).map(([mName, mValue]) => (
+                              mValue && <div key={mName}><span className="text-gray-500">{mName}:</span> <span className="font-medium text-gray-900">{String(mValue)}</span></div>
+                            ))}
+                          </div>
                         </div>
                       )}
                       {lastAppointment.medicaments && lastAppointment.medicaments.length > 0 && (

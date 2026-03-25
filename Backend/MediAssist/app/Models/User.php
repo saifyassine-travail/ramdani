@@ -6,11 +6,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -19,7 +20,8 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'name', 'email', 'password', 'role', 'permissions',
-        'phone', 'address', 'specialization', 'bio', 'license', 'experience', 'education', 'avatar'
+        'phone', 'address', 'specialization', 'bio', 'license', 'experience', 'education', 'avatar',
+        'google_id', 'google_access_token', 'google_refresh_token', 'google_token_expires_at',
     ];
 
     /**
@@ -30,6 +32,8 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'google_access_token',
+        'google_refresh_token',
     ];
 
     /**
@@ -40,8 +44,9 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'email_verified_at'       => 'datetime',
+            'password'                => 'hashed',
+            'google_token_expires_at' => 'datetime',
         ];
     }
 }

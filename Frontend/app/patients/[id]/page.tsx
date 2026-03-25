@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp } from 'lucide-react'
 import { apiClient, type PatientDocument } from "@/lib/api"
+import { formatGlobalDate } from "@/lib/format-date"
 
 interface PatientDetails {
   ID_patient: number
@@ -29,6 +30,7 @@ interface PatientDetails {
   allergies?: string
   chronic_conditions?: string
   notes?: string
+  blood_type?: string
   archived: boolean
   lastAppointment?: {
     appointment_date: string
@@ -127,6 +129,7 @@ export default function PatientDetailsPage() {
             allergies: patientData.allergies,
             chronic_conditions: patientData.chronic_conditions,
             notes: patientData.notes,
+            blood_type: patientData.blood_type,
             archived: Boolean(patientData.archived),
             lastAppointment: lastAppointment,
             nextAppointment: nextAppointment,
@@ -183,7 +186,7 @@ export default function PatientDetailsPage() {
   }, [])
 
   const formatDate = useCallback((dateString: string) => {
-    return new Date(dateString).toLocaleDateString("fr-FR")
+    return formatGlobalDate(dateString)
   }, [])
 
   const filteredAppointments = useMemo(() => {
@@ -921,6 +924,12 @@ export default function PatientDetailsPage() {
                       {patient.mutuelle}
                     </Badge>
                   )}
+                  {patient.blood_type && (
+                    <Badge variant="outline" className="border-red-200 text-red-700 bg-red-50">
+                      <Heart className="h-3 w-3 mr-1 fill-current" />
+                      {patient.blood_type}
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -998,6 +1007,12 @@ export default function PatientDetailsPage() {
                       ) : (
                         "Aucune"
                       )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Groupe Sanguin</p>
+                    <p className="text-sm font-medium text-gray-800 flex items-center mt-1">
+                      <span className="font-bold text-red-600">{patient.blood_type || "N/A"}</span>
                     </p>
                   </div>
                   <div>
@@ -1478,6 +1493,7 @@ function PatientForm({
     allergies: initialData?.allergies || "",
     chronic_conditions: initialData?.chronic_conditions || "",
     notes: initialData?.notes || "",
+    blood_type: initialData?.blood_type || "",
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1609,6 +1625,24 @@ function PatientForm({
             onChange={(e) => handleChange("notes", e.target.value)}
             rows={3}
           />
+        </div>
+        <div className="col-span-2 md:col-span-1">
+          <Label htmlFor="blood_type">Groupe Sanguin</Label>
+          <Select value={formData.blood_type} onValueChange={(value) => handleChange("blood_type", value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="A+">A+</SelectItem>
+              <SelectItem value="A-">A-</SelectItem>
+              <SelectItem value="B+">B+</SelectItem>
+              <SelectItem value="B-">B-</SelectItem>
+              <SelectItem value="AB+">AB+</SelectItem>
+              <SelectItem value="AB-">AB-</SelectItem>
+              <SelectItem value="O+">O+</SelectItem>
+              <SelectItem value="O-">O-</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

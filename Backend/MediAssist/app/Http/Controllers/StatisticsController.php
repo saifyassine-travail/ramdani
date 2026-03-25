@@ -59,7 +59,12 @@ class StatisticsController extends Controller
                 }
 
                 // Monthly (Last 12 Months) - Single Query
-                $monthlyData = Appointment::selectRaw('YEAR(appointment_date) as year, MONTH(appointment_date) as month, COUNT(*) as count, SUM(payement) as revenue')
+                $dbDriver = config('database.default');
+                $monthlySelect = $dbDriver === 'pgsql'
+                    ? 'EXTRACT(YEAR FROM appointment_date) as year, EXTRACT(MONTH FROM appointment_date) as month, COUNT(*) as count, SUM(payement) as revenue'
+                    : 'YEAR(appointment_date) as year, MONTH(appointment_date) as month, COUNT(*) as count, SUM(payement) as revenue';
+
+                $monthlyData = Appointment::selectRaw($monthlySelect)
                     ->where('appointment_date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
                     ->groupBy('year', 'month')
                     ->get();
@@ -89,7 +94,11 @@ class StatisticsController extends Controller
                 }
 
                 // Yearly (Last 5 Years) - Single Query
-                $yearlyData = Appointment::selectRaw('YEAR(appointment_date) as year, COUNT(*) as count')
+                $yearlySelect = $dbDriver === 'pgsql'
+                    ? 'EXTRACT(YEAR FROM appointment_date) as year, COUNT(*) as count'
+                    : 'YEAR(appointment_date) as year, COUNT(*) as count';
+
+                $yearlyData = Appointment::selectRaw($yearlySelect)
                     ->where('appointment_date', '>=', Carbon::now()->subYears(4)->startOfYear())
                     ->groupBy('year')
                     ->pluck('count', 'year');
@@ -104,12 +113,16 @@ class StatisticsController extends Controller
 
                 // 3. Demographics (Age Groups)
                 // Use DB raw query for age calculation to avoid fetching all records
-                // Assuming MySQL/PostgreSQL logic for Age
+                // Adjust for PostgreSQL vs MySQL logic
+                $ageSql = $dbDriver === 'pgsql' 
+                    ? "EXTRACT(YEAR FROM age(CURRENT_DATE, birth_day))"
+                    : "TIMESTAMPDIFF(YEAR, birth_day, CURDATE())";
+                    
                 $ageStats = Patient::selectRaw("
                     CASE 
-                        WHEN TIMESTAMPDIFF(YEAR, birth_day, CURDATE()) <= 18 THEN '0-18'
-                        WHEN TIMESTAMPDIFF(YEAR, birth_day, CURDATE()) <= 35 THEN '19-35'
-                        WHEN TIMESTAMPDIFF(YEAR, birth_day, CURDATE()) <= 50 THEN '36-50'
+                        WHEN {$ageSql} <= 18 THEN '0-18'
+                        WHEN {$ageSql} <= 35 THEN '19-35'
+                        WHEN {$ageSql} <= 50 THEN '36-50'
                         ELSE '50+' 
                     END as age_group, 
                     COUNT(*) as count

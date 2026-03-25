@@ -1,5 +1,5 @@
-// const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.12:8000/api"
-const API_BASE_URL = "http://192.168.1.4:8000/api"
+const API_BASE_URL = "http://127.0.0.1:8000/api"
+import { getAuthToken } from "@/lib/auth-api"
 
 
 // if (!process.env.NEXT_PUBLIC_API_URL) {
@@ -158,16 +158,14 @@ class ApiClient {
         Object.assign(headers, options.headers)
       }
 
-      if (options.method === "DELETE" || options.method === "POST" || options.method === "PUT") {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content")
-        if (csrfToken) {
-          headers["X-CSRF-TOKEN"] = csrfToken
-        }
+      // Attach Bearer token if available
+      const token = getAuthToken()
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
       }
 
       const response = await fetch(url, {
         ...options,
-        credentials: "include",
         headers,
       })
 
@@ -1053,10 +1051,13 @@ class ApiClient {
 
   // Settings endpoints
   async getUserSettings(): Promise<ApiResponse<any>> {
-    return this.request("/settings")
+    return this.request("/settings", {}, true) // always skip cache for settings
   }
 
   async updateUserSettings(settings: any): Promise<ApiResponse<any>> {
+    // Bust cache before sending so the next GET returns fresh data
+    const url = `${this.baseURL}/settings`
+    requestCache.delete(url)
     return this.request("/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -1156,6 +1157,35 @@ class ApiClient {
       success: res.success,
       message: res.message || (res.data && res.data.message),
     }
+  }
+
+  // ── Google Drive / Backup ──────────────────────────────────────────────────
+  getGoogleOAuthUrl(userId: number): string {
+    return `http://127.0.0.1:8000/auth/google?user_id=${userId}`
+  }
+
+  async listBackups(): Promise<ApiResponse<any>> {
+    return this.request("/backup/list")
+  }
+
+  async createBackup(password: string): Promise<ApiResponse<any>> {
+    return this.request("/backup/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    })
+  }
+
+  async restoreBackup(driveFileId: string, password: string): Promise<ApiResponse<any>> {
+    return this.request("/backup/restore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ drive_file_id: driveFileId, password }),
+    })
+  }
+
+  async deleteBackup(driveFileId: string): Promise<ApiResponse<any>> {
+    return this.request(`/backup/${driveFileId}`, { method: "DELETE" })
   }
 }
 

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\BackupController;
 
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\PatientController;
@@ -23,3 +24,7 @@ Route::prefix('appointments')->group(function () {
     Route::post('/{id}/add-control', [AppointmentController::class, 'addControl']);
 });
 Route::get('/patients/search', [AppointmentController::class, 'search']);
+
+// Google OAuth routes for Drive linking
+Route::get('/auth/google', [BackupController::class, 'redirectToGoogle'])->name('auth.google');
+Route::get('/auth/google/callback', [BackupController::class, 'handleGoogleCallback'])->name('auth.google.callback');

@@ -237,6 +237,7 @@ class AppointmentController extends Controller
                 'spo2' => 'nullable|numeric|min:0|max:100',
                 'DDR' => 'nullable|date',
                 'notes' => 'nullable|string|max:255',
+                'custom_measures_values' => 'nullable|array',
                 'diagnostic' => 'nullable|string',
                 'medicaments' => 'nullable|array',
                 'medicaments.*.ID_Medicament' => 'required_with:medicaments|exists:medicaments,ID_Medicament',
@@ -266,6 +267,7 @@ class AppointmentController extends Controller
     'tall' => $request->input('tall'),
     'spo2' => $request->input('spo2'),
     'notes' => $request->input('notes'),
+    'custom_measures_values' => $request->has('custom_measures_values') ? json_encode($request->input('custom_measures_values')) : null,
 ];
 
 // Remove all null or empty fields
@@ -382,6 +384,12 @@ if (!empty($caseData)) {
                     'name' => $a->type_analyse,
                 ]),
                 'case_description' => optional($last->caseDescription)->case_description,
+                'weight' => optional($last->caseDescription)->weight,
+                'tall' => optional($last->caseDescription)->tall,
+                'temperature' => optional($last->caseDescription)->temperature,
+                'pulse' => optional($last->caseDescription)->pulse,
+                'blood_pressure' => optional($last->caseDescription)->blood_pressure,
+                'custom_measures_values' => optional($last->caseDescription)->custom_measures_values,
             ];
 
             return response()->json([

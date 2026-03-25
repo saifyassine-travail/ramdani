@@ -118,16 +118,26 @@ Route::prefix('certificates')->group(function () {
 });
 
 // SETTINGS
-Route::prefix('settings')->group(function () {
+Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [App\Http\Controllers\SettingsController::class, 'getUserSettings']);
     Route::put('/', [App\Http\Controllers\SettingsController::class, 'updateUserSettings']);
 });
 
 // USER MANAGEMENT (Admin only)
-Route::prefix('users')->group(function () {
+Route::prefix('users')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [App\Http\Controllers\SettingsController::class, 'getUsers']);
     Route::post('/', [App\Http\Controllers\SettingsController::class, 'createUser']);
     Route::put('/{id}', [App\Http\Controllers\SettingsController::class, 'updateUser']);
     Route::put('/{id}/permissions', [App\Http\Controllers\SettingsController::class, 'updateUserPermissions']);
     Route::delete('/{id}', [App\Http\Controllers\SettingsController::class, 'deleteUser']);
 });
+
+// BACKUP & GOOGLE DRIVE SYNC
+Route::prefix('backup')->middleware('auth:sanctum')->group(function () {
+    Route::post('/create', [App\Http\Controllers\BackupController::class, 'createBackup']);
+    Route::get('/list', [App\Http\Controllers\BackupController::class, 'listBackups']);
+    Route::post('/restore', [App\Http\Controllers\BackupController::class, 'restoreBackup']);
+    Route::delete('/{driveFileId}', [App\Http\Controllers\BackupController::class, 'deleteBackup']);
+    Route::get('/history', [App\Http\Controllers\BackupController::class, 'backupHistory']);
+});
+

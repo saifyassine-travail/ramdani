@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.4:8000/api"
+import { getAuthToken } from "@/lib/auth-api"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
 
 export interface MedecinDashboardData {
   currentPatient?: {
@@ -40,11 +41,13 @@ class MedecinApiClient {
       const url = `${this.baseURL}${endpoint}`
       console.log("[v0] Medecin API Request URL:", url)
 
+      const token = getAuthToken()
       const response = await fetch(url, {
         ...options,
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...options.headers,
         },
       })

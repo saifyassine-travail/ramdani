@@ -10,8 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit } from "lucide-react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -30,16 +30,64 @@ export default function SettingsPage() {
     role: "nurse"
   })
 
+  // Custom Measures State
+  const [newMeasure, setNewMeasure] = useState({
+    name: "",
+    short: "",
+    min_value: "",
+    max_value: "",
+    color: "red"
+  })
+
+  // Backup & Sync State
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [backups, setBackups] = useState<any[]>([])
+  const [isGoogleLinked, setIsGoogleLinked] = useState<boolean | null>(null)
+  const [backupLoading, setBackupLoading] = useState(false)
+  const [backupPassword, setBackupPassword] = useState("")
+  const [showBackupDialog, setShowBackupDialog] = useState(false)
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false)
+  const [selectedBackupId, setSelectedBackupId] = useState("")
+
   useEffect(() => {
     fetchSettings()
     fetchUsers()
+    fetchBackups()
+    fetchUserProfile()
   }, [])
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await apiClient.getProfile()
+      if (response.success && response.data) {
+        setCurrentUserId(response.data.id)
+      }
+    } catch (error) {
+      console.error("Error fetching profile:", error)
+    }
+  }
 
   const fetchSettings = async () => {
     try {
       const response = await apiClient.getUserSettings()
       if (response.success) {
-        setSettings(response.data)
+        // response.data can sometimes be nested depending on backend wrapping. Fix double-nesting:
+        let parsedData = response.data.data ? { ...response.data.data } : { ...response.data }
+
+        // Ensure custom_measures is always an array in local state
+        if (typeof parsedData.custom_measures === 'string') {
+          try {
+            parsedData.custom_measures = JSON.parse(parsedData.custom_measures)
+          } catch (e) {
+            parsedData.custom_measures = []
+          }
+        }
+        if (!Array.isArray(parsedData.custom_measures)) {
+          parsedData.custom_measures = []
+        }
+
+        localStorage.setItem("app_settings", JSON.stringify(parsedData))
+        setSettings(parsedData)
       }
     } catch (error) {
       console.error("Error fetching settings:", error)
@@ -60,14 +108,129 @@ export default function SettingsPage() {
     }
   }
 
+  const fetchBackups = async () => {
+    try {
+      setBackupLoading(true)
+      const response = await apiClient.listBackups()
+      if (response.success && response.data) {
+        setIsGoogleLinked(true)
+        setBackups(response.data.backups || [])
+      } else {
+        setIsGoogleLinked(false)
+      }
+    } catch (error) {
+      console.error("Error fetching backups:", error)
+      setIsGoogleLinked(false)
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleLinkGoogle = async () => {
+    let userId = currentUserId;
+    if (!userId) {
+      toast({ title: "Information", description: "Vérification de l'identité en cours..." })
+      try {
+        const response = await apiClient.getProfile()
+        if (response.success && response.data) {
+          userId = response.data.id
+          setCurrentUserId(userId)
+        }
+      } catch (error) {
+        console.error("Error fetching profile on click", error)
+      }
+    }
+
+    if (!userId) {
+      toast({ title: "Erreur", description: "Veuillez vous reconnecter pour lier votre compte Google.", variant: "destructive" })
+      return
+    }
+    window.location.href = apiClient.getGoogleOAuthUrl(userId)
+  }
+
+  const handleCreateBackup = async () => {
+    if (!backupPassword || backupPassword.length < 6) {
+      toast({ title: "Erreur", description: "Le mot de passe doit contenir au moins 6 caractères", variant: "destructive" })
+      return
+    }
+    try {
+      setBackupLoading(true)
+      const response = await apiClient.createBackup(backupPassword)
+      if (response.success) {
+        toast({ title: "Succès", description: "Sauvegarde créée avec succès" })
+        setShowBackupDialog(false)
+        setBackupPassword("")
+        fetchBackups()
+      } else {
+        toast({ title: "Erreur", description: response.message || "Erreur de création", variant: "destructive" })
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Une erreur est survenue", variant: "destructive" })
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  const handleRestoreBackup = async () => {
+    if (!backupPassword || backupPassword.length < 6) {
+      toast({ title: "Erreur", description: "Mot de passe requis", variant: "destructive" })
+      return
+    }
+    if (!selectedBackupId) return
+
+    if (!confirm("Attention: Cette action écrasera vos données locales par les données de la sauvegarde (les données les plus récentes seront conservées). Continuer ?")) {
+      return
+    }
+
+    try {
+      setBackupLoading(true)
+      const response = await apiClient.restoreBackup(selectedBackupId, backupPassword)
+      if (response.success) {
+        toast({ title: "Succès", description: "Données restaurées avec succès. Veuillez rafraîchir la page." })
+        setShowRestoreDialog(false)
+        setBackupPassword("")
+      } else {
+        toast({ title: "Erreur", description: response.message || "Mot de passe incorrect ou erreur réseau", variant: "destructive" })
+      }
+    } catch (error) {
+      toast({ title: "Erreur", description: "Une erreur est survenue", variant: "destructive" })
+    } finally {
+      setBackupLoading(false)
+    }
+  }
+
+  // Helper: extract only the DB columns we care about, stripping any API wrapper fields
+  const sanitizeSettings = (s: any) => {
+    if (!s) return {}
+    const { success, message, data, ...flat } = s
+    // If the old state was { success, data: { real settings } }, flatten properly
+    const base = data && typeof data === 'object' && !Array.isArray(data)
+      ? { ...data, ...flat }
+      : flat
+    // Ensure custom_measures is a JSON string for the backend
+    if (Array.isArray(base.custom_measures)) {
+      base.custom_measures = JSON.stringify(base.custom_measures)
+    }
+    return base
+  }
+
   const handleSaveSettings = async () => {
     setSaving(true)
     try {
-      const response = await apiClient.updateUserSettings(settings)
+      const payload = sanitizeSettings(settings)
+      const response = await apiClient.updateUserSettings(payload)
       if (response.success) {
+        // After save, refresh settings from backend to keep state in sync
+        await fetchSettings()
         toast({
           title: "Succès",
           description: "Paramètres enregistrés avec succès",
+        })
+      } else {
+        toast({
+          title: "Erreur",
+          description: response.message || "Erreur lors de l'enregistrement",
+          variant: "destructive",
         })
       }
     } catch (error) {
@@ -92,6 +255,14 @@ export default function SettingsPage() {
         setShowUserDialog(false)
         setNewUser({ name: "", email: "", password: "", role: "nurse" })
         fetchUsers()
+      } else {
+        toast({
+          title: "Erreur de validation",
+          description: response.errors
+            ? Object.values(response.errors).flat().join("\n")
+            : (response.message || "Erreur lors de la création"),
+          variant: "destructive",
+        })
       }
     } catch (error: any) {
       toast({
@@ -192,7 +363,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="preferences" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-xl grid-cols-3">
           <TabsTrigger value="preferences">
             <SettingsIcon className="w-4 h-4 mr-2" />
             Préférences
@@ -201,6 +372,10 @@ export default function SettingsPage() {
             <Users className="w-4 h-4 mr-2" />
             Utilisateurs
           </TabsTrigger>
+          <TabsTrigger value="backup">
+            <Cloud className="w-4 h-4 mr-2" />
+            Sauvegarde & Sync
+          </TabsTrigger>
         </TabsList>
 
         {/* Preferences Tab */}
@@ -208,87 +383,135 @@ export default function SettingsPage() {
           {/* Case Description Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>Configuration de la Consultation</CardTitle>
-              <CardDescription>Choisissez les paramètres médicaux à afficher lors de la consultation</CardDescription>
+              <CardTitle>Mesures Personnalisées</CardTitle>
+              <CardDescription>Ajoutez d'autres métriques à la consultation avec le code couleur (min/max)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                      T
-                    </div>
-                    <Label className="cursor-pointer">Taille (cm)</Label>
-                  </div>
-                  <Switch
-                    checked={settings?.show_height ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_height: checked })}
-                  />
-                </div>
+                {/* Custom Measures Section */}
+              </div>
 
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold text-xs">
-                      P
-                    </div>
-                    <Label className="cursor-pointer">Poids (kg)</Label>
-                  </div>
-                  <Switch
-                    checked={settings?.show_weight ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_weight: checked })}
-                  />
-                </div>
+              {/* Custom Measures Section */}
+              <div className="pt-2">
 
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-bold text-xs">
-                      FC
+                <div className="space-y-3">
+                  {(Array.isArray(settings?.custom_measures) ? settings.custom_measures : []).map((measure: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between p-3 border rounded-lg bg-white border border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs
+                          ${measure.color === 'red' ? 'bg-red-100 text-red-600' :
+                            measure.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                              measure.color === 'orange' ? 'bg-orange-100 text-orange-600' :
+                                measure.color === 'purple' ? 'bg-purple-100 text-purple-600' :
+                                  'bg-gray-100 text-gray-600'}`}
+                        >
+                          {measure.short}
+                        </div>
+                        <div>
+                          <Label className="font-medium block">{measure.name}</Label>
+                          <span className="text-xs text-gray-500">Min: {measure.min_value} | Max: {measure.max_value}</span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={async () => {
+                          const current = Array.isArray(settings?.custom_measures) ? [...settings.custom_measures] : [];
+                          current.splice(idx, 1);
+                          const newSettings = { ...settings, custom_measures: current };
+                          setSettings(newSettings);
+                          try {
+                            await apiClient.updateUserSettings(sanitizeSettings(newSettings));
+                            await fetchSettings();
+                          } catch (e) {
+                            console.error("Failed to auto-save settings", e);
+                          }
+                        }}
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8 p-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Label className="cursor-pointer">Fréquence Cardiaque (bpm)</Label>
-                  </div>
-                  <Switch
-                    checked={settings?.show_pulse ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_pulse: checked })}
-                  />
-                </div>
+                  ))}
 
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-xs">
-                      °C
+                  <div className="grid grid-cols-12 gap-2 mt-4 items-end bg-gray-50 p-3 rounded-lg border border-gray-200 border-dashed">
+                    <div className="col-span-3 space-y-1">
+                      <Label className="text-xs">Nom complet</Label>
+                      <Input
+                        placeholder="Ex: SpO2"
+                        className="h-8 text-sm"
+                        value={newMeasure.name}
+                        onChange={(e) => setNewMeasure({ ...newMeasure, name: e.target.value })}
+                      />
                     </div>
-                    <Label className="cursor-pointer">Température (°C)</Label>
-                  </div>
-                  <Switch
-                    checked={settings?.show_temperature ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_temperature: checked })}
-                  />
-                </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Sigle</Label>
+                      <Input
+                        placeholder="Ex: O2"
+                        maxLength={3}
+                        className="h-8 text-sm"
+                        value={newMeasure.short}
+                        onChange={(e) => setNewMeasure({ ...newMeasure, short: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Min</Label>
+                      <Input
+                        type="text"
+                        placeholder="Ex: 95"
+                        className="h-8 text-sm"
+                        value={newMeasure.min_value}
+                        onChange={(e) => setNewMeasure({ ...newMeasure, min_value: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Max</Label>
+                      <Input
+                        type="text"
+                        placeholder="Ex: 100"
+                        className="h-8 text-sm"
+                        value={newMeasure.max_value}
+                        onChange={(e) => setNewMeasure({ ...newMeasure, max_value: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-span-2 space-y-1">
+                      <Label className="text-xs">Couleur</Label>
+                      <Select value={newMeasure.color} onValueChange={(val) => setNewMeasure({ ...newMeasure, color: val })}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="red">Rouge</SelectItem>
+                          <SelectItem value="blue">Bleu</SelectItem>
+                          <SelectItem value="orange">Orange</SelectItem>
+                          <SelectItem value="purple">Violet</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-1">
+                      <Button
+                        type="button"
+                        className="h-8 w-full bg-blue-600 hover:bg-blue-700 p-0 flex items-center justify-center"
+                        onClick={async () => {
+                          if (!newMeasure.name) return;
 
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs">
-                      TA
+                          const current = Array.isArray(settings?.custom_measures) ? [...settings.custom_measures] : [];
+                          current.push(newMeasure);
+                          const newSettings = { ...settings, custom_measures: current };
+                          setSettings(newSettings);
+                          setNewMeasure({ name: "", short: "", min_value: "", max_value: "", color: "red" });
+                          try {
+                            await apiClient.updateUserSettings(sanitizeSettings(newSettings));
+                            await fetchSettings();
+                          } catch (e) {
+                            console.error("Failed to auto-save settings", e);
+                          }
+                        }}
+                      >
+                        <Plus className="w-4 h-4" />
+                      </Button>
                     </div>
-                    <Label className="cursor-pointer">Tension Artérielle</Label>
                   </div>
-                  <Switch
-                    checked={settings?.show_pressure ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_pressure: checked })}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center text-yellow-600 font-bold text-xs">
-                      G
-                    </div>
-                    <Label className="cursor-pointer">Glycémie</Label>
-                  </div>
-                  <Switch
-                    checked={settings?.show_glycemia ?? true}
-                    onCheckedChange={(checked) => setSettings({ ...settings, show_glycemia: checked })}
-                  />
                 </div>
               </div>
             </CardContent>
@@ -586,6 +809,187 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+
+        {/* Backup & Sync Tab */}
+        <TabsContent value="backup" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cloud className="w-5 h-5 text-blue-600" />
+                Sauvegarde Cloud Automatique
+              </CardTitle>
+              <CardDescription>
+                Synchronisez et sauvegardez vos données de manière sécurisée (chiffrement de bout en bout) sur Google Drive.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isGoogleLinked === null ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                </div>
+              ) : !isGoogleLinked ? (
+                <div className="text-center p-8 border-2 border-dashed rounded-lg bg-gray-50">
+                  <Cloud className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Connecter Google Drive</h3>
+                  <p className="text-sm text-gray-500 mb-6 max-w-md mx-auto">
+                    Afin de protéger vos données, connectez votre compte Google. Vos données médicales seront chiffrées avec votre mot de passe avant d'être envoyées.
+                  </p>
+                  <Button onClick={handleLinkGoogle} className="bg-blue-600 hover:bg-blue-700">
+                    Associer mon compte Google
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-green-900">Google Drive Connecté</p>
+                        <p className="text-sm text-green-700">La sauvegarde automatique nocturne est active.</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" onClick={handleLinkGoogle} className="text-sm">
+                      Changer de compte
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-800">Historique des Sauvegardes</h3>
+                    <div className="flex gap-2">
+                      <Button variant="outline" onClick={fetchBackups} disabled={backupLoading}>
+                        <RefreshCw className={`w-4 h-4 mr-2 ${backupLoading ? 'animate-spin' : ''}`} />
+                        Actualiser
+                      </Button>
+                      <Dialog open={showBackupDialog} onOpenChange={setShowBackupDialog}>
+                        <DialogTrigger asChild>
+                          <Button className="bg-blue-600 hover:bg-blue-700">
+                            <Cloud className="w-4 h-4 mr-2" />
+                            Créer une sauvegarde
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Créer une sauvegarde chiffrée</DialogTitle>
+                            <DialogDescription>
+                              Vos données seront chiffrées avant l'envoi vers Google Drive. Seul ce mot de passe permettra de les restaurer.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4 py-4">
+                            <div className="space-y-2">
+                              <Label>Mot de passe de chiffrement</Label>
+                              <div className="relative">
+                                <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                                <Input
+                                  type="password"
+                                  className="pl-9"
+                                  placeholder="Votre mot de passe"
+                                  value={backupPassword}
+                                  onChange={(e) => setBackupPassword(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowBackupDialog(false)}>Annuler</Button>
+                            <Button onClick={handleCreateBackup} disabled={backupLoading} className="bg-blue-600 hover:bg-blue-700">
+                              {backupLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                              Sauvegarder
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg overflow-hidden">
+                    {backups.length > 0 ? (
+                      <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
+                          <tr>
+                            <th className="px-6 py-3">Fichier</th>
+                            <th className="px-6 py-3">Date</th>
+                            <th className="px-6 py-3">Taille</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backups.map((backup) => (
+                            <tr key={backup.drive_file_id} className="bg-white border-b hover:bg-gray-50 transition-colors">
+                              <td className="px-6 py-4 font-medium text-gray-900 flex items-center gap-2">
+                                <Lock className="w-4 h-4 text-blue-500" />
+                                {backup.file_name}
+                              </td>
+                              <td className="px-6 py-4 text-gray-600">
+                                {new Date(backup.created_time).toLocaleString()}
+                              </td>
+                              <td className="px-6 py-4 text-gray-600">
+                                {(parseInt(backup.size) / 1024 / 1024).toFixed(2)} MB
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <Button
+                                  variant="ghost"
+                                  className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 h-8 px-3"
+                                  onClick={() => {
+                                    setSelectedBackupId(backup.drive_file_id)
+                                    setShowRestoreDialog(true)
+                                  }}
+                                >
+                                  <Download className="w-4 h-4 mr-2" />
+                                  Restaurer
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <AlertCircle className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                        <p>Aucune sauvegarde trouvée sur votre Google Drive</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Restore Dialog */}
+          <Dialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Restaurer une sauvegarde</DialogTitle>
+                <DialogDescription>
+                  Veuillez entrer le mot de passe utilisé lors de la création de cette sauvegarde pour la déchiffrer.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>Mot de passe de chiffrement</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                    <Input
+                      type="password"
+                      className="pl-9"
+                      placeholder="Mot de passe"
+                      value={backupPassword}
+                      onChange={(e) => setBackupPassword(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowRestoreDialog(false)}>Annuler</Button>
+                <Button onClick={handleRestoreBackup} disabled={backupLoading} className="bg-red-600 hover:bg-red-700 text-white">
+                  {backupLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+                  Lancer la Restauration
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </TabsContent>

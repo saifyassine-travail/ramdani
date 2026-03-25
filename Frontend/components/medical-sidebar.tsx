@@ -34,6 +34,7 @@ interface MedicalSidebarProps {
     name: string
     role: string
     avatar?: string
+    permissions?: string[]
   }
 }
 
@@ -42,55 +43,63 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
   const pathname = usePathname()
   const { logout } = useAuth()
 
+  const hasPermission = (routeId: string) => {
+    if (user.role === "admin") return true
+    if (user.permissions && Array.isArray(user.permissions)) {
+      return user.permissions.includes(routeId)
+    }
+    return false // Default to false if no permissions defined and not admin
+  }
+
   const menuItems = [
     {
       id: "dashboard",
       label: "Tableau de Bord",
       icon: <LayoutDashboard size={20} />,
       href: "/",
-      show: user.role === "admin",
+      show: user.role === "admin" || hasPermission("dashboard"),
     },
     {
       id: "medecin",
       label: "Espace Médecin",
       icon: <Stethoscope size={20} />,
       href: "/medecin",
-      show: user.role === "admin",
+      show: user.role === "admin" || hasPermission("medecin"),
     },
     {
       id: "patients",
       label: "Patients",
       icon: <Users size={20} />,
       href: "/patients",
-      show: true,
+      show: user.role === "admin" || hasPermission("patients"),
     },
     {
       id: "medicaments",
       label: "Médicaments",
       icon: <Pill size={20} />,
       href: "/medicaments",
-      show: true,
+      show: user.role === "admin" || hasPermission("medicaments"),
     },
     {
       id: "analyses",
       label: "Analyses",
       icon: <FlaskConical size={20} />,
       href: "/analyses",
-      show: true,
+      show: user.role === "admin" || hasPermission("analyses"),
     },
     {
       id: "statistics",
       label: "Statistiques",
       icon: <BarChart3 size={20} />,
       href: "/medecin/statistics",
-      show: true,
+      show: user.role === "admin" || hasPermission("statistics"),
     },
     {
       id: "settings",
       label: "Paramètres",
       icon: <Settings size={20} />,
       href: "/settings",
-      show: true,
+      show: user.role === "admin" || hasPermission("settings"),
     },
   ]
 

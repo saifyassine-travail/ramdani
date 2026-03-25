@@ -52,6 +52,7 @@ class PatientController extends Controller
         'allergies' => 'nullable|string',
         'chronic_conditions' => 'nullable|string',
         'notes' => 'nullable|string',
+        'blood_type' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
     ]);
 
     // Normalize values for DB
@@ -85,6 +86,7 @@ class PatientController extends Controller
             'allergies' => 'nullable|string',
             'chronic_conditions' => 'nullable|string',
             'notes' => 'nullable|string',
+            'blood_type' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
         ]);
 
         $patient->update($validated);
@@ -145,7 +147,8 @@ class PatientController extends Controller
                 'phone_num as phone',
                 'email',
                 'gender',
-                'archived'
+                'archived',
+                'blood_type'
             ])
             ->orderBy('first_name')
             ->limit(15)
@@ -168,6 +171,7 @@ class PatientController extends Controller
                         : null,
                     'archived' => $patient->archived,
                     'birth_day' => $patient->birth_day,
+                    'blood_type' => $patient->blood_type,
                 ];
             });
 

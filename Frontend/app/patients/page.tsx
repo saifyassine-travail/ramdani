@@ -13,22 +13,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { usePatients } from "@/hooks/use-patients"
-import {
-  Search,
-  Archive,
-  Eye,
-  Edit,
-  Undo,
-  Plus,
-  User,
-  Phone,
-  FileText,
-  AlertCircle,
-  Loader2,
-  UserCheck,
-  Mail,
-  Heart,
-} from "lucide-react"
+import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart } from "lucide-react"
+import { formatGlobalDate } from "@/lib/format-date"
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -118,7 +104,7 @@ export default function PatientsPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("fr-FR")
+    return formatGlobalDate(dateString)
   }
 
   const handleToggleArchiveStatus = async (patientId: number) => {
@@ -408,6 +394,10 @@ export default function PatientsPage() {
                                       Informations médicales
                                     </h3>
                                     <div className="space-y-2 text-sm">
+                                      <p>
+                                        <span className="font-medium">Groupe Sanguin:</span>{" "}
+                                        <span className="font-bold text-red-600">{patient.blood_type || "N/A"}</span>
+                                      </p>
                                       <p className="flex items-start gap-1">
                                         <AlertCircle className="h-3 w-3 mt-0.5 text-red-500" />
                                         <span className="font-medium">Allergies:</span> {patient.allergies || "Aucune"}
@@ -549,7 +539,9 @@ function PatientForm({
     autre_mutuelle: initialData?.autre_mutuelle || "",
     allergies: initialData?.allergies || "",
     chronic_conditions: initialData?.chronic_conditions || "",
+
     notes: initialData?.notes || "",
+    blood_type: initialData?.blood_type || "",
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -740,6 +732,25 @@ function PatientForm({
               </Select>
             </div>
           )}
+        </div>
+
+        <div>
+          <Label htmlFor="blood_type">Groupe Sanguin</Label>
+          <Select value={formData.blood_type} onValueChange={(value) => handleChange("blood_type", value)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="A+">A+</SelectItem>
+              <SelectItem value="A-">A-</SelectItem>
+              <SelectItem value="B+">B+</SelectItem>
+              <SelectItem value="B-">B-</SelectItem>
+              <SelectItem value="AB+">AB+</SelectItem>
+              <SelectItem value="AB-">AB-</SelectItem>
+              <SelectItem value="O+">O+</SelectItem>
+              <SelectItem value="O-">O-</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="col-span-2">

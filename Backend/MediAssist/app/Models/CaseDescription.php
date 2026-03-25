@@ -21,7 +21,7 @@ class CaseDescription extends Model
         'tall',
         'spo2',
         'notes',
-        'notes',
+        'custom_measures_values',
         'ID_RV',
     ];
 

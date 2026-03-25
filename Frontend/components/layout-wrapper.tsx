@@ -24,6 +24,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const defaultUser = {
     name: user?.name || "Dr. Sarah Johnson",
     role: user?.role || "admin",
+    permissions: user?.permissions ? (typeof user.permissions === 'string' ? JSON.parse(user.permissions) : user.permissions) : [],
     avatar: "/images/default-medcin.jpg",
   }
 

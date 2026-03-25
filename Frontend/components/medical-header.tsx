@@ -15,7 +15,8 @@ import { apiClient } from "../lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
-import { useCalendar } from "@/hooks/use-calendar" // Import useCalendar hook
+import { useCalendar } from "@/hooks/use-calendar"
+import { formatGlobalDate } from "@/lib/format-date"
 
 const Calendar = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,7 +120,7 @@ const MedicalHeader = () => {
   const [patientFormData, setPatientFormData] = useState({
     first_name: "",
     last_name: "",
-    gender: "Male",
+    gender: "Female",
     birth_day: "",
     CIN: "",
     phone_num: "",
@@ -129,6 +130,7 @@ const MedicalHeader = () => {
     allergies: "",
     chronic_conditions: "",
     notes: "",
+    blood_type: "",
   })
 
   const [appointmentFormData, setAppointmentFormData] = useState({
@@ -187,7 +189,7 @@ const MedicalHeader = () => {
         setPatientFormData({
           first_name: "",
           last_name: "",
-          gender: "Male",
+          gender: "Female",
           birth_day: "",
           CIN: "",
           phone_num: "",
@@ -197,6 +199,7 @@ const MedicalHeader = () => {
           allergies: "",
           chronic_conditions: "",
           notes: "",
+          blood_type: "",
         })
       } else {
         const errorMessage = response.message || "Impossible d'ajouter le patient"
@@ -359,12 +362,7 @@ const MedicalHeader = () => {
   }
 
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString("fr-FR", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
+    return formatGlobalDate(date)
   }
 
   const renderCompactCalendar = () => {
@@ -531,8 +529,8 @@ const MedicalHeader = () => {
                             <SelectValue placeholder="Sélectionner" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="Male">Homme</SelectItem>
                             <SelectItem value="Female">Femme</SelectItem>
+                            <SelectItem value="Male">Homme</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -632,6 +630,29 @@ const MedicalHeader = () => {
                             </Select>
                           </div>
                         )}
+                      </div>
+                      <div className="col-span-2">
+                        <Label htmlFor="blood_type" className="text-gray-700">
+                          Groupe Sanguin
+                        </Label>
+                        <Select
+                          value={patientFormData.blood_type}
+                          onValueChange={(value) => setPatientFormData({ ...patientFormData, blood_type: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sélectionner" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="A+">A+</SelectItem>
+                            <SelectItem value="A-">A-</SelectItem>
+                            <SelectItem value="B+">B+</SelectItem>
+                            <SelectItem value="B-">B-</SelectItem>
+                            <SelectItem value="AB+">AB+</SelectItem>
+                            <SelectItem value="AB-">AB-</SelectItem>
+                            <SelectItem value="O+">O+</SelectItem>
+                            <SelectItem value="O-">O-</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                     <div>
@@ -880,7 +901,7 @@ const MedicalHeader = () => {
           </div>
         </div>
       </div>
-    </header>
+    </header >
   )
 }
 

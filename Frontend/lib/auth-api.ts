@@ -1,9 +1,11 @@
-const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.4:8000/api"
+const AUTH_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
 
 export interface User {
   id: number
   name: string
   email: string
+  role?: string
+  permissions?: string | string[]
   created_at?: string
   updated_at?: string
 }
@@ -16,6 +18,21 @@ export interface AuthResponse {
   errors?: Record<string, string[]>
 }
 
+const TOKEN_KEY = "auth_token"
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+function saveAuthToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+function clearAuthToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+}
+
 class AuthApiClient {
   private baseURL: string
 
@@ -23,27 +40,16 @@ class AuthApiClient {
     this.baseURL = baseURL
   }
 
-  async getCsrfToken(): Promise<void> {
-    try {
-      console.log("[v0] Fetching CSRF token from:", `${this.baseURL.replace("/api", "")}/sanctum/csrf-cookie`)
-      const response = await fetch(`${this.baseURL.replace("/api", "")}/sanctum/csrf-cookie`, {
-        method: "GET",
-        credentials: "include",
-      })
-      console.log("[v0] CSRF token response status:", response.status)
-    } catch (error) {
-      console.error("[v0] Failed to get CSRF token:", error)
-    }
+  private authHeaders(): Record<string, string> {
+    const token = getAuthToken()
+    return token ? { Authorization: `Bearer ${token}` } : {}
   }
 
   async register(name: string, email: string, password: string, passwordConfirmation: string): Promise<AuthResponse> {
     try {
-      await this.getCsrfToken()
-
       console.log("[v0] Attempting registration with email:", email)
       const response = await fetch(`${this.baseURL}/register`, {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
@@ -69,6 +75,10 @@ class AuthApiClient {
         }
       }
 
+      if (data.token) {
+        saveAuthToken(data.token)
+      }
+
       return {
         success: true,
         user: data.user,
@@ -85,31 +95,19 @@ class AuthApiClient {
 
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      await this.getCsrfToken()
-
       console.log("[v0] Attempting login with email:", email)
       const response = await fetch(`${this.baseURL}/login`, {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+        body: JSON.stringify({ email, password }),
       })
 
       console.log("[v0] Login response status:", response.status)
-      console.log("[v0] Login response headers:", {
-        contentType: response.headers.get("content-type"),
-        contentLength: response.headers.get("content-length"),
-      })
-
       const data = await response.json()
       console.log("[v0] Login response data:", data)
-      console.log("[v0] Full response object:", JSON.stringify(data, null, 2))
 
       if (!response.ok) {
         console.error("[v0] Login failed with status:", response.status, "Error:", data)
@@ -118,6 +116,10 @@ class AuthApiClient {
           message: data.message || "Login failed",
           error: data.error,
         }
+      }
+
+      if (data.token) {
+        saveAuthToken(data.token)
       }
 
       return {
@@ -138,27 +140,23 @@ class AuthApiClient {
     try {
       const response = await fetch(`${this.baseURL}/logout`, {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...this.authHeaders(),
         },
       })
 
-      const data = await response.json()
+      clearAuthToken()
 
-      if (!response.ok) {
-        return {
-          success: false,
-          message: data.message || "Logout failed",
-        }
-      }
+      const data = await response.json()
 
       return {
         success: true,
         message: data.message,
       }
     } catch (error) {
+      clearAuthToken()
       return {
         success: false,
         message: "Network error occurred",
@@ -169,15 +167,21 @@ class AuthApiClient {
 
   async getUser(): Promise<AuthResponse> {
     try {
+      const token = getAuthToken()
+      if (!token) {
+        return { success: false, message: "Not authenticated" }
+      }
+
       const response = await fetch(`${this.baseURL}/user`, {
         method: "GET",
-        credentials: "include",
         headers: {
           Accept: "application/json",
+          Authorization: `Bearer ${token}`,
         },
       })
 
       if (!response.ok) {
+        clearAuthToken()
         return {
           success: false,
           message: "Not authenticated",

@@ -27,6 +27,7 @@ class Patient extends Model
         'notes',
         'archived',
         'DDR',
+        'blood_type',
     ];
 
     public function Appointment(): \Illuminate\Database\Eloquent\Relations\HasMany

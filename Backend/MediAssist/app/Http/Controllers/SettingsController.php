@@ -14,7 +14,10 @@ class SettingsController extends Controller
     public function getUserSettings(Request $request)
     {
         try {
-            $userId = $request->user()->id ?? 1; // Default to user 1 for now
+            $userId = auth()->id();
+            if (!$userId) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
             
             $settings = DB::table('user_settings')
                 ->where('user_id', $userId)
@@ -32,6 +35,7 @@ class SettingsController extends Controller
                     'time_format' => '24h',
                     'email_notifications' => true,
                     'sms_reminders' => true,
+                    'custom_measures' => '[]',
                 ];
             }
 
@@ -51,10 +55,45 @@ class SettingsController extends Controller
     public function updateUserSettings(Request $request)
     {
         try {
-            $userId = $request->user()->id ?? 1;
-            
-            $data = $request->all();
+            $user = auth()->user();
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
+            $userId = $user->id;
+
+            // Whitelist only known DB columns to avoid unknown field errors
+            $allowed = [
+                'appointment_duration', 'working_hours_start', 'working_hours_end',
+                'working_days', 'max_appointments_per_day', 'allow_same_day_appointments',
+                'email_notifications', 'sms_reminders', 'reminder_timing', 'daily_summary_email',
+                'language', 'date_format', 'time_format', 'dashboard_layout', 'default_view',
+                'practice_name', 'specialization', 'license_number', 'address', 'phone',
+                'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures'
+            ];
+
+            $data = [];
+            foreach ($allowed as $field) {
+                if ($request->has($field)) {
+                    $data[$field] = $request->input($field);
+                }
+            }
             $data['user_id'] = $userId;
+
+            // Handle arrays to JSON for DB query builder
+            if (isset($data['custom_measures']) && is_array($data['custom_measures'])) {
+                $data['custom_measures'] = json_encode($data['custom_measures']);
+            }
+            if (isset($data['working_days']) && is_array($data['working_days'])) {
+                $data['working_days'] = json_encode($data['working_days']);
+            }
+            // Cast booleans to integers for PostgreSQL compatibility
+            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email'] as $boolField) {
+                if (isset($data[$boolField])) {
+                    $data[$boolField] = $data[$boolField] ? true : false;
+                }
+            }
+
+            \Log::info('Updating User Settings for user ' . $userId, $data);
 
             DB::table('user_settings')->updateOrInsert(
                 ['user_id' => $userId],
@@ -66,6 +105,7 @@ class SettingsController extends Controller
                 'message' => 'Paramètres mis à jour avec succès'
             ]);
         } catch (\Exception $e) {
+            \Log::error('Settings update error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -82,7 +122,7 @@ class SettingsController extends Controller
             //     return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
             // }
 
-            $users = User::select('id', 'name', 'email', 'role', 'created_at')
+            $users = User::select('id', 'name', 'email', 'role', 'permissions', 'created_at')
                 ->get();
 
             return response()->json([
