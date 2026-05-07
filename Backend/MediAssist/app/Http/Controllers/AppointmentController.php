@@ -74,10 +74,15 @@ class AppointmentController extends Controller
             }
             [$year, $month] = explode('-', $yearMonth);
 
+            $driver = config('database.default');
+            $dateExpr = $driver === 'pgsql'
+                ? "appointment_date::date::text"
+                : "DATE(appointment_date)";
+
             $appointments = Appointment::whereYear('appointment_date', $year)
                 ->whereMonth('appointment_date', $month)
-                ->selectRaw('DATE(appointment_date) as date, COUNT(*) as count')
-                ->groupBy('date')
+                ->selectRaw("{$dateExpr} as date, COUNT(*) as count")
+                ->groupBy('appointment_date')
                 ->pluck('count', 'date');
 
             return response()->json([

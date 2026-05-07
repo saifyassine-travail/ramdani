@@ -24,7 +24,7 @@ return new class extends Migration
     {
         Schema::table('patients', function (Blueprint $table) {
             // Revert 'mutuelle' back to enum
-            $table->enum('mutuelle', ['CNSS', 'CNOPS'])->nullable()->change();
+            $table->string('mutuelle')->nullable()->change();
         });
     }
 };

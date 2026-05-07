@@ -33,10 +33,15 @@ class StatisticsController extends Controller
                 $endDate = Carbon::now();
                 $startDate = Carbon::now()->subDays(29);
                 
+                $dbDriver = config('database.default');
+                $dailyDateExpr = $dbDriver === 'pgsql'
+                    ? "appointment_date::date::text"
+                    : "DATE(appointment_date)";
+
                 $dailyData = Appointment::whereBetween('appointment_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
-                    ->selectRaw('DATE(appointment_date) as date, COUNT(*) as count, SUM(payement) as revenue')
-                    ->groupBy('date')
-                    ->orderBy('date', 'ASC')
+                    ->selectRaw("{$dailyDateExpr} as date, COUNT(*) as count, SUM(payement) as revenue")
+                    ->groupBy('appointment_date')
+                    ->orderBy('appointment_date', 'ASC')
                     ->get()
                     ->keyBy('date');
 
