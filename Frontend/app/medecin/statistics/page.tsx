@@ -27,6 +27,7 @@ interface StatsData {
         total_appointments: number
         appointments_today: number
         appointments_month: number
+        total_unpaid?: number
     }
     demographics: Array<{
         name: string
@@ -53,7 +54,7 @@ export default function StatisticsPage() {
     const [selectedMonth, setSelectedMonth] = useState<string>((new Date().getMonth() + 1).toString())
     const [availableYears, setAvailableYears] = useState<number[]>([])
 
-    const [chartData, setChartData] = useState<Array<{ date: string; count: number; revenue: number }>>([])
+    const [chartData, setChartData] = useState<Array<{ date: string; count: number; revenue: number; credit: number }>>([])
     const [chartLoading, setChartLoading] = useState(false)
 
     useEffect(() => {
@@ -149,7 +150,7 @@ export default function StatisticsPage() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium text-gray-500">Total Patients</CardTitle>
@@ -178,6 +179,16 @@ export default function StatisticsPage() {
                     <CardContent>
                         <div className="text-2xl font-bold text-gray-800">{data.kpi.appointments_month}</div>
                         <p className="text-xs text-gray-500 mt-1">Rendez-vous ce mois-ci</p>
+                    </CardContent>
+                </Card>
+                <Card className="border-l-4 border-l-red-500 shadow-sm hover:shadow-md transition-shadow">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium text-gray-500">Total Unpayé</CardTitle>
+                        <DollarSign className="h-4 w-4 text-red-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-red-600">{data.kpi.total_unpaid || 0} DH</div>
+                        <p className="text-xs text-gray-500 mt-1">Total des crédits patients</p>
                     </CardContent>
                 </Card>
                 <Card className="border-l-4 border-l-orange-500 shadow-sm hover:shadow-md transition-shadow bg-gradient-to-br from-white to-orange-50">
@@ -247,7 +258,7 @@ export default function StatisticsPage() {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Trends Chart */}
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -292,12 +303,12 @@ export default function StatisticsPage() {
                         <div>
                             <CardTitle className="flex items-center gap-2">
                                 <DollarSign className="w-5 h-5 text-green-600" />
-                                Revenus Estimés
+                                Coût Total
                             </CardTitle>
                             <CardDescription>
                                 {viewMode === 'year'
-                                    ? `Revenu mensuel pour ${selectedYear}`
-                                    : `Revenu journalier pour ${monthNames[parseInt(selectedMonth) - 1]} ${selectedYear}`
+                                    ? `Coût mensuel pour ${selectedYear}`
+                                    : `Coût journalier pour ${monthNames[parseInt(selectedMonth) - 1]} ${selectedYear}`
                                 }
                             </CardDescription>
                         </div>
@@ -320,10 +331,54 @@ export default function StatisticsPage() {
                                     <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={12} />
                                     <YAxis tickLine={false} axisLine={false} fontSize={12} />
                                     <Tooltip
-                                        formatter={(value) => [`${value} DH`, "Revenu"]}
+                                        formatter={(value) => [`${value} DH`, "Coût"]}
                                         contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
                                     />
                                     <Area type="monotone" dataKey="revenue" stroke="#10b981" fillOpacity={1} fill="url(#colorRevenue)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Credit Chart */}
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <DollarSign className="w-5 h-5 text-amber-500" />
+                                Crédits (Reste)
+                            </CardTitle>
+                            <CardDescription>
+                                {viewMode === 'year'
+                                    ? `Crédit mensuel pour ${selectedYear}`
+                                    : `Crédit journalier pour ${monthNames[parseInt(selectedMonth) - 1]} ${selectedYear}`
+                                }
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="h-[300px]">
+                        {chartLoading ? (
+                            <div className="h-full flex items-center justify-center">
+                                <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData}>
+                                    <defs>
+                                        <linearGradient id="colorCredit" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.8} />
+                                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                    <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={12} />
+                                    <YAxis tickLine={false} axisLine={false} fontSize={12} />
+                                    <Tooltip
+                                        formatter={(value) => [`${value} DH`, "Crédits"]}
+                                        contentStyle={{ borderRadius: "8px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                                    />
+                                    <Area type="monotone" dataKey="credit" stroke="#f59e0b" fillOpacity={1} fill="url(#colorCredit)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         )}

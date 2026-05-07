@@ -1,0 +1,15 @@
+﻿ntainer/BoundMethod::{closure:Illuminate/Container/BoundMethod::call():35}()
+#8 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Container/BoundMethod.php(96): Illuminate/Container/Util::unwrapIfClosure(Object(Closure))
+#9 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Container/BoundMethod.php(35): Illuminate/Container/BoundMethod::callBoundMethod(Object(Illuminate/Foundation/Application), Array, Object(Closure))
+#10 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Container/Container.php(836): Illuminate/Container/BoundMethod::call(Object(Illuminate/Foundation/Application), Array, Array, NULL)
+#11 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Console/Command.php(211): Illuminate/Container/Container->call(Array)
+#12 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/symfony/console/Command/Command.php(318): Illuminate/Console/Command->execute(Object(Symfony/Component/Console/Input/ArgvInput), Object(Illuminate/Console/OutputStyle))
+#13 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Console/Command.php(180): Symfony/Component/Console/Command/Command->run(Object(Symfony/Component/Console/Input/ArgvInput), Object(Illuminate/Console/OutputStyle))
+#14 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/symfony/console/Application.php(1110): Illuminate/Console/Command->run(Object(Symfony/Component/Console/Input/ArgvInput), Object(Symfony/Component/Console/Output/ConsoleOutput))
+#15 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/symfony/console/Application.php(359): Symfony/Component/Console/Application->doRunCommand(Object(Laravel/Tinker/Console/TinkerCommand), Object(Symfony/Component/Console/Input/ArgvInput), Object(Symfony/Component/Console/Output/ConsoleOutput))
+#16 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/symfony/console/Application.php(194): Symfony/Component/Console/Application->doRun(Object(Symfony/Component/Console/Input/ArgvInput), Object(Symfony/Component/Console/Output/ConsoleOutput))
+#17 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Foundation/Console/Kernel.php(197): Symfony/Component/Console/Application->run(Object(Symfony/Component/Console/Input/ArgvInput), Object(Symfony/Component/Console/Output/ConsoleOutput))
+#18 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/vendor/laravel/framework/src/Illuminate/Foundation/Application.php(1235): Illuminate/Foundation/Console/Kernel->handle(Object(Symfony/Component/Console/Input/ArgvInput), Object(Symfony/Component/Console/Output/ConsoleOutput))
+#19 C:/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist/artisan(16): Illuminate/Foundation/Application->handleCommand(Object(Symfony/Component/Console/Input/ArgvInput))
+#20 {main}
+"} 

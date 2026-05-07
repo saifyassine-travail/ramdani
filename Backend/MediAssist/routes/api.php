@@ -25,6 +25,7 @@ Route::middleware('api')->group(function () {
         Route::put('/{id}/details', [AppointmentController::class, 'editAppointmentDetails']);
         Route::get('/{id}/last-info', [AppointmentController::class, 'getLastAppointmentInfo']);
         Route::post('/update-price', [AppointmentController::class, 'updatePrice']);
+        Route::post('/update-credit', [AppointmentController::class, 'updateCredit']);
         Route::get('/{id}/ordonnance', [AppointmentController::class, 'generateOrdonnance']);
         Route::get('/{id}/analysis-pdf', [AppointmentController::class, 'generateAnalysis']);
         Route::get('/{id}/edit-data', [AppointmentController::class, 'showEditData']);
@@ -121,6 +122,8 @@ Route::prefix('certificates')->group(function () {
 Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [App\Http\Controllers\SettingsController::class, 'getUserSettings']);
     Route::put('/', [App\Http\Controllers\SettingsController::class, 'updateUserSettings']);
+    Route::post('/upload-background', [App\Http\Controllers\SettingsController::class, 'uploadOrdonnanceBackground']);
+    Route::get('/ordonnance-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveOrdonnanceBackground']);
 });
 
 // USER MANAGEMENT (Admin only)

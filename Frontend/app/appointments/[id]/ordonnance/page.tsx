@@ -85,10 +85,34 @@ export default function AppointmentDetailsPage() {
   })
   const [medications, setMedications] = useState<MedicationForm[]>([])
   const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
+  const [ordonnanceConfig, setOrdonnanceConfig] = useState<any>(null)
+
+  // Fetch settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const response = await apiClient.getUserSettings()
+        if (response.success) {
+          const settingsData = response.data.data ? response.data.data : response.data;
+          setOrdonnanceConfig({
+            background: settingsData.ordonnance_background || null,
+            layout: typeof settingsData.ordonnance_layout === 'string'
+              ? JSON.parse(settingsData.ordonnance_layout)
+              : settingsData.ordonnance_layout || null
+          })
+        }
+      } catch (error) {
+        console.error("Error loading settings:", error)
+      }
+    }
+    loadSettings()
+  }, [])
 
   const handlePrintOrdonnance = () => {
     try {
-      // Create a new window for printing
+      const layout = ordonnanceConfig?.layout
+      const background = ordonnanceConfig?.background
+
       const printWindow = window.open("", "_blank")
       if (!printWindow) {
         toast({
@@ -98,57 +122,121 @@ export default function AppointmentDetailsPage() {
         return
       }
 
-      const ordonnanceHTML = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="UTF-8">
-            <title>Ordonnance</title>
-            <style>
-              * { margin: 0; padding: 0; box-sizing: border-box; }
-              body { font-family: Arial, sans-serif; padding: 40px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-              .print-container { max-width: 800px; width: 100%; text-align: center; }
-              .medication-list { display: flex; flex-direction: column; gap: 15px; align-items: center; justify-content: center; }
-              .medication-item { font-size: 18px; text-align: right; padding: 10px 20px; margin-left: 100px; }
-              @media print {
-                body { padding: 20px; }
-                .print-container { max-width: 100%; }
-              }
-            </style>
-          </head>
-          <body>
-            <div class="print-container">
-              <div class="medication-list">
-                ${
-                  medications.length > 0
-                    ? medications
-                        .map(
-                          (med, index) => `
-                  <div class="medication-item">• ${med.name || "Médicament"}</div>
-                `,
-                        )
-                        .join("")
-                    : '<div class="medication-item" style="color: #999;">Aucun médicament prescrit</div>'
-                }
-              </div>
-            </div>
-          </body>
-        </html>
-      `
+      const patientName = appointment?.patient?.name || "Patient"
+      const dateStr = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
+
+      // Helper to generate medication text
+      const getMedicationText = (med: MedicationForm) => {
+        const times = med.pivot?.frequence ? med.pivot.frequence.split(',').filter(t => t.trim()) : []
+        const mealTiming = med.pivot?.dosage || ""
+        const duration = med.pivot?.duree || ""
+        let p = med.name || "Médicament"
+        if (times.length > 0) p += ` – 1 comprimé ${times.map(t => t.toLowerCase()).join(', ')}`
+        if (mealTiming) p += `, ${mealTiming.toLowerCase()}`
+        if (duration) p += `, pendant ${duration}`
+        return p
+      }
+
+      let ordonnanceHTML = ""
+
+      if (layout) {
+        // CUSTOM LAYOUT LOGIC with Percentage coordinates and Paper Size
+        const elements = layout as any
+        const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
+
+        ordonnanceHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ordonnance - ${patientName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { 
+      size: ${paper.width}mm ${paper.height}mm; 
+      margin: 0; 
+    }
+    body { 
+      font-family: Arial, sans-serif; 
+      width: ${paper.width}mm; 
+      height: ${paper.height}mm;
+      overflow: hidden;
+    }
+    .page { 
+      position: relative; 
+      width: 100%; 
+      height: 100%;
+      background-image: ${background ? `url('${background}')` : 'none'};
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .element { position: absolute; transform: translate(0, -50%); }
+    .meds-container { display: flex; flex-direction: column; transform: none; }
+    
+    @media screen {
+      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
+      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${elements.patient_name?.fontSize}px; white-space: nowrap;">
+      ${patientName}
+    </div>
+    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${elements.date?.fontSize}px; white-space: nowrap;">
+      ${dateStr}
+    </div>
+    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${elements.medications?.fontSize}%; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
+       ${medications.map(m => `<div style="margin-bottom: 8px;">• ${getMedicationText(m)}</div>`).join('')}
+    </div>
+  </div>
+  <script>
+    window.onload = () => {
+      setTimeout(() => {
+        window.print();
+        // window.close();
+      }, 500);
+    };
+  </script>
+</body>
+</html>`
+      } else {
+        // FALLBACK TO OLD LOGIC
+        ordonnanceHTML = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Ordonnance</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; padding: 40px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+      .print-container { max-width: 800px; width: 100%; text-align: center; }
+      .medication-list { display: flex; flex-direction: column; gap: 15px; align-items: center; justify-content: center; }
+      .medication-item { font-size: 18px; text-align: right; padding: 10px 20px; margin-left: 100px; }
+      @media print {
+        body { padding: 20px; }
+        .print-container { max-width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-container">
+      <div class="medication-list">
+        ${medications.length > 0 ? medications.map(m => `<div class="medication-item">• ${m.name || "Médicament"}</div>`).join("") : '<div class="medication-item" style="color: #999;">Aucun médicament prescrit</div>'}
+      </div>
+    </div>
+  </body>
+</html>`
+      }
 
       printWindow.document.write(ordonnanceHTML)
       printWindow.document.close()
-
-      // Wait for content to load then print
-      setTimeout(() => {
-        printWindow.print()
-      }, 250)
     } catch (error) {
       console.error("[v0] Error printing ordonnance:", error)
-      toast({
-        title: "Erreur",
-        description: "Erreur lors de l'impression de l'ordonnance",
-      })
+      toast({ title: "Erreur", description: "Erreur lors de l'impression de l'ordonnance" })
     }
   }
 
@@ -185,17 +273,16 @@ export default function AppointmentDetailsPage() {
           <body>
             <div class="print-container">
               <div class="analysis-list">
-                ${
-                  analyses.length > 0
-                    ? analyses
-                        .map(
-                          (analysis) => `
+                ${analyses.length > 0
+          ? analyses
+            .map(
+              (analysis) => `
                   <div class="analysis-item">• ${analysis.name || "Analyse"}</div>
                 `,
-                        )
-                        .join("")
-                    : '<div class="analysis-item" style="color: #999;">Aucune analyse demandée</div>'
-                }
+            )
+            .join("")
+          : '<div class="analysis-item" style="color: #999;">Aucune analyse demandée</div>'
+        }
               </div>
             </div>
           </body>
@@ -593,8 +680,8 @@ export default function AppointmentDetailsPage() {
           </CardHeader>
           <CardContent className="p-6">
             {!lastAppointment.case_description &&
-            (!lastAppointment.medicaments || lastAppointment.medicaments.length === 0) &&
-            (!lastAppointment.analyses || lastAppointment.analyses.length === 0) ? (
+              (!lastAppointment.medicaments || lastAppointment.medicaments.length === 0) &&
+              (!lastAppointment.analyses || lastAppointment.analyses.length === 0) ? (
               <div className="text-center py-8 text-gray-500">
                 <p className="text-sm">Aucune donnée disponible pour le rendez-vous précédent</p>
               </div>

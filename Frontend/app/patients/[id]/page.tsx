@@ -71,6 +71,7 @@ export default function PatientDetailsPage() {
   const [isAvatarZoomed, setIsAvatarZoomed] = useState(false)
   const [savingAppointmentId, setSavingAppointmentId] = useState<number | null>(null)
   const [savingMutuelleId, setSavingMutuelleId] = useState<number | null>(null)
+  const [savingCreditId, setSavingCreditId] = useState<number | null>(null)
   const [loadingMedicaments, setLoadingMedicaments] = useState(false)
   const [documents, setDocuments] = useState<PatientDocument[]>([])
   const [isUploading, setIsUploading] = useState(false)
@@ -78,6 +79,7 @@ export default function PatientDetailsPage() {
 
 
   const priceDebounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
+  const creditDebounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
   useEffect(() => {
     const fetchPatientDetails = async () => {
@@ -372,9 +374,61 @@ export default function PatientDetailsPage() {
     [toast],
   )
 
+  const handleCreditChange = useCallback(
+    (appointmentId: number, newCredit: number) => {
+      // Update local state immediately for UI feedback
+      setPatient((prev: any) => ({
+        ...prev,
+        appointmentsHistory:
+          prev.appointmentsHistory?.map((app: any) =>
+            app.ID_RV === appointmentId ? { ...app, credit: newCredit } : app,
+          ) || [],
+      }))
+
+      // Clear existing timer for this appointment
+      if (creditDebounceTimers.current[appointmentId]) {
+        clearTimeout(creditDebounceTimers.current[appointmentId])
+      }
+
+      // Set new timer to save after 1 second of no typing
+      creditDebounceTimers.current[appointmentId] = setTimeout(async () => {
+        try {
+          setSavingCreditId(appointmentId)
+          const response = await apiClient.updateCredit(appointmentId, newCredit)
+
+          if (response.success) {
+            toast({
+              title: "Enregistré",
+              description: "Le reste (crédit) a été mis à jour avec succès",
+              variant: "default",
+            })
+          } else {
+            toast({
+              title: "Erreur",
+              description: "Impossible de sauvegarder le crédit",
+              variant: "destructive",
+            })
+          }
+        } catch (err) {
+          console.error("[v0] Error updating credit:", err)
+          toast({
+            title: "Erreur",
+            description: "Une erreur s'est produite lors de la sauvegarde du crédit",
+            variant: "destructive",
+          })
+        } finally {
+          setSavingCreditId(null)
+          delete creditDebounceTimers.current[appointmentId]
+        }
+      }, 1000) // Wait 1 second after user stops typing
+    },
+    [toast],
+  )
+
   useEffect(() => {
     return () => {
       Object.values(priceDebounceTimers.current).forEach(clearTimeout)
+      Object.values(creditDebounceTimers.current).forEach(clearTimeout)
     }
   }, [])
 
@@ -985,7 +1039,7 @@ export default function PatientDetailsPage() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Allergies</p>
-                    <p className="text-sm font-medium text-gray-800">
+                    <div className="text-sm font-medium text-gray-800">
                       {patient.allergies ? (
                         <Badge variant="destructive" className="bg-red-100 text-red-800">
                           <AlertCircle className="h-3 w-3 mr-1" />
@@ -994,31 +1048,31 @@ export default function PatientDetailsPage() {
                       ) : (
                         "Aucune"
                       )}
-                    </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Maladies chroniques</p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {patient.chronic_conditions ? (
-                        <Badge variant="destructive" className="bg-red-100 text-red-800">
-                          <Heart className="h-3 w-3 mr-1" />
-                          {patient.chronic_conditions}
-                        </Badge>
-                      ) : (
-                        "Aucune"
-                      )}
-                    </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Maladies chroniques</p>
+                  <div className="text-sm font-medium text-gray-800">
+                    {patient.chronic_conditions ? (
+                      <Badge variant="destructive" className="bg-red-100 text-red-800">
+                        <Heart className="h-3 w-3 mr-1" />
+                        {patient.chronic_conditions}
+                      </Badge>
+                    ) : (
+                      "Aucune"
+                    )}
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Groupe Sanguin</p>
-                    <p className="text-sm font-medium text-gray-800 flex items-center mt-1">
-                      <span className="font-bold text-red-600">{patient.blood_type || "N/A"}</span>
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</p>
-                    <p className="text-sm font-medium text-gray-800">{patient.notes || "Aucune note"}</p>
-                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Groupe Sanguin</p>
+                  <p className="text-sm font-medium text-gray-800 flex items-center mt-1">
+                    <span className="font-bold text-red-600">{patient.blood_type || "N/A"}</span>
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</p>
+                  <p className="text-sm font-medium text-gray-800">{patient.notes || "Aucune note"}</p>
                 </div>
               </div>
             </CardContent>
@@ -1124,6 +1178,9 @@ export default function PatientDetailsPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Mutuelle
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reste
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1174,6 +1231,26 @@ export default function PatientDetailsPage() {
                             />
                             <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
                           </label>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={appointment.credit !== undefined && appointment.credit !== null ? appointment.credit : ""}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                const newCredit = Number.parseFloat(e.target.value) || 0
+                                handleCreditChange(appointment.ID_RV, newCredit)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`w-24 text-right ${(appointment.credit || 0) > 0 ? "text-red-600 font-bold border-red-300 focus:ring-red-100" : ""}`}
+                              placeholder="0"
+                              disabled={savingCreditId === appointment.ID_RV}
+                            />
+                            <span className="text-sm text-gray-500">DH</span>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1446,28 +1523,30 @@ export default function PatientDetailsPage() {
       </Dialog>
 
       {/* Avatar Zoom Modal */}
-      {isAvatarZoomed && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 transition-opacity duration-300"
-          onClick={() => setIsAvatarZoomed(false)}
-        >
-          <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-white shadow-2xl">
-            <AvatarImage
-              src={
-                patient.gender === "Female"
-                  ? "/placeholder.svg?height=192&width=192&query=female-avatar"
-                  : "/placeholder.svg?height=192&width=192&query=male-avatar"
-              }
-            />
-            <AvatarFallback
-              className={patient.gender === "Female" ? "bg-pink-100 text-pink-600" : "bg-blue-100 text-blue-600"}
-            >
-              <User className="h-24 w-24" />
-            </AvatarFallback>
-          </Avatar>
-        </div>
-      )}
-    </div>
+      {
+        isAvatarZoomed && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 transition-opacity duration-300"
+            onClick={() => setIsAvatarZoomed(false)}
+          >
+            <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-white shadow-2xl">
+              <AvatarImage
+                src={
+                  patient.gender === "Female"
+                    ? "/placeholder.svg?height=192&width=192&query=female-avatar"
+                    : "/placeholder.svg?height=192&width=192&query=male-avatar"
+                }
+              />
+              <AvatarFallback
+                className={patient.gender === "Female" ? "bg-pink-100 text-pink-600" : "bg-blue-100 text-blue-600"}
+              >
+                <User className="h-24 w-24" />
+              </AvatarFallback>
+            </Avatar>
+          </div>
+        )
+      }
+    </div >
   )
 }
 

@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card"
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "../../../components/ui/resizable"
 import { Button } from "../../../components/ui/button"
 import { Input } from "../../../components/ui/input"
 import { Textarea } from "../../../components/ui/textarea"
@@ -131,7 +132,11 @@ export default function AppointmentDetailsPage() {
             show_temperature: settingsData.show_temperature ?? true,
             show_pressure: settingsData.show_pressure ?? true,
             show_glycemia: settingsData.show_glycemia ?? true,
-            custom_measures: parsedMeasures
+            custom_measures: parsedMeasures,
+            ordonnance_background: settingsData.ordonnance_background || null,
+            ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
+              ? JSON.parse(settingsData.ordonnance_layout)
+              : settingsData.ordonnance_layout || null
           })
         }
       } catch (error) {
@@ -236,8 +241,12 @@ export default function AppointmentDetailsPage() {
     }
   }
 
-  const handlePrintOrdonnance = useCallback(() => {
+  const handlePrintOrdonnance = () => {
     try {
+      const layout = (caseConfig as any).ordonnance_layout
+      const background = (caseConfig as any).ordonnance_background
+
+      // Create a print window
       const printWindow = window.open("", "_blank")
       if (!printWindow) {
         toast({
@@ -247,76 +256,109 @@ export default function AppointmentDetailsPage() {
         return
       }
 
-      const medicationsPerPage = 8
-      const page1Medications = medications.slice(0, medicationsPerPage)
-      const page2Medications = medications.slice(medicationsPerPage)
-      const hasMultiplePages = medications.length > medicationsPerPage
+      const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
+        ? `${appointment.patient.last_name} ${appointment.patient.first_name}`
+        : appointment?.patient?.name || "Patient"
 
-      const generateMedicationList = (meds: MedicationForm[]) => {
-        return meds.length > 0
-          ? meds
-            .map((med) => {
-              // Parse the data
-              const times = med.pivot?.frequence ? med.pivot.frequence.split(',').filter(t => t.trim()) : []
-              const mealTiming = med.pivot?.dosage || ""
-              const duration = med.pivot?.duree || ""
+      const dateStr = new Date().toLocaleDateString("fr-FR", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      })
 
-              // Build readable prescription
-              let prescription = med.name || "Médicament"
-
-              // Add times (matin, soir, nuit)
-              if (times.length > 0) {
-                const timeText = times.map(t => t.toLowerCase()).join(', ')
-                prescription += ` – 1 comprimé ${timeText}`
-              }
-
-              // Add meal timing
-              if (mealTiming) {
-                prescription += `, ${mealTiming.toLowerCase()}`
-              }
-
-              // Add duration
-              if (duration) {
-                prescription += `, pendant ${duration}`
-              }
-
-              return `
-                  <div class="medication-item">• ${prescription}</div>
-                `
-            })
-            .join("")
-          : '<div class="medication-item" style="color: #999;">Aucun médicament prescrit</div>'
+      // Helper to generate medication text
+      const getMedicationText = (med: MedicationForm) => {
+        const times = med.pivot?.frequence ? med.pivot.frequence.split(',').filter(t => t.trim()) : []
+        const mealTiming = med.pivot?.dosage || ""
+        const duration = med.pivot?.duree || ""
+        let p = med.name || "Médicament"
+        if (times.length > 0) p += ` – 1 comprimé ${times.map(t => t.toLowerCase()).join(', ')}`
+        if (mealTiming) p += `, ${mealTiming.toLowerCase()}`
+        if (duration) p += `, pendant ${duration}`
+        return p
       }
 
-      const ordonnanceHTML = `
+      let ordonnanceHTML = ""
+
+      if (layout) {
+        // CUSTOM LAYOUT LOGIC with Percentage coordinates and Paper Size
+        const elements = layout as any
+        const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
+
+        ordonnanceHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ordonnance - ${patientName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { 
+      size: ${paper.width}mm ${paper.height}mm; 
+      margin: 0; 
+    }
+    body { 
+      font-family: Arial, sans-serif; 
+      width: ${paper.width}mm; 
+      height: ${paper.height}mm;
+      overflow: hidden;
+    }
+    .page { 
+      position: relative; 
+      width: 100%; 
+      height: 100%;
+      background-image: ${background ? `url('${background}')` : 'none'};
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .element { position: absolute; transform: translate(0, -50%); }
+    .meds-container { display: flex; flex-direction: column; transform: none; }
+    
+    @media screen {
+      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
+      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${patientName}
+    </div>
+    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${dateStr}
+    </div>
+    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
+       ${medications.map(m => `<div style="margin-bottom: 8px;">• ${getMedicationText(m)}</div>`).join('')}
+    </div>
+  </div>
+  <script>
+    window.onload = () => {
+      setTimeout(() => {
+        window.print();
+        // window.close(); // Optional: close window after printing
+      }, 500);
+    };
+  </script>
+</body>
+</html>`
+      } else {
+        // FALLBACK TO OLD LOGIC (Modern List)
+        ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>Ordonnance</title>
+    <title>Ordonnance - ${patientName}</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { 
-        font-family: Arial, sans-serif; 
-        font-size: 7px;
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        min-height: 100vh; 
-      }
-      .print-container { max-width: 800px; width: 100%; }
+      body { font-family: Arial, sans-serif; padding: 2cm; }
+      .header { text-align: right; margin-bottom: 2cm; }
+      .patient-info { margin-bottom: 1cm; font-size: 1.2rem; }
+      .meds-title { font-weight: bold; text-decoration: underline; margin-bottom: 10px; }
       .medication-list { display: flex; flex-direction: column; gap: 15px; }
-      .medication-item { font-size: 12px; text-align: left; padding: 5px 10px; bold }
-      .page-break { page-break-after: always; }
-      .page { padding-top: 80px; }
-      @media print {
-        body { 
-          padding: 20px; 
-          display: flex; 
-          justify-content: center; 
-          align-items: center; 
-          min-height: 100vh;
-        }
+        body { padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .print-container { max-width: 100%; }
         .page-break { page-break-after: always; }
         .page { padding-top: 80px; }
@@ -326,40 +368,23 @@ export default function AppointmentDetailsPage() {
   <body>
     <div class="print-container">
       <div class="page">
-        <div class="medication-list">
-          ${generateMedicationList(page1Medications)}
-        </div>
+        <div class="medication-list">${generateMedicationList(page1Medications)}</div>
       </div>
-      ${hasMultiplePages
-          ? `
-        <div class="page-break"></div>
-        <div class="page">
-          <div class="medication-list">
-            ${generateMedicationList(page2Medications)}
-          </div>
-        </div>
-      `
-          : ""
-        }
+      ${hasMultiplePages ? `<div class="page-break"></div><div class="page"><div class="medication-list">${generateMedicationList(page2Medications)}</div></div>` : ""}
     </div>
   </body>
-</html>
-      `
+</html>`
+      }
 
       printWindow.document.write(ordonnanceHTML)
       printWindow.document.close()
 
-      setTimeout(() => {
-        printWindow.print()
-      }, 250)
+      setTimeout(() => { printWindow.print() }, 250)
     } catch (error) {
       console.error("[v0] Error printing ordonnance:", error)
-      toast({
-        title: "Erreur",
-        description: "Erreur lors de l'impression de l'ordonnance",
-      })
+      toast({ title: "Erreur", description: "Erreur lors de l'impression de l'ordonnance" })
     }
-  }, [medications, toast])
+  }
 
   const filteredMedicaments = useMemo(() => {
     // Deduplicate availableMedicaments by ID_Medicament
@@ -379,80 +404,109 @@ export default function AppointmentDetailsPage() {
     try {
       const printWindow = window.open("", "_blank")
       if (!printWindow) {
-        toast({
-          title: "Erreur",
-          description: "Impossible d'ouvrir la fenêtre d'impression",
-        })
+        toast({ title: "Erreur", description: "Impossible d'ouvrir la fenêtre d'impression" })
         return
       }
 
-      const analysesHTML = `
+      const layout = (caseConfig as any).ordonnance_layout
+      const background = (caseConfig as any).ordonnance_background
+
+      const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
+        ? `${appointment.patient.last_name} ${appointment.patient.first_name}`
+        : appointment?.patient?.name || "Patient"
+
+      const dateStr = new Date().toLocaleDateString("fr-FR", {
+        day: "numeric", month: "long", year: "numeric"
+      })
+
+      let analysesHTML = ""
+
+      if (layout) {
+        const elements = layout as any
+        const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
+
+        analysesHTML = `
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8">
-    <title>Demandes d'Analyses</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { 
-        font-family: Arial, sans-serif; 
-        padding: 40px; 
-        font-size: 7px;
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        min-height: 100vh; 
-        padding-top: px;
-      }
-      .print-container { max-width: 800px; width: 100%; }
-      .analysis-list { display: flex; flex-direction: column; gap: 15px; }
-      .analysis-item { font-size: 12px; text-align: left; padding: 5px 10px; font-weight: bold; }
-      @media print {
-        body { 
-          padding: 20px; 
-          display: flex; 
-          justify-content: center; 
-          align-items: center; 
-          min-height: 100vh;
-          padding-top: 80px;
-        }
-        .print-container { max-width: 100%; }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="print-container">
-      <div class="analysis-list">
-        ${analyses.length > 0
-          ? analyses
-            .map(
-              (analysis) => `
-                  <div class="analysis-item">• ${analysis.name || "Analyse"}</div>
-                `,
-            )
-            .join("")
-          : '<div class="analysis-item" style="color: #999;">Aucune analyse demandée</div>'
-        }
-      </div>
+<head>
+  <meta charset="UTF-8">
+  <title>Demandes d'Analyses - ${patientName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page { size: ${paper.width}mm ${paper.height}mm; margin: 0; }
+    body { font-family: Arial, sans-serif; width: ${paper.width}mm; height: ${paper.height}mm; overflow: hidden; }
+    .page {
+      position: relative; width: 100%; height: 100%;
+      background-image: ${background ? `url('${background}')` : 'none'};
+      background-size: cover; background-repeat: no-repeat; background-position: center;
+    }
+    .element { position: absolute; transform: translate(0, -50%); }
+    .list-container { display: flex; flex-direction: column; transform: none; }
+    @media screen {
+      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
+      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${patientName}
     </div>
-  </body>
-</html>
-`
+    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${dateStr}
+    </div>
+    <div class="element list-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.8; width: ${100 - (elements.medications?.x || 0) - 5}%">
+      ${analyses.length > 0
+          ? analyses.map(a => `<div style="margin-bottom: 6px;">• ${a.name || "Analyse"}</div>`).join('')
+          : '<div style="color:#999;">Aucune analyse demandée</div>'
+        }
+    </div>
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
+</body>
+</html>`
+      } else {
+        // Fallback: plain layout with pt units
+        analysesHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Demandes d'Analyses</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; padding: 40px; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 30px; }
+    .patient { font-size: 14pt; font-weight: bold; }
+    .date { font-size: 11pt; color: #555; }
+    .analysis-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+    .analysis-item { font-size: 12pt; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="patient">${patientName}</div>
+    <div class="date">${dateStr}</div>
+  </div>
+  <div class="analysis-list">
+    ${analyses.length > 0
+        ? analyses.map(a => `<div class="analysis-item">• ${a.name || "Analyse"}</div>`).join("")
+        : '<div style="color:#999;">Aucune analyse demandée</div>'
+      }
+  </div>
+  <script>window.onload = () => setTimeout(() => window.print(), 250);</script>
+</body>
+</html>`
+      }
 
       printWindow.document.write(analysesHTML)
       printWindow.document.close()
-
-      setTimeout(() => {
-        printWindow.print()
-      }, 250)
     } catch (error) {
       console.error("[v0] Error printing analyses:", error)
-      toast({
-        title: "Erreur",
-        description: "Erreur lors de l'impression des analyses",
-      })
+      toast({ title: "Erreur", description: "Erreur lors de l'impression des analyses" })
     }
-  }, [analyses, toast])
+  }, [analyses, caseConfig, appointment, toast])
 
   useEffect(() => {
     if (hasFetchedRef.current || isLoadingRef.current) {
@@ -557,21 +611,15 @@ export default function AppointmentDetailsPage() {
 
           if (lastResponse.success && lastResponse.data) {
             const rawData = lastResponse.data as any
+            // Support both direct data and nested Laravel data property
+            const actualData = rawData.data || rawData;
 
-            const date = rawData.date || rawData.appointment_date || rawData.appointment?.appointment_date || ""
-            const caseDesc = rawData.case_description || rawData.caseDescription || rawData.case?.case_description || ""
+            const date = actualData.date || actualData.appointment_date || actualData.appointment?.appointment_date || ""
+            const caseDesc = actualData.case_description || actualData.caseDescription || actualData.case?.case_description || ""
 
             let medicaments = []
-            if (Array.isArray(rawData.medicaments)) {
-              medicaments = rawData.medicaments.map((med: any) => ({
-                id: med.id || med.ID_Medicament,
-                name: med.name,
-                dosage: med.pivot?.dosage || med.dosage || "",
-                frequence: med.pivot?.frequence || med.frequence || "",
-                duree: med.pivot?.duree || med.duree || "",
-              }))
-            } else if (rawData.data?.medicaments && Array.isArray(rawData.data.medicaments)) {
-              medicaments = rawData.data.medicaments.map((med: any) => ({
+            if (Array.isArray(actualData.medicaments)) {
+              medicaments = actualData.medicaments.map((med: any) => ({
                 id: med.id || med.ID_Medicament,
                 name: med.name,
                 dosage: med.pivot?.dosage || med.dosage || "",
@@ -581,18 +629,19 @@ export default function AppointmentDetailsPage() {
             }
 
             let analyses = []
-            if (Array.isArray(rawData.analyses)) {
-              analyses = rawData.analyses
-            } else if (rawData.data?.analyses && Array.isArray(rawData.data.analyses)) {
-              analyses = rawData.data.analyses
+            if (Array.isArray(actualData.analyses)) {
+              analyses = actualData.analyses.map((a: any) => ({
+                id: a.id || a.ID_Analyse,
+                name: a.name || a.type_analyse,
+              }))
             }
 
             let parsedCustomValues = null;
-            if (rawData.custom_measures_values) {
+            if (actualData.custom_measures_values) {
               try {
-                parsedCustomValues = typeof rawData.custom_measures_values === 'string'
-                  ? JSON.parse(rawData.custom_measures_values)
-                  : rawData.custom_measures_values;
+                parsedCustomValues = typeof actualData.custom_measures_values === 'string'
+                  ? JSON.parse(actualData.custom_measures_values)
+                  : actualData.custom_measures_values;
               } catch (e) {
                 console.error("Failed to parse previous custom_measures_values:", e);
               }
@@ -603,11 +652,11 @@ export default function AppointmentDetailsPage() {
               case_description: caseDesc,
               medicaments,
               analyses,
-              weight: rawData.weight,
-              tall: rawData.tall,
-              temperature: rawData.temperature,
-              pulse: rawData.pulse,
-              blood_pressure: rawData.blood_pressure,
+              weight: actualData.weight,
+              tall: actualData.tall,
+              temperature: actualData.temperature,
+              pulse: actualData.pulse,
+              blood_pressure: actualData.blood_pressure,
               custom_measures_values: parsedCustomValues,
             })
           }
@@ -694,6 +743,16 @@ export default function AppointmentDetailsPage() {
     }
     setAnalyses((prev) => [...prev, newAnalysis])
   }, [])
+
+  const copyCaseDescriptionFromLast = useCallback(() => {
+    if (lastAppointment?.case_description) {
+      setCaseDescription(lastAppointment.case_description)
+      toast({
+        title: "Copié",
+        description: "La description du cas a été copiée du rendez-vous précédent.",
+      })
+    }
+  }, [lastAppointment, toast])
 
   const removeAnalysis = useCallback((index: number) => {
     setAnalyses((prev) => prev.filter((_, i) => i !== index))
@@ -1006,687 +1065,733 @@ export default function AppointmentDetailsPage() {
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-          {/* LEFT COLUMN: Description du Cas - 3 columns */}
-          <div className="xl:col-span-3 space-y-6">
-            <Card>
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg text-blue-700 flex items-center">
-                    <FileText className="w-5 h-5 mr-3" />
-                    Description du Cas
-                  </CardTitle>
-                  <Badge variant="outline" className="text-blue-600 border-blue-200">
-                    OBLIGATOIRE
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4 space-y-4">
-                <Textarea
-                  value={caseDescription}
-                  onChange={(e) => setCaseDescription(e.target.value)}
-                  placeholder="Décrivez les plaintes et symptômes du patient..."
-                  className="min-h-[120px] resize-y text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
-                  rows={4}
-                />
+        <ResizablePanelGroup direction="horizontal" className="hidden xl:flex items-stretch min-h-[800px] mb-6">
+          {/* LEFT PANEL */}
+          <ResizablePanel defaultSize={25} minSize={20}>
+            <div className="h-full overflow-y-auto space-y-6 pr-2">
+              <Card>
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg text-blue-700 flex items-center">
+                      <FileText className="w-5 h-5 mr-3" />
+                      Description du Cas
+                    </CardTitle>
+                    <Badge variant="outline" className="text-blue-600 border-blue-200">
+                      OBLIGATOIRE
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4 space-y-4">
+                  <Textarea
+                    value={caseDescription}
+                    onChange={(e) => setCaseDescription(e.target.value)}
+                    placeholder="Décrivez les plaintes et symptômes du patient..."
+                    className="min-h-[120px] resize-y text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
+                    rows={4}
+                  />
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {caseConfig.show_height && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Taille (cm)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={vitalSigns.tall}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, tall: e.target.value })}
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_weight && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Poids (kg)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={vitalSigns.weight}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, weight: e.target.value })}
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_temperature && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Température (°C)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={vitalSigns.temperature}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, temperature: e.target.value })}
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_pulse && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Pouls (bpm)</label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={vitalSigns.pulse}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, pulse: e.target.value })}
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                      />
-                    </div>
-                  )}
-                  {caseConfig.show_pressure && (
-                    <div>
-                      <label className="block text-xs font-medium text-blue-700 mb-1">Tension Artérielle</label>
-                      <Input
-                        type="text"
-                        value={vitalSigns.blood_pressure}
-                        onChange={(e) => setVitalSigns({ ...vitalSigns, blood_pressure: e.target.value })}
-                        placeholder="ex: 120/80"
-                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                      />
-                    </div>
-                  )}
-
-                  {caseConfig.custom_measures && caseConfig.custom_measures.map((measure, idx) => {
-                    const measureKey = measure.name;
-                    const val = vitalSigns.custom_measures_values[measureKey] || vitalSigns.custom_measures_values[measure.short] || "";
-                    const numVal = parseFloat(val);
-                    let colorClass = "border-gray-200 focus-visible:ring-blue-500 placeholder:text-blue-300";
-
-                    if (val && !isNaN(numVal)) {
-                      if (measure.min_value && numVal < parseFloat(measure.min_value)) {
-                        colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
-                      } else if (measure.max_value && numVal > parseFloat(measure.max_value)) {
-                        colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
-                      } else {
-                        colorClass = "border-green-500 bg-green-50 text-green-700";
-                      }
-                    }
-
-                    return (
-                      <div key={idx}>
-                        <label className="block text-xs font-medium text-blue-700 mb-1">
-                          {measure.name} {measure.short ? `(${measure.short})` : ''}
-                        </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {caseConfig.show_height && (
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Taille (cm)</label>
                         <Input
-                          type="text"
-                          value={val}
-                          onChange={(e) => setVitalSigns({
-                            ...vitalSigns,
-                            custom_measures_values: {
-                              ...vitalSigns.custom_measures_values,
-                              [measureKey]: e.target.value
-                            }
-                          })}
-                          placeholder={`Min: ${measure.min_value} | Max: ${measure.max_value}`}
-                          className={`h-8 border-2 ${colorClass} bg-blue-50/50`}
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={vitalSigns.tall}
+                          onChange={(e) => setVitalSigns({ ...vitalSigns, tall: e.target.value })}
+                          className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
                         />
                       </div>
-                    );
-                  })}
-                  {/* DDR Field */}
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-blue-700 mb-1">DDR (Date des Dernières Règles)</label>
-                    <Input
-                      type="date"
-                      value={ddr}
-                      onChange={(e) => setDdr(e.target.value)}
-                      className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
-                    />
-                    {ddr && (() => {
-                      const ddrDate = new Date(ddr)
-                      const today = new Date()
-                      today.setHours(0, 0, 0, 0) // Reset time to compare dates only
-                      ddrDate.setHours(0, 0, 0, 0)
+                    )}
+                    {caseConfig.show_weight && (
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Poids (kg)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={vitalSigns.weight}
+                          onChange={(e) => setVitalSigns({ ...vitalSigns, weight: e.target.value })}
+                          className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    {caseConfig.show_temperature && (
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Température (°C)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={vitalSigns.temperature}
+                          onChange={(e) => setVitalSigns({ ...vitalSigns, temperature: e.target.value })}
+                          className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    {caseConfig.show_pulse && (
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Pouls (bpm)</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={vitalSigns.pulse}
+                          onChange={(e) => setVitalSigns({ ...vitalSigns, pulse: e.target.value })}
+                          className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    {caseConfig.show_pressure && (
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Tension Artérielle</label>
+                        <Input
+                          type="text"
+                          value={vitalSigns.blood_pressure}
+                          onChange={(e) => setVitalSigns({ ...vitalSigns, blood_pressure: e.target.value })}
+                          placeholder="ex: 120/80"
+                          className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
 
-                      // Check if DDR is in the future
-                      if (ddrDate > today) {
-                        return (
-                          <div className="mt-2 p-3 rounded-lg border-2 bg-red-50 border-red-300">
-                            <div className="flex items-center gap-2">
-                              <span className="text-red-700 text-xs font-bold">⚠️ Erreur:</span>
-                              <span className="text-red-600 text-xs">La DDR ne peut pas être dans le futur</span>
-                            </div>
-                          </div>
-                        )
-                      }
+                    {caseConfig.custom_measures && caseConfig.custom_measures.map((measure, idx) => {
+                      const measureKey = measure.name;
+                      const val = vitalSigns.custom_measures_values[measureKey] || vitalSigns.custom_measures_values[measure.short] || "";
+                      const numVal = parseFloat(val);
+                      let colorClass = "border-gray-200 focus-visible:ring-blue-500 placeholder:text-blue-300";
 
-                      const diffMs = today.getTime() - ddrDate.getTime()
-                      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-                      const weeks = Math.floor(Math.abs(diffDays) / 7)
-                      const days = Math.abs(diffDays) % 7
-
-                      // Calculate DPA (Naegele's Rule: DDR + 1 year - 3 months + 7 days)
-                      const dpa = new Date(ddrDate)
-                      dpa.setFullYear(dpa.getFullYear() + 1)
-                      dpa.setMonth(dpa.getMonth() - 3)
-                      dpa.setDate(dpa.getDate() + 7)
-
-                      // Determine trimester and color
-                      let trimester = ""
-                      let bgColor = ""
-                      let textColor = ""
-                      let borderColor = ""
-
-                      if (weeks <= 12) {
-                        trimester = "1er Trimestre"
-                        bgColor = "bg-green-50"
-                        textColor = "text-green-700"
-                        borderColor = "border-green-300"
-                      } else if (weeks <= 27) {
-                        trimester = "2ème Trimestre"
-                        bgColor = "bg-yellow-50"
-                        textColor = "text-yellow-700"
-                        borderColor = "border-yellow-300"
-                      } else if (weeks <= 40) {
-                        trimester = "3ème Trimestre"
-                        bgColor = "bg-orange-50"
-                        textColor = "text-orange-700"
-                        borderColor = "border-orange-300"
-                      } else {
-                        trimester = "Post-terme"
-                        bgColor = "bg-red-50"
-                        textColor = "text-red-700"
-                        borderColor = "border-red-300"
+                      if (val && !isNaN(numVal)) {
+                        if (measure.min_value && numVal < parseFloat(measure.min_value)) {
+                          colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
+                        } else if (measure.max_value && numVal > parseFloat(measure.max_value)) {
+                          colorClass = `border-${measure.color}-500 bg-${measure.color}-50 text-${measure.color}-700`;
+                        } else {
+                          colorClass = "border-green-500 bg-green-50 text-green-700";
+                        }
                       }
 
                       return (
-                        <div className={`mt-2 p-3 rounded-lg border-2 ${bgColor} ${borderColor}`}>
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={`text-xs font-bold ${textColor}`}>
-                                🤰 {weeks} SA + {days}j
-                              </span>
-                              <span className={`text-xs font-semibold px-2 py-1 rounded ${bgColor} ${textColor} border ${borderColor}`}>
-                                {trimester}
-                              </span>
-                            </div>
-
-                            <div className={`text-xs ${textColor} font-medium`}>
-                              📅 DPA: {dpa.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                            </div>
-
-                            {weeks <= 40 && (
-                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                                <div
-                                  className={`h-2 rounded-full transition-all ${weeks <= 12 ? 'bg-green-500' :
-                                    weeks <= 27 ? 'bg-yellow-500' :
-                                      'bg-orange-500'
-                                    }`}
-                                  style={{ width: `${Math.min((weeks / 40) * 100, 100)}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
+                        <div key={idx}>
+                          <label className="block text-xs font-medium text-blue-700 mb-1">
+                            {measure.name} {measure.short ? `(${measure.short})` : ''}
+                          </label>
+                          {measure.choices ? (
+                            <select
+                              value={val}
+                              onChange={(e) => setVitalSigns({
+                                ...vitalSigns,
+                                custom_measures_values: {
+                                  ...vitalSigns.custom_measures_values,
+                                  [measureKey]: e.target.value
+                                }
+                              })}
+                              className={`h-8 w-full border-2 rounded-md px-2 text-sm ${colorClass} bg-blue-50/50`}
+                            >
+                              <option value="">Sélectionner...</option>
+                              {measure.choices.split(',').map((choice: string, ci: number) => (
+                                <option key={ci} value={choice.trim()}>{choice.trim()}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <Input
+                              type="text"
+                              value={val}
+                              onChange={(e) => setVitalSigns({
+                                ...vitalSigns,
+                                custom_measures_values: {
+                                  ...vitalSigns.custom_measures_values,
+                                  [measureKey]: e.target.value
+                                }
+                              })}
+                              placeholder={`Min: ${measure.min_value} | Max: ${measure.max_value}`}
+                              className={`h-8 border-2 ${colorClass} bg-blue-50/50`}
+                            />
+                          )}
                         </div>
-                      )
-                    })()}
+                      );
+                    })}
+                    {/* DDR Field */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-blue-700 mb-1">DDR (Date des Dernières Règles)</label>
+                      <Input
+                        type="date"
+                        value={ddr}
+                        onChange={(e) => setDdr(e.target.value)}
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500"
+                      />
+                      {ddr && (() => {
+                        const ddrDate = new Date(ddr)
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0) // Reset time to compare dates only
+                        ddrDate.setHours(0, 0, 0, 0)
+
+                        // Check if DDR is in the future
+                        if (ddrDate > today) {
+                          return (
+                            <div className="mt-2 p-3 rounded-lg border-2 bg-red-50 border-red-300">
+                              <div className="flex items-center gap-2">
+                                <span className="text-red-700 text-xs font-bold">⚠️ Erreur:</span>
+                                <span className="text-red-600 text-xs">La DDR ne peut pas être dans le futur</span>
+                              </div>
+                            </div>
+                          )
+                        }
+
+                        const diffMs = today.getTime() - ddrDate.getTime()
+                        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                        const weeks = Math.floor(Math.abs(diffDays) / 7)
+                        const days = Math.abs(diffDays) % 7
+
+                        // Calculate DPA (Naegele's Rule: DDR + 1 year - 3 months + 7 days)
+                        const dpa = new Date(ddrDate)
+                        dpa.setFullYear(dpa.getFullYear() + 1)
+                        dpa.setMonth(dpa.getMonth() - 3)
+                        dpa.setDate(dpa.getDate() + 7)
+
+                        // Determine trimester and color
+                        let trimester = ""
+                        let bgColor = ""
+                        let textColor = ""
+                        let borderColor = ""
+
+                        if (weeks <= 12) {
+                          trimester = "1er Trimestre"
+                          bgColor = "bg-green-50"
+                          textColor = "text-green-700"
+                          borderColor = "border-green-300"
+                        } else if (weeks <= 27) {
+                          trimester = "2ème Trimestre"
+                          bgColor = "bg-yellow-50"
+                          textColor = "text-yellow-700"
+                          borderColor = "border-yellow-300"
+                        } else if (weeks <= 40) {
+                          trimester = "3ème Trimestre"
+                          bgColor = "bg-orange-50"
+                          textColor = "text-orange-700"
+                          borderColor = "border-orange-300"
+                        } else {
+                          trimester = "Post-terme"
+                          bgColor = "bg-red-50"
+                          textColor = "text-red-700"
+                          borderColor = "border-red-300"
+                        }
+
+                        return (
+                          <div className={`mt-2 p-3 rounded-lg border-2 ${bgColor} ${borderColor}`}>
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className={`text-xs font-bold ${textColor}`}>
+                                  🤰 {weeks} SA + {days}j
+                                </span>
+                                <span className={`text-xs font-semibold px-2 py-1 rounded ${bgColor} ${textColor} border ${borderColor}`}>
+                                  {trimester}
+                                </span>
+                              </div>
+
+                              <div className={`text-xs ${textColor} font-medium`}>
+                                📅 DPA: {dpa.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })}
+                              </div>
+
+                              {weeks <= 40 && (
+                                <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${weeks <= 12 ? 'bg-green-500' :
+                                      weeks <= 27 ? 'bg-yellow-500' :
+                                        'bg-orange-500'
+                                      }`}
+                                    style={{ width: `${Math.min((weeks / 40) * 100, 100)}%` }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-blue-700 mb-1">Notes</label>
+                      <Input
+                        value={vitalSigns.notes}
+                        onChange={(e) => setVitalSigns({ ...vitalSigns, notes: e.target.value })}
+                        placeholder="Observations supplémentaires"
+                        className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
+                      />
+                    </div>
                   </div>
 
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-blue-700 mb-1">Notes</label>
-                    <Input
-                      value={vitalSigns.notes}
-                      onChange={(e) => setVitalSigns({ ...vitalSigns, notes: e.target.value })}
-                      placeholder="Observations supplémentaires"
-                      className="h-8 text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
+                  <div>
+                    <label className="block text-sm font-medium text-blue-700 mb-1">Diagnostic</label>
+                    <Textarea
+                      value={diagnostic}
+                      onChange={(e) => setDiagnostic(e.target.value)}
+                      placeholder="Diagnostic du patient..."
+                      className="min-h-[100px] resize-y text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
+                      rows={3}
                     />
                   </div>
-                </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ResizablePanel>
 
-                <div>
-                  <label className="block text-sm font-medium text-blue-700 mb-1">Diagnostic</label>
-                  <Textarea
-                    value={diagnostic}
-                    onChange={(e) => setDiagnostic(e.target.value)}
-                    placeholder="Diagnostic du patient..."
-                    className="min-h-[100px] resize-y text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
-                    rows={3}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <ResizableHandle withHandle className="w-1.5 bg-blue-100 hover:bg-blue-300 cursor-col-resize transition-colors" />
 
-          {/* MIDDLE COLUMN: Plan de Traitement & Demandes d'Analyses - 6 columns */}
-          <div className="xl:col-span-6 space-y-6">
-            <Card>
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg text-blue-700 flex items-center">
-                    <Pills className="w-5 h-5 mr-3" />
-                    Plan de Traitement
-                  </CardTitle>
-                  <div className="flex gap-2">
+          {/* MIDDLE PANEL */}
+          <ResizablePanel defaultSize={50} minSize={30}>
+            <div className="h-full overflow-y-auto space-y-6 px-2">
+              <Card>
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg text-blue-700 flex items-center">
+                      <Pills className="w-5 h-5 mr-3" />
+                      Plan de Traitement
+                    </CardTitle>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
+                        onClick={handlePrintOrdonnance}
+                      >
+                        <Print className="w-3 h-3 mr-1" />
+                        Imprimer
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      {medications.map((med, medIndex) => (
+                        <div key={medIndex} className="p-3 bg-gray-50 rounded-lg border text-sm">
+                          <div className="mb-2">
+                            <Popover
+                              open={openMedicationDropdown === medIndex}
+                              onOpenChange={(open) => {
+                                setOpenMedicationDropdown(open ? medIndex : null)
+                                if (!open) setMedicationSearchQuery("")
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="w-full flex justify-between items-center px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-9"
+                                >
+                                  <span className="text-gray-700 truncate">
+                                    {med.ID_Medicament
+                                      ? availableMedicaments.find(
+                                        (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
+                                      )?.name || med.name
+                                      : "Sélectionner..."}
+                                  </span>
+                                  <ChevronsUpDown className="h-4 w-4 opacity-50 flex-shrink-0" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[300px] p-0" align="start">
+                                <Command shouldFilter={false}>
+                                  <CommandInput
+                                    placeholder="Rechercher..."
+                                    value={medicationSearchQuery}
+                                    onValueChange={setMedicationSearchQuery}
+                                  />
+                                  <CommandList>
+                                    <CommandEmpty>Aucun résultat.</CommandEmpty>
+                                    <CommandGroup className="max-h-[300px] overflow-y-auto">
+                                      {filteredMedicaments.slice(0, 100).map((medicament) => (
+                                        <CommandItem
+                                          key={medicament.ID_Medicament}
+                                          onSelect={() => {
+                                            updateMedication(medIndex, "ID_Medicament", medicament.ID_Medicament.toString())
+                                            setOpenMedicationDropdown(null)
+                                            setMedicationSearchQuery("")
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              medicament.ID_Medicament.toString() === med.ID_Medicament.toString()
+                                                ? "opacity-100"
+                                                : "opacity-0",
+                                            )}
+                                          />
+                                          {medicament.name}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
+
+
+                            {/* Time of day checkboxes - Enhanced Design */}
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
+                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
+                                <input
+                                  type="checkbox"
+                                  checked={med.pivot.frequence?.includes("Matin") || false}
+                                  onChange={(e) => {
+                                    const current = med.pivot.frequence || ""
+                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
+                                    if (e.target.checked) {
+                                      if (!times.includes("Matin")) updateMedication(medIndex, "frequence", [...times, "Matin"].join(","))
+                                    } else {
+                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Matin").join(","))
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                                />
+                                <span className="text-xs font-semibold text-blue-700 select-none">Matin</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
+                                <input
+                                  type="checkbox"
+                                  checked={med.pivot.frequence?.includes("Midi") || false}
+                                  onChange={(e) => {
+                                    const current = med.pivot.frequence || ""
+                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
+                                    if (e.target.checked) {
+                                      if (!times.includes("Midi")) updateMedication(medIndex, "frequence", [...times, "Midi"].join(","))
+                                    } else {
+                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Midi").join(","))
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                                />
+                                <span className="text-xs font-semibold text-blue-700 select-none">Midi</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
+                                <input
+                                  type="checkbox"
+                                  checked={med.pivot.frequence?.includes("Soir") || false}
+                                  onChange={(e) => {
+                                    const current = med.pivot.frequence || ""
+                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
+                                    if (e.target.checked) {
+                                      if (!times.includes("Soir")) updateMedication(medIndex, "frequence", [...times, "Soir"].join(","))
+                                    } else {
+                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Soir").join(","))
+                                    }
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+                                />
+                                <span className="text-xs font-semibold text-blue-700 select-none">Soir</span>
+                              </label>
+                            </div>
+
+                            {/* Duration and Meal timing in same row for space */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="flex gap-1">
+                                <Input
+                                  type="number"
+                                  value={med.pivot.duree?.match(/\d+/)?.[0] || ""}
+                                  onChange={(e) => {
+                                    const unit = med.pivot.duree?.includes("mois") ? "mois" : "jours"
+                                    updateMedication(medIndex, "duree", e.target.value ? `${e.target.value} ${unit}` : "")
+                                  }}
+                                  placeholder="D"
+                                  title="Durée"
+                                  className="h-7 text-[10px] w-12 px-1 border-blue-200"
+                                />
+                                <select
+                                  value={med.pivot.duree?.includes("mois") ? "mois" : "jours"}
+                                  onChange={(e) => {
+                                    const number = med.pivot.duree?.match(/\d+/)?.[0] || ""
+                                    updateMedication(medIndex, "duree", number ? `${number} ${e.target.value}` : "")
+                                  }}
+                                  className="h-7 text-[10px] border border-blue-200 rounded px-1 flex-1 bg-white text-blue-700"
+                                >
+                                  <option value="jours">jours</option>
+                                  <option value="mois">mois</option>
+                                </select>
+                              </div>
+
+                              <select
+                                value={med.pivot.dosage || ""}
+                                onChange={(e) => updateMedication(medIndex, "dosage", e.target.value)}
+                                className="h-7 text-[10px] border border-blue-200 rounded px-1 bg-white text-blue-700"
+                              >
+                                <option value="">Repas...</option>
+                                <option value="Avant repas">Av. repas</option>
+                                <option value="Milieu de repas">Mil. repas</option>
+                                <option value="Après repas">Ap. repas</option>
+                              </select>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeMedication(medIndex)}
+                            className="w-full h-6 text-red-500 hover:text-red-700 hover:bg-red-50 text-xs"
+                          >
+                            <Trash2 className="w-3 h-3 mr-1" /> Supprimer
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addMedication}
+                      className="w-full bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 h-9 text-sm"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Ajouter Médicament
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg text-blue-700 flex items-center">
+                      <Flask className="w-5 h-5 mr-3" />
+                      Analyses
+                    </CardTitle>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
-                      onClick={handlePrintOrdonnance}
+                      onClick={handlePrintAnalyses}
                     >
                       <Print className="w-3 h-3 mr-1" />
                       Imprimer
                     </Button>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4">
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    {medications.map((med, medIndex) => (
-                      <div key={medIndex} className="p-3 bg-gray-50 rounded-lg border text-sm">
-                        <div className="mb-2">
-                          <Popover
-                            open={openMedicationDropdown === medIndex}
-                            onOpenChange={(open) => {
-                              setOpenMedicationDropdown(open ? medIndex : null)
-                              if (!open) setMedicationSearchQuery("")
-                            }}
-                          >
-                            <PopoverTrigger asChild>
-                              <button
-                                type="button"
-                                className="w-full flex justify-between items-center px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-9"
-                              >
-                                <span className="text-gray-700 truncate">
-                                  {med.ID_Medicament
-                                    ? availableMedicaments.find(
-                                      (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
-                                    )?.name || med.name
-                                    : "Sélectionner..."}
-                                </span>
-                                <ChevronsUpDown className="h-4 w-4 opacity-50 flex-shrink-0" />
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0" align="start">
-                              <Command shouldFilter={false}>
-                                <CommandInput
-                                  placeholder="Rechercher..."
-                                  value={medicationSearchQuery}
-                                  onValueChange={setMedicationSearchQuery}
-                                />
-                                <CommandList>
-                                  <CommandEmpty>Aucun résultat.</CommandEmpty>
-                                  <CommandGroup className="max-h-[300px] overflow-y-auto">
-                                    {filteredMedicaments.slice(0, 100).map((medicament) => (
-                                      <CommandItem
-                                        key={medicament.ID_Medicament}
-                                        onSelect={() => {
-                                          updateMedication(medIndex, "ID_Medicament", medicament.ID_Medicament.toString())
-                                          setOpenMedicationDropdown(null)
-                                          setMedicationSearchQuery("")
-                                        }}
-                                      >
-                                        <Check
-                                          className={cn(
-                                            "mr-2 h-4 w-4",
-                                            medicament.ID_Medicament.toString() === med.ID_Medicament.toString()
-                                              ? "opacity-100"
-                                              : "opacity-0",
-                                          )}
-                                        />
-                                        {medicament.name}
-                                      </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
-
-
-                          {/* Time of day checkboxes - Enhanced Design */}
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
-                            <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={med.pivot.frequence?.includes("Matin") || false}
-                                onChange={(e) => {
-                                  const current = med.pivot.frequence || ""
-                                  const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                  if (e.target.checked) {
-                                    if (!times.includes("Matin")) updateMedication(medIndex, "frequence", [...times, "Matin"].join(","))
-                                  } else {
-                                    updateMedication(medIndex, "frequence", times.filter(t => t !== "Matin").join(","))
-                                  }
-                                }}
-                                className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                              />
-                              <span className="text-xs font-semibold text-blue-700 select-none">Matin</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={med.pivot.frequence?.includes("Midi") || false}
-                                onChange={(e) => {
-                                  const current = med.pivot.frequence || ""
-                                  const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                  if (e.target.checked) {
-                                    if (!times.includes("Midi")) updateMedication(medIndex, "frequence", [...times, "Midi"].join(","))
-                                  } else {
-                                    updateMedication(medIndex, "frequence", times.filter(t => t !== "Midi").join(","))
-                                  }
-                                }}
-                                className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                              />
-                              <span className="text-xs font-semibold text-blue-700 select-none">Midi</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                              <input
-                                type="checkbox"
-                                checked={med.pivot.frequence?.includes("Soir") || false}
-                                onChange={(e) => {
-                                  const current = med.pivot.frequence || ""
-                                  const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                  if (e.target.checked) {
-                                    if (!times.includes("Soir")) updateMedication(medIndex, "frequence", [...times, "Soir"].join(","))
-                                  } else {
-                                    updateMedication(medIndex, "frequence", times.filter(t => t !== "Soir").join(","))
-                                  }
-                                }}
-                                className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                              />
-                              <span className="text-xs font-semibold text-blue-700 select-none">Soir</span>
-                            </label>
-                          </div>
-
-                          {/* Duration and Meal timing in same row for space */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex gap-1">
-                              <Input
-                                type="number"
-                                value={med.pivot.duree?.match(/\d+/)?.[0] || ""}
-                                onChange={(e) => {
-                                  const unit = med.pivot.duree?.includes("mois") ? "mois" : "jours"
-                                  updateMedication(medIndex, "duree", e.target.value ? `${e.target.value} ${unit}` : "")
-                                }}
-                                placeholder="D"
-                                title="Durée"
-                                className="h-7 text-[10px] w-12 px-1 border-blue-200"
-                              />
-                              <select
-                                value={med.pivot.duree?.includes("mois") ? "mois" : "jours"}
-                                onChange={(e) => {
-                                  const number = med.pivot.duree?.match(/\d+/)?.[0] || ""
-                                  updateMedication(medIndex, "duree", number ? `${number} ${e.target.value}` : "")
-                                }}
-                                className="h-7 text-[10px] border border-blue-200 rounded px-1 flex-1 bg-white text-blue-700"
-                              >
-                                <option value="jours">jours</option>
-                                <option value="mois">mois</option>
-                              </select>
-                            </div>
-
-                            <select
-                              value={med.pivot.dosage || ""}
-                              onChange={(e) => updateMedication(medIndex, "dosage", e.target.value)}
-                              className="h-7 text-[10px] border border-blue-200 rounded px-1 bg-white text-blue-700"
-                            >
-                              <option value="">Repas...</option>
-                              <option value="Avant repas">Av. repas</option>
-                              <option value="Milieu de repas">Mil. repas</option>
-                              <option value="Après repas">Ap. repas</option>
-                            </select>
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeMedication(medIndex)}
-                          className="w-full h-6 text-red-500 hover:text-red-700 hover:bg-red-50 text-xs"
-                        >
-                          <Trash2 className="w-3 h-3 mr-1" /> Supprimer
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={addMedication}
-                    className="w-full bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 h-9 text-sm"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Ajouter Médicament
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg text-blue-700 flex items-center">
-                    <Flask className="w-5 h-5 mr-3" />
-                    Analyses
-                  </CardTitle>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
-                    onClick={handlePrintAnalyses}
-                  >
-                    <Print className="w-3 h-3 mr-1" />
-                    Imprimer
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4">
-                <div className="space-y-4">
-                  <div className="space-y-3">
-                    {analyses.map((analysis, index) => (
-                      <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border">
-                        <div className="flex-grow">
-                          <Popover
-                            open={openAnalysisDropdown === index}
-                            onOpenChange={(open) => {
-                              setOpenAnalysisDropdown(open ? index : null)
-                            }}
-                          >
-                            <PopoverTrigger asChild>
-                              <button
-                                type="button"
-                                className="w-full flex justify-between items-center px-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-8 text-sm"
-                              >
-                                <span className="text-gray-700 truncate">
-                                  {analysis.ID_Analyse
-                                    ? availableAnalyses.find(
-                                      (a) => a.ID_Analyse.toString() === analysis.ID_Analyse.toString(),
-                                    )?.type_analyse || analysis.name
-                                    : "Sélectionner..."}
-                                </span>
-                                <ChevronsUpDown className="h-3 w-3 opacity-50 flex-shrink-0" />
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[250px] p-0" align="start">
-                              <Command>
-                                <CommandInput placeholder="Rechercher..." />
-                                <CommandList>
-                                  <CommandEmpty>Aucun résultat.</CommandEmpty>
-                                  <CommandGroup>
-                                    {availableAnalyses.map((availableAnalysis) => (
-                                      <CommandItem
-                                        key={availableAnalysis.ID_Analyse}
-                                        onSelect={() => {
-                                          updateAnalysis(index, "ID_Analyse", availableAnalysis.ID_Analyse.toString())
-                                          setOpenAnalysisDropdown(null)
-                                        }}
-                                      >
-                                        <Check
-                                          className={cn(
-                                            "mr-2 h-4 w-4",
-                                            availableAnalysis.ID_Analyse.toString() === analysis.ID_Analyse.toString()
-                                              ? "opacity-100"
-                                              : "opacity-0",
-                                          )}
-                                        />
-                                        {availableAnalysis.type_analyse}
-                                      </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeAnalysis(index)}
-                          className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={addAnalysis}
-                    className="w-full bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 h-9 text-sm"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Ajouter Analyse
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* RIGHT COLUMN: Rendez-vous précédent - 3 columns */}
-          <div className="xl:col-span-3 space-y-6">
-            {lastAppointment ? (
-              <Card className="border-l-4 border-l-blue-500 h-full">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
-                  <CardTitle className="text-lg text-blue-700 flex items-center">
-                    <History className="w-5 h-5 mr-3" />
-                    Rendez-vous précédent
-                  </CardTitle>
-                  <p className="text-xs text-gray-500 ml-8">{lastAppointment.date}</p>
                 </CardHeader>
                 <CardContent className="p-4">
-                  {!lastAppointment.case_description &&
-                    (!lastAppointment.medicaments || lastAppointment.medicaments.length === 0) &&
-                    (!lastAppointment.analyses || lastAppointment.analyses.length === 0) ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">Aucune donnée disponible.</p>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-600 space-y-4">
-                      {lastAppointment.case_description && (
-                        <div className="p-3 bg-gray-50 rounded border">
-                          <strong className="block text-gray-800 mb-1">Notes du cas:</strong>
-                          <p className="whitespace-pre-wrap">{lastAppointment.case_description}</p>
-                        </div>
-                      )}
-
-                      {(lastAppointment.tall || lastAppointment.weight || lastAppointment.temperature || lastAppointment.pulse || lastAppointment.blood_pressure || (lastAppointment.custom_measures_values && Object.keys(lastAppointment.custom_measures_values).length > 0)) && (
-                        <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
-                          <strong className="block text-blue-800 mb-2">Constantes vitales:</strong>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            {lastAppointment.tall && <div><span className="text-gray-500">Taille:</span> <span className="font-medium text-gray-900">{lastAppointment.tall} cm</span></div>}
-                            {lastAppointment.weight && <div><span className="text-gray-500">Poids:</span> <span className="font-medium text-gray-900">{lastAppointment.weight} kg</span></div>}
-                            {lastAppointment.temperature && <div><span className="text-gray-500">Temp:</span> <span className="font-medium text-gray-900">{lastAppointment.temperature} °C</span></div>}
-                            {lastAppointment.pulse && <div><span className="text-gray-500">Pouls:</span> <span className="font-medium text-gray-900">{lastAppointment.pulse} bpm</span></div>}
-                            {lastAppointment.blood_pressure && <div><span className="text-gray-500">Tension:</span> <span className="font-medium text-gray-900">{lastAppointment.blood_pressure}</span></div>}
-
-                            {lastAppointment.custom_measures_values && Object.entries(lastAppointment.custom_measures_values).map(([mName, mValue]) => (
-                              mValue && <div key={mName}><span className="text-gray-500">{mName}:</span> <span className="font-medium text-gray-900">{String(mValue)}</span></div>
-                            ))}
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      {analyses.map((analysis, index) => (
+                        <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border">
+                          <div className="flex-grow">
+                            <Popover
+                              open={openAnalysisDropdown === index}
+                              onOpenChange={(open) => {
+                                setOpenAnalysisDropdown(open ? index : null)
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="w-full flex justify-between items-center px-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-8 text-sm"
+                                >
+                                  <span className="text-gray-700 truncate">
+                                    {analysis.ID_Analyse
+                                      ? availableAnalyses.find(
+                                        (a) => a.ID_Analyse.toString() === analysis.ID_Analyse.toString(),
+                                      )?.type_analyse || analysis.name
+                                      : "Sélectionner..."}
+                                  </span>
+                                  <ChevronsUpDown className="h-3 w-3 opacity-50 flex-shrink-0" />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[250px] p-0" align="start">
+                                <Command>
+                                  <CommandInput placeholder="Rechercher..." />
+                                  <CommandList>
+                                    <CommandEmpty>Aucun résultat.</CommandEmpty>
+                                    <CommandGroup>
+                                      {availableAnalyses.map((availableAnalysis) => (
+                                        <CommandItem
+                                          key={availableAnalysis.ID_Analyse}
+                                          onSelect={() => {
+                                            updateAnalysis(index, "ID_Analyse", availableAnalysis.ID_Analyse.toString())
+                                            setOpenAnalysisDropdown(null)
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              availableAnalysis.ID_Analyse.toString() === analysis.ID_Analyse.toString()
+                                                ? "opacity-100"
+                                                : "opacity-0",
+                                            )}
+                                          />
+                                          {availableAnalysis.type_analyse}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
                           </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeAnalysis(index)}
+                            className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
-                      )}
-                      {lastAppointment.medicaments && lastAppointment.medicaments.length > 0 && (
-                        <div>
-                          <strong className="block mb-2 text-gray-800">Médicaments:</strong>
-                          <div className="space-y-2">
-                            {lastAppointment.medicaments.map((med) => (
-                              <div key={med.id} className="flex flex-col bg-white p-2 rounded border shadow-sm">
-                                <div className="flex justify-between items-start">
-                                  <span className="font-medium text-gray-900">{med.name}</span>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={addAnalysis}
+                      className="w-full bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 h-9 text-sm"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Ajouter Analyse
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </ResizablePanel>
+
+          <ResizableHandle withHandle className="w-1.5 bg-blue-100 hover:bg-blue-300 cursor-col-resize transition-colors" />
+
+          {/* RIGHT PANEL */}
+          <ResizablePanel defaultSize={25} minSize={20}>
+            <div className="h-full overflow-y-auto space-y-6 pl-2">
+              {lastAppointment ? (
+                <Card className="border-l-4 border-l-blue-500 h-full">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-blue-50 py-4">
+                    <CardTitle className="text-lg text-blue-700 flex items-center">
+                      <History className="w-5 h-5 mr-3" />
+                      Rendez-vous précédent
+                    </CardTitle>
+                    <p className="text-xs text-gray-500 ml-8">{lastAppointment.date}</p>
+                  </CardHeader>
+                  <CardContent className="p-4">
+                    {!lastAppointment.case_description &&
+                      (!lastAppointment.medicaments || lastAppointment.medicaments.length === 0) &&
+                      (!lastAppointment.analyses || lastAppointment.analyses.length === 0) ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p className="text-sm">Aucune donnée disponible.</p>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600 space-y-4">
+                        {lastAppointment.case_description && (
+                          <div className="p-3 bg-gray-50 rounded border">
+                            <div className="flex justify-between items-start mb-1">
+                              <strong className="block text-gray-800">Description du Cas:</strong>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={copyCaseDescriptionFromLast}
+                                className="h-6 w-6 p-0 text-green-600 hover:bg-green-50"
+                                title="Copier la description"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <p className="whitespace-pre-wrap">{lastAppointment.case_description}</p>
+                          </div>
+                        )}
+
+                        {(lastAppointment.tall || lastAppointment.weight || lastAppointment.temperature || lastAppointment.pulse || lastAppointment.blood_pressure || (lastAppointment.custom_measures_values && Object.keys(lastAppointment.custom_measures_values).length > 0)) && (
+                          <div className="p-3 bg-blue-50/50 rounded border border-blue-100">
+                            <strong className="block text-blue-800 mb-2">Constantes vitales:</strong>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {lastAppointment.tall && <div><span className="text-gray-500">Taille:</span> <span className="font-medium text-gray-900">{lastAppointment.tall} cm</span></div>}
+                              {lastAppointment.weight && <div><span className="text-gray-500">Poids:</span> <span className="font-medium text-gray-900">{lastAppointment.weight} kg</span></div>}
+                              {lastAppointment.temperature && <div><span className="text-gray-500">Temp:</span> <span className="font-medium text-gray-900">{lastAppointment.temperature} °C</span></div>}
+                              {lastAppointment.pulse && <div><span className="text-gray-500">Pouls:</span> <span className="font-medium text-gray-900">{lastAppointment.pulse} bpm</span></div>}
+                              {lastAppointment.blood_pressure && <div><span className="text-gray-500">Tension:</span> <span className="font-medium text-gray-900">{lastAppointment.blood_pressure}</span></div>}
+
+                              {lastAppointment.custom_measures_values && Object.entries(lastAppointment.custom_measures_values).map(([mName, mValue]) => (
+                                mValue && <div key={mName}><span className="text-gray-500">{mName}:</span> <span className="font-medium text-gray-900">{String(mValue)}</span></div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {lastAppointment.medicaments && lastAppointment.medicaments.length > 0 && (
+                          <div>
+                            <strong className="block mb-2 text-gray-800">Médicaments:</strong>
+                            <div className="space-y-2">
+                              {lastAppointment.medicaments.map((med) => (
+                                <div key={med.id} className="flex flex-col bg-white p-2 rounded border shadow-sm">
+                                  <div className="flex justify-between items-start">
+                                    <span className="font-medium text-gray-900">{med.name}</span>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => copyMedicamentFromLast(med)}
+                                      className="h-6 w-6 p-0 text-green-600 hover:bg-green-50"
+                                      title="Copier"
+                                    >
+                                      <Plus className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                  <span className="text-xs text-blue-600 font-medium mt-1">
+                                    {(() => {
+                                      const times = med.frequence ? med.frequence.split(',').filter(t => t.trim()) : []
+                                      const meal = med.dosage || ""
+                                      const dur = med.duree || ""
+
+                                      let text = "1 comprimé"
+                                      if (times.length > 0) text += ` ${times.map(t => t.toLowerCase()).join(', ')}`
+                                      if (meal) text += `, ${meal.toLowerCase()}`
+                                      if (dur) text += `, pendant ${dur}`
+
+                                      return text
+                                    })()}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {lastAppointment.analyses && lastAppointment.analyses.length > 0 && (
+                          <div>
+                            <strong className="block mb-2 text-gray-800">Analyses:</strong>
+                            <div className="space-y-2">
+                              {lastAppointment.analyses.map((analysis) => (
+                                <div
+                                  key={analysis.id}
+                                  className="flex items-center justify-between bg-white p-2 rounded border shadow-sm"
+                                >
+                                  <span>{analysis.name}</span>
                                   <Button
                                     type="button"
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => copyMedicamentFromLast(med)}
+                                    onClick={() => copyAnalysisFromLast(analysis)}
                                     className="h-6 w-6 p-0 text-green-600 hover:bg-green-50"
                                     title="Copier"
                                   >
                                     <Plus className="w-4 h-4" />
                                   </Button>
                                 </div>
-                                <span className="text-xs text-blue-600 font-medium mt-1">
-                                  {(() => {
-                                    const times = med.frequence ? med.frequence.split(',').filter(t => t.trim()) : []
-                                    const meal = med.dosage || ""
-                                    const dur = med.duree || ""
-
-                                    let text = "1 comprimé"
-                                    if (times.length > 0) text += ` ${times.map(t => t.toLowerCase()).join(', ')}`
-                                    if (meal) text += `, ${meal.toLowerCase()}`
-                                    if (dur) text += `, pendant ${dur}`
-
-                                    return text
-                                  })()}
-                                </span>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      {lastAppointment.analyses && lastAppointment.analyses.length > 0 && (
-                        <div>
-                          <strong className="block mb-2 text-gray-800">Analyses:</strong>
-                          <div className="space-y-2">
-                            {lastAppointment.analyses.map((analysis) => (
-                              <div
-                                key={analysis.id}
-                                className="flex items-center justify-between bg-white p-2 rounded border shadow-sm"
-                              >
-                                <span>{analysis.name}</span>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => copyAnalysisFromLast(analysis)}
-                                  className="h-6 w-6 p-0 text-green-600 hover:bg-green-50"
-                                  title="Copier"
-                                >
-                                  <Plus className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="h-full border-dashed">
-                <CardContent className="flex items-center justify-center h-full min-h-[200px] text-gray-400">
-                  <p>Aucun rendez-vous précédent</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="h-full border-dashed">
+                  <CardContent className="flex items-center justify-center h-full min-h-[200px] text-gray-400">
+                    <p>Aucun rendez-vous précédent</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+
+        {/* Mobile/Tablet layout */}
+        <div className="xl:hidden mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+          <p className="text-sm text-blue-700">Interface optimisée pour grand écran. Veuillez agrandir votre fenêtre.</p>
         </div>
 
         <div className="flex justify-end space-x-4 mt-6 pb-8">
@@ -1707,7 +1812,7 @@ export default function AppointmentDetailsPage() {
             )}
           </Button>
         </div>
-      </form >
-    </div >
+      </form>
+    </div>
   )
 }

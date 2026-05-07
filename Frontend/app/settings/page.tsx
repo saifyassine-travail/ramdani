@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import OrdonnanceLayoutEditor from "@/components/ordonnance-layout-editor"
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -36,11 +37,16 @@ export default function SettingsPage() {
     short: "",
     min_value: "",
     max_value: "",
+    choices: "",
     color: "red"
   })
+  const [measureType, setMeasureType] = useState<"standard" | "choice">("standard")
+  const [currentChoice, setCurrentChoice] = useState("")
+  const [choicesList, setChoicesList] = useState<string[]>([])
 
   // Backup & Sync State
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+
   const [backups, setBackups] = useState<any[]>([])
   const [isGoogleLinked, setIsGoogleLinked] = useState<boolean | null>(null)
   const [backupLoading, setBackupLoading] = useState(false)
@@ -84,6 +90,26 @@ export default function SettingsPage() {
         }
         if (!Array.isArray(parsedData.custom_measures)) {
           parsedData.custom_measures = []
+        }
+
+        // Parse ordonnance_layout if it's a string
+        if (typeof parsedData.ordonnance_layout === 'string') {
+          try {
+            parsedData.ordonnance_layout = JSON.parse(parsedData.ordonnance_layout)
+          } catch (e) {
+            parsedData.ordonnance_layout = null
+          }
+        }
+
+        // Fix background URL (ensure use of proxy link for CORS)
+        if (parsedData.ordonnance_background) {
+          const backendBase = "http://127.0.0.1:8000"
+          if (parsedData.ordonnance_background.includes('/storage/ordonnances/')) {
+            const filename = parsedData.ordonnance_background.split('/').pop()
+            parsedData.ordonnance_background = `${backendBase}/api/settings/ordonnance-background/${filename}`
+          } else if (!parsedData.ordonnance_background.startsWith('http')) {
+            parsedData.ordonnance_background = `${backendBase}${parsedData.ordonnance_background}`
+          }
         }
 
         localStorage.setItem("app_settings", JSON.stringify(parsedData))
@@ -207,10 +233,7 @@ export default function SettingsPage() {
     const base = data && typeof data === 'object' && !Array.isArray(data)
       ? { ...data, ...flat }
       : flat
-    // Ensure custom_measures is a JSON string for the backend
-    if (Array.isArray(base.custom_measures)) {
-      base.custom_measures = JSON.stringify(base.custom_measures)
-    }
+
     return base
   }
 
@@ -363,7 +386,7 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="preferences" className="space-y-6">
-        <TabsList className="grid w-full max-w-xl grid-cols-3">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="preferences">
             <SettingsIcon className="w-4 h-4 mr-2" />
             Préférences
@@ -371,6 +394,10 @@ export default function SettingsPage() {
           <TabsTrigger value="users">
             <Users className="w-4 h-4 mr-2" />
             Utilisateurs
+          </TabsTrigger>
+          <TabsTrigger value="ordonnance">
+            <FileText className="w-4 h-4 mr-2" />
+            Ordonnance
           </TabsTrigger>
           <TabsTrigger value="backup">
             <Cloud className="w-4 h-4 mr-2" />
@@ -409,7 +436,9 @@ export default function SettingsPage() {
                         </div>
                         <div>
                           <Label className="font-medium block">{measure.name}</Label>
-                          <span className="text-xs text-gray-500">Min: {measure.min_value} | Max: {measure.max_value}</span>
+                          <span className="text-xs text-gray-500">
+                            {measure.choices ? `Choix: ${measure.choices}` : `Min: ${measure.min_value} | Max: ${measure.max_value}`}
+                          </span>
                         </div>
                       </div>
                       <Button
@@ -434,83 +463,203 @@ export default function SettingsPage() {
                     </div>
                   ))}
 
-                  <div className="grid grid-cols-12 gap-2 mt-4 items-end bg-gray-50 p-3 rounded-lg border border-gray-200 border-dashed">
-                    <div className="col-span-3 space-y-1">
-                      <Label className="text-xs">Nom complet</Label>
-                      <Input
-                        placeholder="Ex: SpO2"
-                        className="h-8 text-sm"
-                        value={newMeasure.name}
-                        onChange={(e) => setNewMeasure({ ...newMeasure, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Sigle</Label>
-                      <Input
-                        placeholder="Ex: O2"
-                        maxLength={3}
-                        className="h-8 text-sm"
-                        value={newMeasure.short}
-                        onChange={(e) => setNewMeasure({ ...newMeasure, short: e.target.value })}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Min</Label>
-                      <Input
-                        type="text"
-                        placeholder="Ex: 95"
-                        className="h-8 text-sm"
-                        value={newMeasure.min_value}
-                        onChange={(e) => setNewMeasure({ ...newMeasure, min_value: e.target.value })}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Max</Label>
-                      <Input
-                        type="text"
-                        placeholder="Ex: 100"
-                        className="h-8 text-sm"
-                        value={newMeasure.max_value}
-                        onChange={(e) => setNewMeasure({ ...newMeasure, max_value: e.target.value })}
-                      />
-                    </div>
-                    <div className="col-span-2 space-y-1">
-                      <Label className="text-xs">Couleur</Label>
-                      <Select value={newMeasure.color} onValueChange={(val) => setNewMeasure({ ...newMeasure, color: val })}>
-                        <SelectTrigger className="h-8 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="red">Rouge</SelectItem>
-                          <SelectItem value="blue">Bleu</SelectItem>
-                          <SelectItem value="orange">Orange</SelectItem>
-                          <SelectItem value="purple">Violet</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        type="button"
-                        className="h-8 w-full bg-blue-600 hover:bg-blue-700 p-0 flex items-center justify-center"
-                        onClick={async () => {
-                          if (!newMeasure.name) return;
+                  <div className="grid grid-cols-12 gap-2 mt-4 items-start bg-gray-50 p-3 rounded-lg border border-gray-200 border-dashed">
+                    <Tabs value={measureType} onValueChange={(val: any) => setMeasureType(val)} className="col-span-12 w-full mb-2">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="standard">Standard (Min/Max)</TabsTrigger>
+                        <TabsTrigger value="choice">Choix Multiples</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
 
-                          const current = Array.isArray(settings?.custom_measures) ? [...settings.custom_measures] : [];
-                          current.push(newMeasure);
-                          const newSettings = { ...settings, custom_measures: current };
-                          setSettings(newSettings);
-                          setNewMeasure({ name: "", short: "", min_value: "", max_value: "", color: "red" });
-                          try {
-                            await apiClient.updateUserSettings(sanitizeSettings(newSettings));
-                            await fetchSettings();
-                          } catch (e) {
-                            console.error("Failed to auto-save settings", e);
-                          }
-                        }}
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
+                    <div className="col-span-12 grid grid-cols-12 gap-2 items-end">
+                      <div className={measureType === "choice" ? "col-span-4 space-y-1" : "col-span-3 space-y-1"}>
+                        <Label className="text-xs">Nom complet</Label>
+                        <Input
+                          placeholder="Ex: SpO2"
+                          className="h-8 text-sm"
+                          value={newMeasure.name}
+                          onChange={(e) => setNewMeasure({ ...newMeasure, name: e.target.value })}
+                        />
+                      </div>
+                      <div className={measureType === "choice" ? "col-span-4 space-y-1" : "col-span-2 space-y-1"}>
+                        <Label className="text-xs">Sigle</Label>
+                        <Input
+                          placeholder="Ex: O2"
+                          maxLength={3}
+                          className="h-8 text-sm"
+                          value={newMeasure.short}
+                          onChange={(e) => setNewMeasure({ ...newMeasure, short: e.target.value })}
+                        />
+                      </div>
+
+                      {measureType === "standard" && (
+                        <>
+                          <div className="col-span-2 space-y-1">
+                            <Label className="text-xs">Min</Label>
+                            <Input
+                              type="text"
+                              placeholder="Ex: 95"
+                              className="h-8 text-sm"
+                              value={newMeasure.min_value}
+                              onChange={(e) => setNewMeasure({ ...newMeasure, min_value: e.target.value })}
+                            />
+                          </div>
+                          <div className="col-span-2 space-y-1">
+                            <Label className="text-xs">Max</Label>
+                            <Input
+                              type="text"
+                              placeholder="Ex: 100"
+                              className="h-8 text-sm"
+                              value={newMeasure.max_value}
+                              onChange={(e) => setNewMeasure({ ...newMeasure, max_value: e.target.value })}
+                            />
+                          </div>
+                        </>
+                      )}
+
+                      <div className={measureType === "choice" ? "col-span-4 space-y-1" : "col-span-2 space-y-1"}>
+                        <Label className="text-xs">Couleur</Label>
+                        <Select value={newMeasure.color} onValueChange={(val) => setNewMeasure({ ...newMeasure, color: val })}>
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="red">Rouge</SelectItem>
+                            <SelectItem value="blue">Bleu</SelectItem>
+                            <SelectItem value="orange">Orange</SelectItem>
+                            <SelectItem value="purple">Violet</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {measureType === "standard" && (
+                        <div className="col-span-1">
+                          <Button
+                            type="button"
+                            className="h-8 w-full bg-blue-600 hover:bg-blue-700 p-0 flex items-center justify-center"
+                            onClick={async () => {
+                              if (!newMeasure.name) {
+                                toast({ title: "Erreur", description: "Le nom de la mesure est requis", variant: "destructive" });
+                                return;
+                              }
+                              const current = Array.isArray(settings?.custom_measures) ? [...settings.custom_measures] : [];
+                              current.push(newMeasure);
+                              const newSettings = { ...settings, custom_measures: current };
+                              setSettings(newSettings);
+                              setNewMeasure({ name: "", short: "", min_value: "", max_value: "", choices: "", color: "red" });
+                              try {
+                                const res = await apiClient.updateUserSettings(sanitizeSettings(newSettings));
+                                if (!res.success) {
+                                  toast({ title: "Erreur API", description: res.message, variant: "destructive" });
+                                } else {
+                                  toast({ title: "Succès", description: "Mesure ajoutée." });
+                                }
+                                await fetchSettings();
+                              } catch (e) {
+                                console.error("Failed to auto-save settings", e);
+                                toast({ title: "Erreur Inattendue", description: String(e), variant: "destructive" });
+                              }
+                            }}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
+
+                    {measureType === "choice" && (
+                      <div className="col-span-12 mt-4 space-y-3 p-3 bg-white rounded border border-gray-200">
+                        <Label className="text-xs font-semibold">Options de la liste déroulante</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="text"
+                            placeholder="Ex: ++"
+                            className="h-8 text-sm flex-1"
+                            value={currentChoice}
+                            onChange={(e) => setCurrentChoice(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                if (currentChoice.trim() && !choicesList.includes(currentChoice.trim())) {
+                                  setChoicesList([...choicesList, currentChoice.trim()]);
+                                  setCurrentChoice("");
+                                }
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            className="h-8 bg-gray-800 hover:bg-gray-900 text-xs"
+                            onClick={() => {
+                              if (currentChoice.trim() && !choicesList.includes(currentChoice.trim())) {
+                                setChoicesList([...choicesList, currentChoice.trim()]);
+                                setCurrentChoice("");
+                              }
+                            }}
+                          >
+                            Ajouter ce choix
+                          </Button>
+                        </div>
+
+                        {choicesList.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2" style={{ minHeight: '32px' }}>
+                            {choicesList.map((choice, i) => (
+                              <span key={i} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 px-2 py-1 rounded text-xs font-semibold">
+                                {choice}
+                                <button
+                                  type="button"
+                                  className="text-blue-400 hover:text-red-500 rounded-full"
+                                  onClick={() => setChoicesList(choicesList.filter((_, index) => index !== i))}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <Button
+                          type="button"
+                          className="h-8 w-full bg-blue-600 hover:bg-blue-700 mt-2"
+                          onClick={async () => {
+                            if (!newMeasure.name) {
+                              toast({ title: "Erreur", description: "Le nom de la mesure est requis", variant: "destructive" });
+                              return;
+                            }
+                            if (choicesList.length === 0) {
+                              toast({ title: "Erreur", description: "Veuillez ajouter au moins un choix", variant: "destructive" });
+                              return;
+                            }
+                            const finalMeasure = { ...newMeasure, choices: choicesList.join(',') };
+
+                            const current = Array.isArray(settings?.custom_measures) ? [...settings.custom_measures] : [];
+                            current.push(finalMeasure);
+                            const newSettings = { ...settings, custom_measures: current };
+                            setSettings(newSettings);
+
+                            setNewMeasure({ name: "", short: "", min_value: "", max_value: "", choices: "", color: "red" });
+                            setMeasureType("standard");
+                            setChoicesList([]);
+                            setCurrentChoice("");
+
+                            try {
+                              const res = await apiClient.updateUserSettings(sanitizeSettings(newSettings));
+                              if (!res.success) {
+                                toast({ title: "Erreur API", description: res.message, variant: "destructive" });
+                              } else {
+                                toast({ title: "Succès", description: "Mesure (Choix) ajoutée." });
+                              }
+                              await fetchSettings();
+                            } catch (e) {
+                              console.error("Failed to auto-save settings", e);
+                              toast({ title: "Erreur Inattendue", description: String(e), variant: "destructive" });
+                            }
+                          }}
+                        >
+                          Enregistrer la mesure ({choicesList.length} choix)
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -633,6 +782,7 @@ export default function SettingsPage() {
             </Button>
           </div>
         </TabsContent>
+
 
         {/* Users Tab */}
         <TabsContent value="users" className="space-y-6">
@@ -811,6 +961,45 @@ export default function SettingsPage() {
               </div>
             </DialogContent>
           </Dialog>
+        </TabsContent>
+
+        {/* Ordonnance Tab */}
+        <TabsContent value="ordonnance" key={settings ? "loaded" : "loading"} className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Configuration de l'Ordonnance</CardTitle>
+              <CardDescription>
+                Personnalisez l'emplacement des éléments sur votre papier d'ordonnance.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrdonnanceLayoutEditor
+                initialBackground={settings?.ordonnance_background}
+                initialLayout={settings?.ordonnance_layout}
+                onSave={async (background, layout) => {
+                  setSaving(true)
+                  try {
+                    const newSettings = {
+                      ...settings,
+                      ordonnance_background: background,
+                      ordonnance_layout: layout
+                    }
+                    const response = await apiClient.updateUserSettings(sanitizeSettings(newSettings))
+                    if (response.success) {
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Configuration de l'ordonnance enregistrée" })
+                    } else {
+                      toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
+                    }
+                  } catch (error: any) {
+                    toast({ title: "Erreur", description: error?.message || "Échec de l'enregistrement", variant: "destructive" })
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Backup & Sync Tab */}

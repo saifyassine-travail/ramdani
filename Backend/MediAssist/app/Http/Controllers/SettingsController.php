@@ -61,6 +61,9 @@ class SettingsController extends Controller
             }
             $userId = $user->id;
 
+            \Log::info('=== updateUserSettings called ===');
+            \Log::info('Raw request data', $request->all());
+
             // Whitelist only known DB columns to avoid unknown field errors
             $allowed = [
                 'appointment_duration', 'working_hours_start', 'working_hours_end',
@@ -68,7 +71,8 @@ class SettingsController extends Controller
                 'email_notifications', 'sms_reminders', 'reminder_timing', 'daily_summary_email',
                 'language', 'date_format', 'time_format', 'dashboard_layout', 'default_view',
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
-                'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures'
+                'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
+                'ordonnance_background', 'ordonnance_layout'
             ];
 
             $data = [];
@@ -79,33 +83,49 @@ class SettingsController extends Controller
             }
             $data['user_id'] = $userId;
 
+            \Log::info('Filtered data before json encode', $data);
+
             // Handle arrays to JSON for DB query builder
-            if (isset($data['custom_measures']) && is_array($data['custom_measures'])) {
-                $data['custom_measures'] = json_encode($data['custom_measures']);
-            }
-            if (isset($data['working_days']) && is_array($data['working_days'])) {
-                $data['working_days'] = json_encode($data['working_days']);
-            }
-            // Cast booleans to integers for PostgreSQL compatibility
-            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email'] as $boolField) {
-                if (isset($data[$boolField])) {
-                    $data[$boolField] = $data[$boolField] ? true : false;
+            foreach (['custom_measures', 'ordonnance_layout', 'working_days'] as $jsonField) {
+                if (isset($data[$jsonField])) {
+                    if (is_array($data[$jsonField]) || is_object($data[$jsonField])) {
+                        $data[$jsonField] = json_encode($data[$jsonField]);
+                    } elseif (is_string($data[$jsonField])) {
+                        // Validate it's a valid JSON string
+                        json_decode($data[$jsonField]);
+                        if (json_last_error() !== JSON_ERROR_NONE) {
+                            $data[$jsonField] = '[]';
+                        }
+                    }
                 }
             }
 
-            \Log::info('Updating User Settings for user ' . $userId, $data);
+            // Cast booleans
+            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email'] as $boolField) {
+                if (isset($data[$boolField])) {
+                    $data[$boolField] = $data[$boolField] ? 1 : 0;
+                }
+            }
+
+            \Log::info('Final data to save', ['custom_measures' => $data['custom_measures'] ?? 'NOT SET', 'ordonnance_layout' => $data['ordonnance_layout'] ?? 'NOT SET']);
 
             DB::table('user_settings')->updateOrInsert(
                 ['user_id' => $userId],
                 $data
             );
 
+            \Log::info('Settings saved successfully for user ' . $userId);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Paramètres mis à jour avec succès'
             ]);
         } catch (\Exception $e) {
-            \Log::error('Settings update error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            \Log::error('Settings update error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'line' => $e->getLine(),
+                'file' => $e->getFile(),
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -266,5 +286,60 @@ class SettingsController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    // Upload Ordonnance Background
+    public function uploadOrdonnanceBackground(Request $request)
+    {
+        try {
+            $userId = auth()->id() ?? $request->user_id;
+            if (!$userId) {
+                return response()->json(['success' => false, 'message' => 'Non authentifié'], 401);
+            }
+
+            if (!$request->hasFile('background')) {
+                return response()->json(['success' => false, 'message' => 'Aucun fichier reçu'], 400);
+            }
+
+            $file = $request->file('background');
+            $filename = 'ordonnance_bg_' . $userId . '_' . time() . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('ordonnances', $filename, 'public');
+
+            // Save to settings
+            $url = "/storage/ordonnances/{$filename}";
+            DB::table('user_settings')->updateOrInsert(
+                ['user_id' => $userId],
+                ['ordonnance_background' => $url, 'updated_at' => now()]
+            );
+
+            // Return the PROXY URL instead of direct storage link to avoid CORS
+            return response()->json([
+                'success' => true,
+                'url' => url('/api/settings/ordonnance-background/' . $filename)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Serve background image with CORS headers
+     */
+    public function serveOrdonnanceBackground($filename)
+    {
+        $path = storage_path('app/public/ordonnances/' . $filename);
+
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        $file = file_get_contents($path);
+        $type = mime_content_type($path);
+
+        return response($file)
+            ->header('Content-Type', $type)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Origin, Content-Type, Accept, Authorization');
     }
 }

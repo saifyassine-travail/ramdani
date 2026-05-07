@@ -25,6 +25,9 @@ class StatisticsController extends Controller
                     ->whereYear('appointment_date', Carbon::now()->year)
                     ->count();
 
+                // 1.1 Unpaid Amount (Credit)
+                $totalUnpaid = Appointment::sum('credit') ?? 0;
+
                 // 2. Appointment Trends (Optimized)
                 // Daily (Last 30 Days) - Single Query
                 $endDate = Carbon::now();
@@ -147,6 +150,7 @@ class StatisticsController extends Controller
                         'total_appointments' => $totalAppointments,
                         'appointments_today' => $appointmentsToday,
                         'appointments_month' => $appointmentsThisMonth,
+                        'total_unpaid' => $totalUnpaid,
                     ],
                     'trends' => $trends,
                     'revenue' => $revenue,
@@ -235,6 +239,7 @@ class StatisticsController extends Controller
             $labels = [];
             $counts = [];
             $revenues = [];
+            $credits = [];
 
             if ($view === 'year') {
                 // Return monthly data for the specific year
@@ -244,12 +249,13 @@ class StatisticsController extends Controller
                     
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $m)
-                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue')
+                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue, SUM(credit) as credit')
                         ->first();
 
                     $labels[] = $monthLabel;
                     $counts[] = $data->count ?? 0;
                     $revenues[] = $data->revenue ?? 0; 
+                    $credits[] = $data->credit ?? 0;
                 }
             } elseif ($view === 'month') {
                 // Return daily data for the specific month
@@ -264,12 +270,13 @@ class StatisticsController extends Controller
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $month)
                         ->whereDay('appointment_date', $d)
-                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue')
+                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue, SUM(credit) as credit')
                         ->first();
 
                     $labels[] = $dayLabel;
                     $counts[] = $data->count ?? 0;
                     $revenues[] = $data->revenue ?? 0;
+                    $credits[] = $data->credit ?? 0;
                 }
             }
 
@@ -279,7 +286,8 @@ class StatisticsController extends Controller
                 $chartData[] = [
                     'date' => $label,
                     'count' => $counts[$index],
-                    'revenue' => $revenues[$index]
+                    'revenue' => $revenues[$index],
+                    'credit' => $credits[$index]
                 ];
             }
 

@@ -12,8 +12,9 @@ class Appointment extends Model
     protected $table = 'appointments';
     protected $fillable = ['appointment_date',        'status', 
         'mutuelle', 
-        'payement', 
-        'Diagnostic',
+        'payement',
+        'credit',
+        'diagnostic',
         'type',
         'consultation_started_at',
         'consultation_ended_at',

@@ -6,23 +6,13 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::table('improve_performance', function (Blueprint $table) {
-            //
-        });
+        // No-op: fields already exist or are not needed
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::table('improve_performance', function (Blueprint $table) {
-            //
-        });
+        // No-op
     }
 };

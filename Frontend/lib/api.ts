@@ -56,6 +56,8 @@ export interface Appointment {
   diagnostic?: string
   mutuelle: boolean | number // Can be 0/1 from Laravel or boolean from frontend
   payement?: number
+  total_fee?: number
+  credit?: number
   ID_patient: number
   created_at?: string
   updated_at?: string
@@ -325,7 +327,7 @@ class ApiClient {
       case_description?: string
     }>
   > {
-    return this.request(`/appointments/${appointmentId}/last-info`)
+    return this.request(`/appointments/${appointmentId}/last-info`, {}, true)
   }
 
   async updatePrice(appointmentId: number, price: number, medicalActs?: string[]): Promise<ApiResponse<{ price: number; medical_acts?: string[] }>> {
@@ -1035,14 +1037,14 @@ class ApiClient {
   }
 
   async getDoctorStats(): Promise<ApiResponse<any>> {
-    return this.request("/medecin/statistics")
+    return this.request("/medecin/statistics", {}, true)
   }
 
   async getStatsRange(): Promise<ApiResponse<{ min_year: number; max_year: number }>> {
     return this.request("/medecin/statistics/range")
   }
 
-  async getChartData(view: 'year' | 'month', target: string): Promise<ApiResponse<Array<{ date: string; count: number; revenue: number }>>> {
+  async getChartData(view: 'year' | 'month', target: string): Promise<ApiResponse<Array<{ date: string; count: number; revenue: number; credit: number }>>> {
     const params = new URLSearchParams()
     params.append("view", view)
     params.append("target", target)
@@ -1070,6 +1072,26 @@ class ApiClient {
     return this.request("/users")
   }
 
+  async uploadOrdonnanceBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
+    return this.post('/settings/upload-background', formData);
+  }
+
+  async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    return this.request(endpoint, {
+      method: "POST",
+      body: body instanceof FormData ? body : JSON.stringify(body),
+      headers: body instanceof FormData ? {} : { "Content-Type": "application/json" },
+    })
+  }
+
+  async put<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {
+    return this.request(endpoint, {
+      method: "PUT",
+      body: body instanceof FormData ? body : JSON.stringify(body),
+      headers: body instanceof FormData ? {} : { "Content-Type": "application/json" },
+    })
+  }
+
   async createUser(userData: any): Promise<ApiResponse<any>> {
     return this.request("/users", {
       method: "POST",
@@ -1089,6 +1111,17 @@ class ApiClient {
   async deleteUser(id: number): Promise<ApiResponse<any>> {
     return this.request(`/users/${id}`, {
       method: "DELETE",
+    })
+  }
+
+  async updateCredit(appointmentId: number, credit: number): Promise<ApiResponse<any>> {
+    return this.request("/appointments/update-credit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id_appointment: appointmentId,
+        credit: credit,
+      }),
     })
   }
 

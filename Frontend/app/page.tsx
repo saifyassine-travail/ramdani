@@ -39,6 +39,7 @@ const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
   const [deletingAppointmentId, setDeletingAppointmentId] = useState<number | null>(null)
+  const [confirmingAppointment, setConfirmingAppointment] = useState<{ id: number; source: string; target: string } | null>(null)
   const [renderKey, setRenderKey] = useState(0)
 
   // État local géré manuellement
@@ -50,6 +51,12 @@ const Dashboard = () => {
     completed: [],
     canceled: [],
   })
+
+  // Ref so drag handlers always see the latest localData (avoids stale closure)
+  const localDataRef = useRef<AppointmentsByStatus>({
+    scheduled: [], waiting: [], preparing: [], consulting: [], completed: [], canceled: [],
+  })
+  useEffect(() => { localDataRef.current = localData }, [localData])
 
   const {
     appointments: serverData,
@@ -239,7 +246,41 @@ const Dashboard = () => {
         return
       }
 
-      console.log("Processing drop:", appointmentId, sourceStatus, "->", targetStatus)
+      // Check for empty case description if moving to completed
+      if (targetStatus === "completed") {
+        let apt: Appointment | null = null
+        for (const s of STATUSES) {
+          const found = localDataRef.current[s as keyof AppointmentsByStatus]?.find((a) => a.ID_RV === appointmentId)
+          if (found) {
+            apt = found
+            break
+          }
+        }
+
+        const rawApt = apt as any
+        // Laravel serializes the caseDescription() relation as case_description in JSON
+        const cd = rawApt?.case_description || rawApt?.caseDescription
+
+        if (cd && typeof cd === 'object') {
+          const hasValue = Object.keys(cd).some(key => {
+            if (['created_at', 'updated_at', 'id', 'ID_RV', 'ID_patient'].includes(key)) return false
+            const val = cd[key]
+            return val !== null && val !== undefined && val !== ""
+          })
+          const hasOtherData = !!(apt?.diagnostic || (apt?.medicaments && (apt?.medicaments as any[]).length > 0))
+
+          if (!hasValue && !hasOtherData) {
+            setConfirmingAppointment({ id: appointmentId, source: sourceStatus, target: targetStatus })
+            dragStateRef.current = { appointmentId: null, sourceStatus: null, isDragging: false }
+            return
+          }
+        } else if (!cd) {
+          // No case_description loaded at all — show confirmation to be safe
+          setConfirmingAppointment({ id: appointmentId, source: sourceStatus, target: targetStatus })
+          dragStateRef.current = { appointmentId: null, sourceStatus: null, isDragging: false }
+          return
+        }
+      }
 
       // Reset drag state
       dragStateRef.current = { appointmentId: null, sourceStatus: null, isDragging: false }
@@ -342,6 +383,27 @@ const Dashboard = () => {
       refetch(selectedDate, true)
     }
     setDeletingAppointmentId(null)
+  }
+
+  const handleConfirmStatusChange = async () => {
+    if (!confirmingAppointment) return
+    const { id, source, target } = confirmingAppointment
+    setConfirmingAppointment(null)
+
+    moveLocal(id, source, target)
+    try {
+      const result = await updateAppointmentStatus(id, target)
+      if (result.success) {
+        showNotification("Statut mis à jour", "success")
+      } else {
+        showNotification(result.message || "Erreur", "error")
+        moveLocal(id, target, source)
+      }
+    } catch (err) {
+      console.error("API error:", err)
+      showNotification("Erreur serveur", "error")
+      moveLocal(id, target, source)
+    }
   }
 
   const { emit: emitDateChange } = useGlobalSync("date-select", {
@@ -450,6 +512,23 @@ const Dashboard = () => {
             <AlertDialogCancel>Annuler</AlertDialogCancel>
             <AlertDialogAction onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700">
               Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!confirmingAppointment} onOpenChange={(open) => !open && setConfirmingAppointment(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Description du cas vide</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vous allez marquer ce rendez-vous comme terminé sans avoir rempli de description du cas. Confirmer ?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Retour</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmStatusChange} className="bg-green-600 hover:bg-green-700">
+              Passer à Terminé
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

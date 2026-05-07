@@ -1,0 +1,30 @@
+Appointment 14:
+Description: NULL
+Notes: NULL
+Case Desc relation exists?: YES
+Actual case_description field: 'bla bla bla bla'
+
+Last info API output for 15:
+{
+    "success": true,
+    "data": {
+        "date": "24 May 1995",
+        "medicaments": [
+            {
+                "id": 2,
+                "name": "ABIRANAT 250 MG, Comprimé",
+                "dosage": null,
+                "frequence": null,
+                "duree": null
+            }
+        ],
+        "analyses": [],
+        "case_description": "bla bla bla bla",
+        "weight": null,
+        "tall": null,
+        "temperature": null,
+        "pulse": null,
+        "blood_pressure": null,
+        "custom_measures_values": "[]"
+    }
+}

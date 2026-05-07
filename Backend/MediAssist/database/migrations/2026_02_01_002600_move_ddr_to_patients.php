@@ -12,12 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('case_descriptions', function (Blueprint $table) {
-            $table->dropColumn('DDR');
+            if (Schema::hasColumn('case_descriptions', 'DDR')) {
+                $table->dropColumn('DDR');
+            }
         });
 
-        Schema::table('patients', function (Blueprint $table) {
-            $table->date('DDR')->nullable();
-        });
+        // Add DDR to patients only if it doesn't exist yet
+        if (!Schema::hasColumn('patients', 'DDR')) {
+            Schema::table('patients', function (Blueprint $table) {
+                $table->date('DDR')->nullable();
+            });
+        }
     }
 
     /**
@@ -25,12 +30,16 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('patients', function (Blueprint $table) {
-            $table->dropColumn('DDR');
-        });
+        if (Schema::hasColumn('patients', 'DDR')) {
+            Schema::table('patients', function (Blueprint $table) {
+                $table->dropColumn('DDR');
+            });
+        }
 
-        Schema::table('case_descriptions', function (Blueprint $table) {
-            $table->date('DDR')->nullable();
-        });
+        if (!Schema::hasColumn('case_descriptions', 'DDR')) {
+            Schema::table('case_descriptions', function (Blueprint $table) {
+                $table->date('DDR')->nullable();
+            });
+        }
     }
 };

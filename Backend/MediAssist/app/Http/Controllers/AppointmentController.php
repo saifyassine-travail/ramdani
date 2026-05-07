@@ -33,7 +33,7 @@ class AppointmentController extends Controller
                 $parsedDate = Carbon::now()->format('Y-m-d');
             }
 
-            $appointments = Appointment::with('patient')
+            $appointments = Appointment::with(['patient', 'caseDescription'])
                 ->whereDate('appointment_date', $parsedDate)
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -143,6 +143,9 @@ class AppointmentController extends Controller
 
             $appointment->status = $statusMapping[$validated['status']];
             $appointment->save();
+            
+            // Clear statistics cache if status changed to/from 'Terminé'
+            \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
             // optionally return styling classes or whatever the frontend needs
             $statusColors = [
@@ -351,6 +354,13 @@ if (!empty($caseData)) {
 
             $last = Appointment::where('ID_patient', $current->ID_patient)
                 ->where('ID_RV', '!=', $ID_RV)
+                ->where(function ($query) use ($current) {
+                    $query->whereDate('appointment_date', '<', $current->appointment_date)
+                          ->orWhere(function ($q) use ($current) {
+                              $q->whereDate('appointment_date', '=', $current->appointment_date)
+                                ->where('created_at', '<', $current->created_at);
+                          });
+                })
                 ->with([
                     'medicaments' => function ($q) {
                         $q->withPivot('dosage', 'frequence', 'duree');
@@ -359,6 +369,7 @@ if (!empty($caseData)) {
                     'caseDescription'
                 ])
                 ->orderBy('appointment_date', 'desc')
+                ->orderBy('created_at', 'desc')
                 ->first();
 
             if (!$last) {
@@ -383,7 +394,8 @@ if (!empty($caseData)) {
                     'id' => $a->ID_Analyse,
                     'name' => $a->type_analyse,
                 ]),
-                'case_description' => optional($last->caseDescription)->case_description,
+                'case_description' => optional($last->caseDescription)->case_description ?: 
+                                     (optional($last->caseDescription)->notes ?: $last->diagnostic),
                 'weight' => optional($last->caseDescription)->weight,
                 'tall' => optional($last->caseDescription)->tall,
                 'temperature' => optional($last->caseDescription)->temperature,
@@ -427,6 +439,9 @@ if (!empty($caseData)) {
             }
 
             $appointment->save();
+            
+            // Clear statistics cache
+            \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
             return response()->json([
                 'success' => true,
@@ -567,9 +582,32 @@ if (!empty($caseData)) {
     }
 
     /**
+     * Update the credit (rest) for an appointment.
+     */
+    public function updateCredit(Request $request)
+    {
+        $validated = $request->validate([
+            'id_appointment' => 'required|integer|exists:appointments,ID_RV',
+            'credit' => 'required|numeric|min:0',
+        ]);
+
+        $appointment = Appointment::findOrFail($validated['id_appointment']);
+        $appointment->credit = $validated['credit'];
+        $appointment->save();
+
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Crédit mis à jour avec succès',
+        ]);
+    }
+
+    /**
      * POST /api/appointments (create a new appointment) — simpler version
      */
-public function storeV1(Request $request)
+    public function storeV1(Request $request)
 {
     try {
         $validated = $request->validate([
@@ -590,32 +628,23 @@ public function storeV1(Request $request)
             ], 404);
         }
 
-        // Determine payment based on patient's mutuelle and appointment type
-        $mutuelle = false;
-        $payment = 300; // default
-
-        if ($validated['type'] === 'Control') {
-            $payment = 0;
-        } else {
-            $mutuelleStr = strtoupper($patient->mutuelle ?? '');
-            if ($mutuelleStr === 'ONE') {
-                $mutuelle = true;
-                $payment = 50;
-            } elseif ($mutuelleStr === 'AUCUN') {
-                $mutuelle = false;
-                $payment = 250;
-            }
-        }
+        // Default payment and credit to 0 as requested
+        $payment = 0;
+        $credit = 0;
 
         $appointment = Appointment::create([
             'ID_patient' => $validated['patient_id'],
             'type' => $validated['type'],
             'appointment_date' => $validated['appointment_date'],
             'status' => 'Programmé',
-            'mutuelle' => $mutuelle,
+            'mutuelle' => strtoupper($patient->mutuelle ?? '') === 'ONE',
             'payement' => $payment,
+            'credit' => $credit,
             'notes' => $validated['notes'],
         ]);
+
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
         return response()->json([
             'success' => true,
@@ -676,32 +705,25 @@ public function store(Request $request)
         $formattedDate = Carbon::createFromFormat('Y-m-d', $validated['appointment_date_hidden'])
             ->setTime(12, 0, 0);
 
-        // ✅ Determine payment amount
-        $payment = 300; // default
-        $mutuelle = strtolower($validated['mutuelle'] ?? ''); // handle null safely
-
-        if ($mutuelle === 'one') {
-            $payment = 50;
-        } elseif ($mutuelle === 'aucun') {
-            $payment = 250;
-        }
-
-        // ✅ Create the appointment
+        // ✅ Create the appointment with default 0 payment and credit
         $appointment = Appointment::create([
             'ID_patient' => $validated['patient_id'],
-            'appointment_type' => $validated['appointment_type'],
+            'type' => $validated['appointment_type'] === 'consultation' ? 'Consultation' : 'Control',
             'appointment_date' => $formattedDate,
-            'description' => $validated['patient_notes'] ?? '',
-            'status' => 'Programmé',
             'diagnostic' => '',
-            'mutuelle' => $mutuelle,
-            'payment' => $payment, // added payment
+            'status' => 'Programmé',
+            'mutuelle' => strtolower($validated['mutuelle'] ?? '') === 'one',
+            'payement' => 0,
+            'credit' => 0,
         ]);
 
         if (!empty($validated['patient_notes'])) {
             $patient->notes = $validated['patient_notes'];
             $patient->save();
         }
+
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
         return response()->json([
             'success' => true,
@@ -739,6 +761,9 @@ public function store(Request $request)
                 'type' => 'Control',
                 'status' => 'Programmé',
             ]);
+
+            // Clear statistics cache
+            \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
             return response()->json([
                 'success' => true,
@@ -825,6 +850,9 @@ public function update(Request $request, $id)
 
         $appointment->save();
 
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
+
         return response()->json([
             'success' => true,
             'message' => 'Rendez-vous mis à jour avec succès',
@@ -855,6 +883,9 @@ public function destroy($id)
     try {
         $appointment = Appointment::findOrFail($id);
         $appointment->delete();
+
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
         return response()->json([
             'success' => true,
@@ -910,6 +941,9 @@ public function quickAddAppointment(Request $request)
             'payement' => 0, // Control appointments are free
             'notes' => null,
         ]);
+
+        // Clear statistics cache
+        \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
         return response()->json([
             'success' => true,

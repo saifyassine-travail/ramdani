@@ -1,0 +1,28 @@
+{
+    "success": true,
+    "data": {
+        "date": "29 Jan 2026",
+        "medicaments": [
+            {
+                "id": 3,
+                "name": "ABIRATERONE GT 250 MG, Comprim\u00e9",
+                "dosage": "Avant repas",
+                "frequence": "Midi,Soir",
+                "duree": "10 jours"
+            }
+        ],
+        "analyses": [
+            {
+                "id": 6,
+                "name": "HDL"
+            }
+        ],
+        "case_description": "bla bla bla",
+        "weight": null,
+        "tall": null,
+        "temperature": null,
+        "pulse": null,
+        "blood_pressure": null,
+        "custom_measures_values": "[]"
+    }
+}

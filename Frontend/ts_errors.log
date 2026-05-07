@@ -1,0 +1,6 @@
+app/appointments/[id]/page.tsx(1574,13): error TS17002: Expected corresponding JSX closing tag for 'ResizablePanel'.
+app/appointments/[id]/page.tsx(1575,13): error TS17002: Expected corresponding JSX closing tag for 'ResizablePanelGroup'.
+app/appointments/[id]/page.tsx(1697,11): error TS17002: Expected corresponding JSX closing tag for 'form'.
+app/appointments/[id]/page.tsx(1724,9): error TS17002: Expected corresponding JSX closing tag for 'div'.
+app/appointments/[id]/page.tsx(1725,5): error TS1005: ')' expected.
+app/appointments/[id]/page.tsx(1726,3): error TS1109: Expression expected.
