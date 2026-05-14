@@ -633,8 +633,12 @@ if (!empty($caseData)) {
             ], 404);
         }
 
-        // Default payment and credit to 0 as requested
-        $payment = 0;
+        $userId = auth('sanctum')->id();
+        $userSettings = $userId ? \DB::table('user_settings')->where('user_id', $userId)->first() : null;
+        $isConsultation = $validated['type'] === 'Consultation';
+        $payment = $isConsultation
+            ? ($userSettings->default_consultation_price ?? 250)
+            : ($userSettings->default_control_price ?? 0);
         $credit = 0;
 
         $appointment = Appointment::create([
@@ -710,15 +714,22 @@ public function store(Request $request)
         $formattedDate = Carbon::createFromFormat('Y-m-d', $validated['appointment_date_hidden'])
             ->setTime(12, 0, 0);
 
-        // ✅ Create the appointment with default 0 payment and credit
+        // Load default prices from user settings
+        $userId = auth('sanctum')->id();
+        $userSettings = $userId ? \DB::table('user_settings')->where('user_id', $userId)->first() : null;
+        $isConsultation = $validated['appointment_type'] === 'consultation';
+        $defaultPayment = $isConsultation
+            ? ($userSettings->default_consultation_price ?? 250)
+            : ($userSettings->default_control_price ?? 0);
+
         $appointment = Appointment::create([
             'ID_patient' => $validated['patient_id'],
-            'type' => $validated['appointment_type'] === 'consultation' ? 'Consultation' : 'Control',
+            'type' => $isConsultation ? 'Consultation' : 'Control',
             'appointment_date' => $formattedDate,
             'diagnostic' => '',
             'status' => 'Programmé',
             'mutuelle' => strtolower($validated['mutuelle'] ?? '') === 'one',
-            'payement' => 0,
+            'payement' => $defaultPayment,
             'credit' => 0,
         ]);
 
@@ -936,14 +947,17 @@ public function quickAddAppointment(Request $request)
             $appointmentDate->addDay();
         }
 
-        // Create the control appointment
+        $userId = auth('sanctum')->id();
+        $userSettings = $userId ? \DB::table('user_settings')->where('user_id', $userId)->first() : null;
+        $controlPayment = $userSettings->default_control_price ?? 0;
+
         $appointment = Appointment::create([
             'ID_patient' => $patient->ID_patient,
             'type' => 'Control',
             'appointment_date' => $appointmentDate->toDateString(),
             'status' => 'Programmé',
             'mutuelle' => false,
-            'payement' => 0, // Control appointments are free
+            'payement' => $controlPayment,
             'notes' => null,
         ]);
 

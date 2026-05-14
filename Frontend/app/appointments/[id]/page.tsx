@@ -103,6 +103,9 @@ export default function AppointmentDetailsPage() {
     show_temperature: true,
     show_pressure: true,
     show_glycemia: true,
+    show_ddr: true,
+    default_consultation_price: 250,
+    default_control_price: 0,
     custom_measures: [] as any[]
   })
 
@@ -132,6 +135,9 @@ export default function AppointmentDetailsPage() {
             show_temperature: settingsData.show_temperature ?? true,
             show_pressure: settingsData.show_pressure ?? true,
             show_glycemia: settingsData.show_glycemia ?? true,
+            show_ddr: settingsData.show_ddr ?? true,
+            default_consultation_price: settingsData.default_consultation_price ?? 250,
+            default_control_price: settingsData.default_control_price ?? 0,
             custom_measures: parsedMeasures,
             ordonnance_background: settingsData.ordonnance_background || null,
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
@@ -166,8 +172,8 @@ export default function AppointmentDetailsPage() {
   const [ddr, setDdr] = useState<string>("")
 
   // Medical Acts List
-  const medicalActs = [
-    { name: "Consultation", price: 250 },
+  const medicalActs = useMemo(() => [
+    { name: "Consultation", price: caseConfig.default_consultation_price },
     { name: "Aspiration", price: 2000 },
     { name: "CG", price: 0 },
     { name: "Échographie pelvienne", price: 400 },
@@ -181,8 +187,8 @@ export default function AppointmentDetailsPage() {
     { name: "Stérilet hormonal", price: 500 },
     { name: "Échographie mammaire", price: 400 },
     { name: "Insémination", price: 1000 },
-    { name: "Contrôle", price: 0 },
-  ]
+    { name: "Contrôle", price: caseConfig.default_control_price },
+  ], [caseConfig.default_consultation_price, caseConfig.default_control_price])
 
   const [selectedActs, setSelectedActs] = useState<string[]>([])
   const [totalActsPrice, setTotalActsPrice] = useState(0)
@@ -1213,6 +1219,7 @@ export default function AppointmentDetailsPage() {
                       );
                     })}
                     {/* DDR Field */}
+                    {caseConfig.show_ddr && (
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-medium text-blue-700 mb-1">DDR (Date des Dernières Règles)</label>
                       <Input
@@ -1310,6 +1317,7 @@ export default function AppointmentDetailsPage() {
                         )
                       })()}
                     </div>
+                    )}
 
                     <div className="sm:col-span-2">
                       <label className="block text-xs font-medium text-blue-700 mb-1">Notes</label>

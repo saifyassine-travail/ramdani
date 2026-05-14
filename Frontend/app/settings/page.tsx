@@ -666,6 +666,42 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Default Prices */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Prix par défaut</CardTitle>
+              <CardDescription>Définissez les tarifs de base pour les actes de consultation et de contrôle</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="consultation_price">Prix Consultation (DH)</Label>
+                  <Input
+                    id="consultation_price"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="250"
+                    value={settings?.default_consultation_price ?? 250}
+                    onChange={(e) => setSettings({ ...settings, default_consultation_price: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="control_price">Prix Contrôle (DH)</Label>
+                  <Input
+                    id="control_price"
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    value={settings?.default_control_price ?? 0}
+                    onChange={(e) => setSettings({ ...settings, default_control_price: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Notification Settings */}
           <Card>
             <CardHeader>
@@ -721,6 +757,17 @@ export default function SettingsPage() {
               <CardDescription>Personnalisez l'interface</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <Label>Afficher le champ DDR</Label>
+                  <p className="text-sm text-gray-500">Afficher la Date des Dernières Règles dans les détails du rendez-vous</p>
+                </div>
+                <Switch
+                  checked={settings?.show_ddr ?? true}
+                  onCheckedChange={(checked) => setSettings({ ...settings, show_ddr: checked })}
+                />
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Langue</Label>

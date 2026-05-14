@@ -285,6 +285,8 @@ class ApiClient {
       spo2?: null
       DDR?: string
       notes?: string
+      diagnostic?: string
+      custom_measures_values?: Record<string, string>
       medicaments?: Array<{
         ID_Medicament: number
         dosage?: string

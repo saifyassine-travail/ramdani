@@ -36,6 +36,9 @@ class SettingsController extends Controller
                     'email_notifications' => true,
                     'sms_reminders' => true,
                     'custom_measures' => '[]',
+                    'show_ddr' => true,
+                    'default_consultation_price' => 250,
+                    'default_control_price' => 0,
                 ];
             }
 
@@ -72,7 +75,8 @@ class SettingsController extends Controller
                 'language', 'date_format', 'time_format', 'dashboard_layout', 'default_view',
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
-                'ordonnance_background', 'ordonnance_layout'
+                'ordonnance_background', 'ordonnance_layout', 'show_ddr',
+                'default_consultation_price', 'default_control_price'
             ];
 
             $data = [];
@@ -101,7 +105,7 @@ class SettingsController extends Controller
             }
 
             // Cast booleans
-            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email'] as $boolField) {
+            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email', 'show_ddr'] as $boolField) {
                 if (isset($data[$boolField])) {
                     $data[$boolField] = $data[$boolField] ? 1 : 0;
                 }

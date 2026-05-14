@@ -2,6 +2,7 @@
 
 import React from "react"
 import { useState, useEffect, createContext, useCallback, useMemo, useRef } from "react"
+import { useRouter } from "next/navigation"
 import PatientCard from "../components/patient-card"
 import AppointmentCalendar from "../components/appointment-calendar"
 import { useAppointments } from "../hooks/use-appointments"
@@ -9,6 +10,8 @@ import { Appointment } from "@/lib/api"
 import { useGlobalSync } from "@/hooks/use-global-sync"
 import EditAppointmentModal from "@/components/edit-appointment-modal"
 import IconComponent from "@/components/icon-component"
+import { Button } from "@/components/ui/button"
+import QuickCaseModal from "@/components/quick-case-modal"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,11 +39,16 @@ interface AppointmentsByStatus {
 const STATUSES = ["scheduled", "waiting", "preparing", "consulting", "completed", "canceled"] as const
 
 const Dashboard = () => {
+  const router = useRouter()
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
   const [deletingAppointmentId, setDeletingAppointmentId] = useState<number | null>(null)
   const [confirmingAppointment, setConfirmingAppointment] = useState<{ id: number; source: string; target: string } | null>(null)
   const [renderKey, setRenderKey] = useState(0)
+
+  // Quick case modal (right-click on "preparing")
+  const [contextMenuApt, setContextMenuApt] = useState<Appointment | null>(null)
+  const clickTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // État local géré manuellement
   const [localData, setLocalData] = useState<AppointmentsByStatus>({
@@ -352,6 +360,20 @@ const Dashboard = () => {
     }
   }, [toggleMutuelle, showNotification, refetch])
 
+  const handleCardRightClick = useCallback((e: React.MouseEvent, apt: Appointment, status: string) => {
+    if (status !== "preparing") return
+    e.preventDefault()
+    setContextMenuApt(apt)
+  }, [])
+
+  const handleCardDoubleClick = useCallback((apt: Appointment) => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    router.push(`/appointments/${apt.ID_RV}`)
+  }, [router])
+
   const handleDeleteClick = useCallback((id: number) => {
     setDeletingAppointmentId(id)
   }, [])
@@ -459,8 +481,9 @@ const Dashboard = () => {
                         <div
                           key={`${apt.ID_RV}-${renderKey}`}
                           data-appointment-id={apt.ID_RV}
-                          draggable="true"
-                          className="cursor-grab active:cursor-grabbing"
+                          className="cursor-pointer select-none"
+                          onContextMenu={(e) => handleCardRightClick(e, apt, section.status)}
+                          onDoubleClick={() => handleCardDoubleClick(apt)}
                         >
                           <PatientCard
                             name={`${apt.patient?.first_name || ""} ${apt.patient?.last_name || ""}`}
@@ -469,7 +492,6 @@ const Dashboard = () => {
                             appointmentId={apt.ID_RV}
                             patientId={apt.ID_patient}
                             mutuelle={apt.mutuelle}
-                            onMutuelleToggle={handleMutuelleToggle}
                             onMutuelleToggle={handleMutuelleToggle}
                             onDelete={() => handleDeleteClick(apt.ID_RV)}
                             onEdit={() => handleEditClick(apt.ID_RV)}
@@ -516,6 +538,13 @@ const Dashboard = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Quick case form (right-click on "En préparation") */}
+      <QuickCaseModal
+        apt={contextMenuApt}
+        onClose={() => setContextMenuApt(null)}
+        onSaved={() => showNotification("Fiche sauvegardée", "success")}
+      />
 
       <AlertDialog open={!!confirmingAppointment} onOpenChange={(open) => !open && setConfirmingAppointment(null)}>
         <AlertDialogContent>
