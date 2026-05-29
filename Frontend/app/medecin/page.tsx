@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { apiClient, type Appointment } from "@/lib/api"
+import { formatName } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -352,7 +353,7 @@ const DoctorDashboard = () => {
                   <CardTitle className="text-3xl font-bold text-gray-900 flex items-center gap-3">
                     {data.currentPatient ? (
                       <>
-                        {data.currentPatient.patient.gender === "Female" ? "Mme." : "M."} {data.currentPatient.patient.first_name} {data.currentPatient.patient.last_name}
+                        {data.currentPatient.patient.gender === "Female" ? "Mme." : "M."} {formatName(data.currentPatient.patient.first_name, data.currentPatient.patient.last_name)}
                       </>
                     ) : (
                       "Aucun patient en consultation"
@@ -597,12 +598,12 @@ const DoctorDashboard = () => {
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9 bg-yellow-100 text-yellow-700 font-medium text-xs">
                                 <AvatarFallback className="bg-yellow-100 text-yellow-700">
-                                  {patient.patient.first_name.charAt(0)}{patient.patient.last_name.charAt(0)}
+                                  {patient.patient.last_name.charAt(0)}{patient.patient.first_name.charAt(0)}
                                 </AvatarFallback>
                               </Avatar>
                               <div>
                                 <p className="font-medium text-sm text-gray-900 leading-none">
-                                  {patient.patient.first_name} {patient.patient.last_name}
+                                  {formatName(patient.patient.first_name, patient.patient.last_name)}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                                   <Calendar className="w-3 h-3" />
@@ -640,12 +641,12 @@ const DoctorDashboard = () => {
                             <div className="flex items-center gap-3">
                               <Avatar className="h-9 w-9 bg-orange-100 text-orange-700 font-medium text-xs">
                                 <AvatarFallback className="bg-orange-100 text-orange-700">
-                                  {patient.patient.first_name.charAt(0)}{patient.patient.last_name.charAt(0)}
+                                  {patient.patient.last_name.charAt(0)}{patient.patient.first_name.charAt(0)}
                                 </AvatarFallback>
                               </Avatar>
                               <div>
                                 <p className="font-medium text-sm text-gray-900 leading-none">
-                                  {patient.patient.first_name} {patient.patient.last_name}
+                                  {formatName(patient.patient.first_name, patient.patient.last_name)}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                                   <Activity className="w-3 h-3" />
@@ -681,7 +682,7 @@ const DoctorDashboard = () => {
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full bg-green-500" />
                           <span className="text-sm font-medium text-gray-700">
-                            {patient.patient.first_name} {patient.patient.last_name}
+                            {formatName(patient.patient.first_name, patient.patient.last_name)}
                           </span>
                         </div>
                         <Button

@@ -74,18 +74,20 @@ Route::prefix('medicaments')->controller(MedicamentController::class)->group(fun
     Route::put('{id}', 'update');             // keep this AFTER search
     Route::patch('{id}/archive', 'archive');
     Route::patch('{id}/restore', 'restore');
+    Route::patch('{id}/favorite', 'toggleFavorite');
 });
 
 
 // ANALYSES
 Route::prefix('analyses')->controller(AnalysisController::class)->group(function () {
+    Route::get('/search', 'search');       // GET /api/analyses/search?term=... (before {id})
     Route::get('/', 'index');              // GET /api/analyses
     Route::post('/', 'store');             // POST /api/analyses
     Route::put('{id}', 'update');          // PUT /api/analyses/{id}
     Route::patch('{id}/archive', 'archive'); // PATCH /api/analyses/{id}/archive
     Route::patch('{id}/restore', 'restore'); // PATCH /api/analyses/{id}/restore
+    Route::patch('{id}/favorite', 'toggleFavorite'); // PATCH /api/analyses/{id}/favorite
     Route::delete('{id}', 'destroy');      // DELETE /api/analyses/{id}
-    Route::get('/search', 'search');       // GET /api/analyses/search?term=...
 });
 
 //MEDECIN DASHBOARD

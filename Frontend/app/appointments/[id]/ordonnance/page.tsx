@@ -125,16 +125,28 @@ export default function AppointmentDetailsPage() {
       const patientName = appointment?.patient?.name || "Patient"
       const dateStr = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
 
-      // Helper to generate medication text
-      const getMedicationText = (med: MedicationForm) => {
-        const times = med.pivot?.frequence ? med.pivot.frequence.split(',').filter(t => t.trim()) : []
-        const mealTiming = med.pivot?.dosage || ""
-        const duration = med.pivot?.duree || ""
-        let p = med.name || "Médicament"
-        if (times.length > 0) p += ` – 1 comprimé ${times.map(t => t.toLowerCase()).join(', ')}`
-        if (mealTiming) p += `, ${mealTiming.toLowerCase()}`
-        if (duration) p += `, pendant ${duration}`
-        return p
+      // Parse medication dose entries from frequence field
+      const parseMedDoses = (frequence: string) => {
+        if (!frequence) return []
+        return frequence.split(',').map(part => {
+          const colonIdx = part.indexOf(':')
+          if (colonIdx < 0) return { time: part.trim(), mealTiming: '' }
+          return { time: part.slice(0, colonIdx).trim(), mealTiming: part.slice(colonIdx + 1).trim() }
+        }).filter(d => d.time)
+      }
+
+      // Helper to generate medication HTML block for ordonnance
+      const getMedicationHTML = (med: MedicationForm) => {
+        const doses = parseMedDoses(med.pivot?.frequence || '')
+        const duration = med.pivot?.duree || ''
+        const name = med.name || 'Médicament'
+        let rows = doses.map(d =>
+          `<div style="display:flex;line-height:1.8;"><span style="display:inline-block;min-width:130px;">1 fois ${d.time.toLowerCase()}</span><span>${d.mealTiming}</span></div>`
+        ).join('')
+        if (duration) {
+          rows += `<div style="display:flex;line-height:1.8;"><span style="display:inline-block;min-width:130px;"></span><span>pendant ${duration}</span></div>`
+        }
+        return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${name} :</div><div style="padding-left:20px;">${rows}</div></div>`
       }
 
       let ordonnanceHTML = ""
@@ -189,7 +201,7 @@ export default function AppointmentDetailsPage() {
       ${dateStr}
     </div>
     <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${elements.medications?.fontSize}%; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => `<div style="margin-bottom: 8px;">• ${getMedicationText(m)}</div>`).join('')}
+       ${medications.map(m => getMedicationHTML(m)).join('')}
     </div>
   </div>
   <script>
@@ -225,7 +237,7 @@ export default function AppointmentDetailsPage() {
   <body>
     <div class="print-container">
       <div class="medication-list">
-        ${medications.length > 0 ? medications.map(m => `<div class="medication-item">• ${m.name || "Médicament"}</div>`).join("") : '<div class="medication-item" style="color: #999;">Aucun médicament prescrit</div>'}
+        ${medications.length > 0 ? medications.map(m => getMedicationHTML(m)).join("") : '<div style="color: #999;">Aucun médicament prescrit</div>'}
       </div>
     </div>
   </body>
@@ -885,8 +897,8 @@ export default function AppointmentDetailsPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Médicaments prescrits</label>
               <div className="space-y-4">
                 {medications.map((med, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-3 p-4 bg-gray-50 rounded-lg border">
-                    <div className="col-span-12 md:col-span-5">
+                  <div key={index} className="p-4 bg-gray-50 rounded-lg border space-y-3">
+                    <div>
                       <select
                         value={med.ID_Medicament}
                         onChange={(e) => updateMedication(index, "ID_Medicament", e.target.value)}
@@ -900,28 +912,62 @@ export default function AppointmentDetailsPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="col-span-12 md:col-span-2">
-                      <Input
-                        value={med.pivot.dosage}
-                        onChange={(e) => updateMedication(index, "dosage", e.target.value)}
-                        placeholder="Dosage"
-                      />
+                    <div className="grid grid-cols-3 gap-2 p-2 bg-white rounded-lg border border-blue-200">
+                      {(['Matin', 'Midi', 'Soir'] as const).map(time => {
+                        const parsedDoses = (med.pivot.frequence || '').split(',').map(part => {
+                          const idx = part.indexOf(':')
+                          if (idx < 0) return { time: part.trim(), mealTiming: '' }
+                          return { time: part.slice(0, idx).trim(), mealTiming: part.slice(idx + 1).trim() }
+                        }).filter(d => d.time)
+                        const dose = parsedDoses.find(d => d.time === time)
+                        const updateDoses = (newDoses: { time: string; mealTiming: string }[]) => {
+                          const order = ['Matin', 'Midi', 'Soir']
+                          const sorted = [...newDoses].sort((a, b) => order.indexOf(a.time) - order.indexOf(b.time))
+                          updateMedication(index, 'frequence', sorted.map(d => `${d.time}:${d.mealTiming}`).join(','))
+                        }
+                        return (
+                          <div key={time} className="flex flex-col gap-1">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!dose}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    updateDoses([...parsedDoses, { time, mealTiming: '' }])
+                                  } else {
+                                    updateDoses(parsedDoses.filter(d => d.time !== time))
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                              />
+                              <span className="text-xs font-semibold text-gray-700">{time}</span>
+                            </label>
+                            {dose && (
+                              <select
+                                value={dose.mealTiming}
+                                onChange={(e) => {
+                                  updateDoses(parsedDoses.map(d => d.time === time ? { ...d, mealTiming: e.target.value } : d))
+                                }}
+                                className="text-xs border border-gray-300 rounded px-1 py-1 bg-white"
+                              >
+                                <option value="">-</option>
+                                <option value="avant repas">avant repas</option>
+                                <option value="pendant repas">pendant repas</option>
+                                <option value="après repas">après repas</option>
+                              </select>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                    <div className="col-span-12 md:col-span-2">
-                      <Input
-                        value={med.pivot.frequence}
-                        onChange={(e) => updateMedication(index, "frequence", e.target.value)}
-                        placeholder="Fréquence"
-                      />
-                    </div>
-                    <div className="col-span-12 md:col-span-2">
+                    <div>
                       <Input
                         value={med.pivot.duree}
                         onChange={(e) => updateMedication(index, "duree", e.target.value)}
-                        placeholder="Durée"
+                        placeholder="Durée (ex: 3 jrs)"
                       />
                     </div>
-                    <div className="col-span-12 md:col-span-1 flex items-center justify-center">
+                    <div className="flex justify-end">
                       <Button
                         type="button"
                         variant="ghost"
@@ -930,6 +976,7 @@ export default function AppointmentDetailsPage() {
                         className="text-red-500 hover:text-red-700"
                       >
                         <Trash2 className="w-4 h-4" />
+                        <span className="ml-1 text-xs">Supprimer</span>
                       </Button>
                     </div>
                   </div>

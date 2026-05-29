@@ -125,4 +125,17 @@ class MedicamentController extends Controller
             'data' => $medicament
         ]);
     }
+
+    // PATCH /api/medicaments/{id}/favorite
+    public function toggleFavorite($id)
+    {
+        $medicament = Medicament::findOrFail($id);
+        $medicament->update(['is_favorite' => !$medicament->is_favorite]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $medicament->is_favorite ? 'Ajouté aux favoris!' : 'Retiré des favoris!',
+            'data' => $medicament
+        ]);
+    }
 }

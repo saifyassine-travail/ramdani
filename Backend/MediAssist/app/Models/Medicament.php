@@ -12,7 +12,7 @@ class Medicament extends Model
     protected $table = 'medicaments';
     protected $primaryKey = 'ID_Medicament';
 
-    protected $fillable = ['name', 'price', 'dosage', 'composition', 'classe_therapeutique', 'Code_ATCv'];
+    protected $fillable = ['name', 'price', 'dosage', 'description', 'composition', 'classe_therapeutique', 'Code_ATCv', 'archived', 'is_favorite'];
 
     public function appointments()
     {

@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { useCalendar } from "@/hooks/use-calendar"
 import { formatGlobalDate } from "@/lib/format-date"
+import { formatName } from "@/lib/utils"
 
 const Calendar = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -473,6 +474,135 @@ const MedicalHeader = () => {
 
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
+              <Dialog open={isAppointmentModalOpen} onOpenChange={setIsAppointmentModalOpen}>
+                <DialogTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 shadow-md transition-all hover:scale-105 border-0"
+                  >
+                    <Calendar />
+                    <span className="ml-2">Nouveau RV</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="text-gray-900">Planifier un Rendez-vous</DialogTitle>
+                  </DialogHeader>
+                  {appointmentFormError && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-800">{appointmentFormError}</p>
+                    </div>
+                  )}
+                  <form onSubmit={handleAddAppointment} className="space-y-4">
+                    <div>
+                      <Label htmlFor="patientSearch" className="text-gray-700">
+                        Rechercher un patient
+                      </Label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Input
+                          id="patientSearch"
+                          placeholder="Nom du patient..."
+                          className="pl-10"
+                          value={searchTerm}
+                          onChange={(e) => handlePatientSearch(e.target.value)}
+                          required
+                        />
+                      </div>
+                      {searchTerm && searchResults.length > 0 && (
+                        <div className="mt-2 border rounded-md max-h-32 overflow-y-auto bg-white">
+                          {searchResults.map((patient) => (
+                            <div
+                              key={patient.id}
+                              className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                              onClick={() => {
+                                setSearchTerm(formatName(patient.first_name, patient.last_name))
+                                setSelectedPatientId(patient.id)
+                                setSearchResults([])
+                              }}
+                            >
+                              <div className="font-medium text-gray-900">
+                                {formatName(patient.first_name, patient.last_name)}
+                              </div>
+                              <div className="text-sm text-gray-600">{patient.phone}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {isSearching && <div className="mt-2 text-sm text-gray-500">Recherche en cours...</div>}
+                      {searchTerm && !isSearching && searchResults.length === 0 && searchTerm.length >= 2 && (
+                        <div className="mt-2 text-sm text-gray-500">Aucun patient trouvé</div>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="appointmentDate" className="text-gray-700">
+                          Date
+                        </Label>
+                        <Input
+                          id="appointmentDate"
+                          type="date"
+                          value={appointmentFormData.appointment_date}
+                          onChange={(e) =>
+                            setAppointmentFormData({ ...appointmentFormData, appointment_date: e.target.value })
+                          }
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Input
+                          id="appointmentTime"
+                          type="time"
+                          value={appointmentFormData.appointment_time}
+                          onChange={(e) =>
+                            setAppointmentFormData({ ...appointmentFormData, appointment_time: e.target.value })
+                          }
+                          className="font-medium mt-6"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="appointmentType" className="text-gray-700">
+                        Type de consultation
+                      </Label>
+                      <Select
+                        value={appointmentFormData.type}
+                        onValueChange={(value: "Consultation" | "Control") =>
+                          setAppointmentFormData({ ...appointmentFormData, type: value })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sélectionner le type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Consultation">Consultation</SelectItem>
+                          <SelectItem value="Control">Contrôle</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="appointmentNotes" className="text-gray-700">
+                        Notes
+                      </Label>
+                      <Textarea
+                        id="appointmentNotes"
+                        placeholder="Notes additionnelles..."
+                        value={appointmentFormData.notes}
+                        onChange={(e) => setAppointmentFormData({ ...appointmentFormData, notes: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-2">
+                      <Button type="button" variant="outline" onClick={() => setIsAppointmentModalOpen(false)}>
+                        Annuler
+                      </Button>
+                      <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
+                        Planifier
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
               <Dialog open={isPatientModalOpen} onOpenChange={setIsPatientModalOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="bg-[#007090] text-white hover:bg-[#005570] shadow-md transition-all hover:scale-105">
@@ -694,136 +824,6 @@ const MedicalHeader = () => {
                       </Button>
                       <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
                         Ajouter Patient
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-
-              <Dialog open={isAppointmentModalOpen} onOpenChange={setIsAppointmentModalOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-[#007090] text-[#007090] hover:bg-blue-50 bg-transparent"
-                  >
-                    <Calendar />
-                    <span className="ml-2">Nouveau RV</span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-md">
-                  <DialogHeader>
-                    <DialogTitle className="text-gray-900">Planifier un Rendez-vous</DialogTitle>
-                  </DialogHeader>
-                  {appointmentFormError && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-                      <p className="text-sm text-red-800">{appointmentFormError}</p>
-                    </div>
-                  )}
-                  <form onSubmit={handleAddAppointment} className="space-y-4">
-                    <div>
-                      <Label htmlFor="patientSearch" className="text-gray-700">
-                        Rechercher un patient
-                      </Label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <Input
-                          id="patientSearch"
-                          placeholder="Nom du patient..."
-                          className="pl-10"
-                          value={searchTerm}
-                          onChange={(e) => handlePatientSearch(e.target.value)}
-                          required
-                        />
-                      </div>
-                      {searchTerm && searchResults.length > 0 && (
-                        <div className="mt-2 border rounded-md max-h-32 overflow-y-auto bg-white">
-                          {searchResults.map((patient) => (
-                            <div
-                              key={patient.id}
-                              className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                              onClick={() => {
-                                setSearchTerm(`${patient.first_name} ${patient.last_name}`)
-                                setSelectedPatientId(patient.id)
-                                setSearchResults([])
-                              }}
-                            >
-                              <div className="font-medium text-gray-900">
-                                {patient.first_name} {patient.last_name}
-                              </div>
-                              <div className="text-sm text-gray-600">{patient.phone}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {isSearching && <div className="mt-2 text-sm text-gray-500">Recherche en cours...</div>}
-                      {searchTerm && !isSearching && searchResults.length === 0 && searchTerm.length >= 2 && (
-                        <div className="mt-2 text-sm text-gray-500">Aucun patient trouvé</div>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="appointmentDate" className="text-gray-700">
-                          Date
-                        </Label>
-                        <Input
-                          id="appointmentDate"
-                          type="date"
-                          value={appointmentFormData.appointment_date}
-                          onChange={(e) =>
-                            setAppointmentFormData({ ...appointmentFormData, appointment_date: e.target.value })
-                          }
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Input
-                          id="appointmentTime"
-                          type="time"
-                          value={appointmentFormData.appointment_time}
-                          onChange={(e) =>
-                            setAppointmentFormData({ ...appointmentFormData, appointment_time: e.target.value })
-                          }
-                          className="font-medium mt-6"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="appointmentType" className="text-gray-700">
-                        Type de consultation
-                      </Label>
-                      <Select
-                        value={appointmentFormData.type}
-                        onValueChange={(value: "Consultation" | "Control") =>
-                          setAppointmentFormData({ ...appointmentFormData, type: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sélectionner le type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Consultation">Consultation</SelectItem>
-                          <SelectItem value="Control">Contrôle</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="appointmentNotes" className="text-gray-700">
-                        Notes
-                      </Label>
-                      <Textarea
-                        id="appointmentNotes"
-                        placeholder="Notes additionnelles..."
-                        value={appointmentFormData.notes}
-                        onChange={(e) => setAppointmentFormData({ ...appointmentFormData, notes: e.target.value })}
-                      />
-                    </div>
-                    <div className="flex justify-end space-x-2">
-                      <Button type="button" variant="outline" onClick={() => setIsAppointmentModalOpen(false)}>
-                        Annuler
-                      </Button>
-                      <Button type="submit" className="bg-[#007090] text-white hover:bg-[#006080]">
-                        Planifier
                       </Button>
                     </div>
                   </form>

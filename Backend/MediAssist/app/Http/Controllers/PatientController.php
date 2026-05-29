@@ -132,36 +132,48 @@ class PatientController extends Controller
             ->where('archived', $showArchived)
             ->where(function ($query) use ($term) {
                 $query->where('first_name', 'LIKE', "%{$term}%")
-                    ->orWhere('last_name', 'LIKE',"%{$term}%")
+                    ->orWhere('last_name', 'LIKE', "%{$term}%")
                     ->orWhere('CIN', 'LIKE', "%{$term}%")
                     ->orWhere('phone_num', 'LIKE', "%{$term}%")
-                    ->orWhere('email', 'LIKE', "%{$term}%");
+                    ->orWhere('email', 'LIKE', "%{$term}%")
+                    ->orWhere('notes', 'LIKE', "%{$term}%");
             })
             ->with(['lastAppointment', 'nextAppointment'])
             ->select([
-                'ID_patient as id',
+                'ID_patient',
                 'first_name',
                 'last_name',
                 'birth_day',
-                'CIN as cin',
-                'phone_num as phone',
+                'CIN',
+                'phone_num',
                 'email',
                 'gender',
                 'archived',
-                'blood_type'
+                'blood_type',
+                'mutuelle',
+                'allergies',
+                'chronic_conditions',
+                'notes',
             ])
             ->orderBy('first_name')
             ->limit(15)
             ->get()
             ->map(function ($patient) {
                 return [
-                    'id' => $patient->id,
+                    'id' => $patient->ID_patient,
+                    'ID_patient' => $patient->ID_patient,
                     'first_name' => $patient->first_name,
                     'last_name' => $patient->last_name,
-                    'cin' => $patient->cin,
-                    'phone' => $patient->phone,
+                    'cin' => $patient->CIN,
+                    'CIN' => $patient->CIN,
+                    'phone' => $patient->phone_num,
+                    'phone_num' => $patient->phone_num,
                     'email' => $patient->email,
                     'gender' => $patient->gender,
+                    'mutuelle' => $patient->mutuelle,
+                    'allergies' => $patient->allergies,
+                    'chronic_conditions' => $patient->chronic_conditions,
+                    'notes' => $patient->notes,
                     'age' => $patient->birth_day ? Carbon::parse($patient->birth_day)->age : null,
                     'last_visit' => $patient->lastAppointment && $patient->lastAppointment->appointment_date
                         ? Carbon::parse($patient->lastAppointment->appointment_date)->format('d/m/Y')

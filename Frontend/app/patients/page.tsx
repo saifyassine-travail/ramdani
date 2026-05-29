@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast"
 import { usePatients } from "@/hooks/use-patients"
 import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart } from "lucide-react"
 import { formatGlobalDate } from "@/lib/format-date"
+import { formatName } from "@/lib/utils"
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -291,7 +292,7 @@ export default function PatientsPage() {
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div>
                               <div className="text-sm font-medium text-gray-900">
-                                {patient.first_name} {patient.last_name}
+                                {formatName(patient.first_name, patient.last_name)}
                               </div>
                               <div className="text-sm text-gray-500 flex items-center gap-1">
                                 <Phone className="h-3 w-3" />
@@ -373,8 +374,7 @@ export default function PatientsPage() {
                                     </h3>
                                     <div className="space-y-2 text-sm">
                                       <p>
-                                        <span className="font-medium">Nom complet:</span> {patient.first_name}{" "}
-                                        {patient.last_name}
+                                        <span className="font-medium">Nom complet:</span> {formatName(patient.first_name, patient.last_name)}
                                       </p>
                                       <p>
                                         <span className="font-medium">CIN:</span> {patient.CIN}

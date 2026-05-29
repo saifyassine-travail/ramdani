@@ -6,6 +6,7 @@ import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
 import { useMedecinDashboard } from "../hooks/use-medecin-dashboard"
 import { medecinApiClient } from "../lib/medecin-api"
+import { formatName } from "../lib/utils"
 
 export default function MedecinDashboard() {
   const { dashboardData, loading, error, updateStatus, navigatePatient, returnToConsultation } = useMedecinDashboard()
@@ -125,7 +126,7 @@ export default function MedecinDashboard() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold">{`${dashboardData.currentPatient.first_name} ${dashboardData.currentPatient.last_name}`}</h3>
+                <h3 className="text-lg font-semibold">{formatName(dashboardData.currentPatient.first_name, dashboardData.currentPatient.last_name)}</h3>
                 <p className="text-gray-600">ID: {dashboardData.currentPatient.appointmentId}</p>
               </div>
               <div className="flex space-x-2">
@@ -199,7 +200,7 @@ export default function MedecinDashboard() {
                 dashboardData.nextAppointments.map((appointment) => (
                   <div key={appointment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div>
-                      <p className="font-medium">{`${appointment.patient?.first_name || ""} ${appointment.patient?.last_name || ""}`}</p>
+                      <p className="font-medium">{formatName(appointment.patient?.first_name || "", appointment.patient?.last_name || "")}</p>
                       <p className="text-sm text-gray-600">
                         {appointment.time} - {appointment.type}
                       </p>
@@ -246,7 +247,7 @@ export default function MedecinDashboard() {
                   dateAppointments.map((appointment) => (
                     <div key={appointment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
-                        <p className="font-medium">{`${appointment.patient?.first_name || "Patient"} ${appointment.patient?.last_name || "inconnu"}`}</p>
+                        <p className="font-medium">{formatName(appointment.patient?.first_name || "", appointment.patient?.last_name || "") || "Patient inconnu"}</p>
                         <p className="text-sm text-gray-600">{appointment.type}</p>
                         <Badge
                           variant="outline"

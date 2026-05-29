@@ -1,12 +1,6 @@
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 import { getAuthToken } from "@/lib/auth-api"
 
-
-// if (!process.env.NEXT_PUBLIC_API_URL) {
-//   throw new Error("NEXT_PUBLIC_API_URL is not defined");
-// }
-
-// const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
 
 
 const requestCache = new Map<string, { data: any; timestamp: number }>()
@@ -88,6 +82,7 @@ export interface Medicament {
   dosage?: string
   composition?: string
   archived: boolean | number // Backend returns 0/1, frontend uses boolean
+  is_favorite?: boolean | number
   created_at?: string
   updated_at?: string
   pivot?: {
@@ -102,6 +97,7 @@ export interface Analysis {
   type_analyse: string
   departement?: string
   archived?: boolean | number // Backend returns 0/1, frontend uses boolean
+  is_favorite?: boolean | number
   created_at?: string
   updated_at?: string
 }
@@ -684,10 +680,10 @@ class ApiClient {
     const endpoint = `/patients/search?${params.toString()}`
     console.log("[v0] Calling searchPatientsDetailed endpoint:", endpoint)
 
-    const response = await this.request(endpoint)
+    const response = await this.request<any>(endpoint)
     console.log("[v0] searchPatientsDetailed raw response:", response)
 
-    return response
+    return response as any
   }
 
   // Medicament management endpoints
@@ -786,6 +782,13 @@ class ApiClient {
         "Content-Type": "application/json",
       },
     })
+  }
+
+  async toggleFavoriteMedicament(id: number): Promise<ApiResponse<Medicament>> {
+    return this.request(`/medicaments/${id}/favorite`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+    }, true)
   }
 
   // Analysis management endpoints
@@ -918,6 +921,13 @@ class ApiClient {
         "Content-Type": "application/json",
       },
     })
+  }
+
+  async toggleFavoriteAnalysis(id: number): Promise<ApiResponse<Analysis>> {
+    return this.request(`/analyses/${id}/favorite`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+    }, true)
   }
 
   // Medecin dashboard endpoints

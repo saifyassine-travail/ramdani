@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { useAnalyses } from "@/hooks/use-analyses"
+import { useToast } from "@/hooks/use-toast"
 import type { Analysis } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,9 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Flag as Flask, CheckCircle, Loader2 } from "lucide-react"
+import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Flag as Flask, CheckCircle, Loader2, Star } from "lucide-react"
 
 export default function AnalysesPage() {
+  const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [showArchived, setShowArchived] = useState(false)
@@ -30,7 +32,7 @@ export default function AnalysesPage() {
     departement: "",
   })
 
-  const { analyses, searchAnalyses, createAnalysis, updateAnalysis, toggleArchiveStatus, loading, error, total, totalPages, currentPage, fetchAnalyses } =
+  const { analyses, searchAnalyses, createAnalysis, updateAnalysis, toggleArchiveStatus, toggleFavorite, loading, error, total, totalPages, currentPage, fetchAnalyses } =
     useAnalyses(showArchived)
 
   const debounceTimer = useRef<NodeJS.Timeout>()
@@ -70,15 +72,15 @@ export default function AnalysesPage() {
   }, [debouncedSearchQuery, handleDebouncedSearch])
 
   const filteredAnalyses = useMemo(() => {
+    let list = analyses.filter((a) => (showArchived ? a.archived : !a.archived))
     if (debouncedSearchQuery.trim()) {
-      return analyses.filter(
-        (analysis) =>
-          analysis.type_analyse.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) &&
-          (showArchived ? analysis.archived : !analysis.archived),
-      )
+      list = list.filter((a) => a.type_analyse.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
     }
-
-    return analyses.filter((analysis) => (showArchived ? analysis.archived : !analysis.archived))
+    return [...list].sort((a, b) => {
+      const aFav = a.is_favorite ? 1 : 0
+      const bFav = b.is_favorite ? 1 : 0
+      return bFav - aFav
+    })
   }, [analyses, debouncedSearchQuery, showArchived])
 
   const handleSearch = useCallback((query: string) => {
@@ -228,6 +230,7 @@ export default function AnalysesPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
+              <TableHead className="text-blue-700 font-bold w-8"></TableHead>
               <TableHead className="text-blue-700 font-bold">ID</TableHead>
               <TableHead className="text-blue-700 font-bold">Type d'Analyse</TableHead>
               <TableHead className="text-blue-700 font-bold">Département</TableHead>
@@ -238,7 +241,7 @@ export default function AnalysesPage() {
           <TableBody>
             {loading ? (
               <TableRow key="loading">
-                <TableCell colSpan={showArchived ? 5 : 4} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
                   <div className="flex items-center justify-center">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span className="ml-2">Chargement des analyses...</span>
@@ -247,7 +250,7 @@ export default function AnalysesPage() {
               </TableRow>
             ) : filteredAnalyses.length === 0 ? (
               <TableRow key="empty">
-                <TableCell colSpan={showArchived ? 5 : 4} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
                   <div className="flex flex-col items-center justify-center">
                     <Flask className="w-12 h-12 text-blue-300 mb-2" />
                     <p className="text-gray-500">Aucune analyse {showArchived ? "archivée" : ""} trouvée</p>
@@ -261,6 +264,21 @@ export default function AnalysesPage() {
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => handleRowClick(analysis)}
                 >
+                  <TableCell className="pr-0">
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        const result = await toggleFavorite(analysis.ID_Analyse)
+                        if (result && !result.success) {
+                          toast({ title: "Erreur", description: result.message, variant: "destructive" })
+                        }
+                      }}
+                      className="p-1 rounded hover:bg-yellow-50 transition-colors"
+                      title={analysis.is_favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                    >
+                      <Star className={`w-4 h-4 ${analysis.is_favorite ? "fill-yellow-400 text-yellow-400" : "text-gray-300 hover:text-yellow-300"}`} />
+                    </button>
+                  </TableCell>
                   <TableCell>{analysis.ID_Analyse}</TableCell>
                   <TableCell className="font-medium">{analysis.type_analyse}</TableCell>
                   <TableCell>{analysis.departement}</TableCell>

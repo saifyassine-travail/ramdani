@@ -7,6 +7,7 @@ import PatientCard from "../components/patient-card"
 import AppointmentCalendar from "../components/appointment-calendar"
 import { useAppointments } from "../hooks/use-appointments"
 import { Appointment } from "@/lib/api"
+import { formatName } from "@/lib/utils"
 import { useGlobalSync } from "@/hooks/use-global-sync"
 import EditAppointmentModal from "@/components/edit-appointment-modal"
 import IconComponent from "@/components/icon-component"
@@ -486,7 +487,7 @@ const Dashboard = () => {
                           onDoubleClick={() => handleCardDoubleClick(apt)}
                         >
                           <PatientCard
-                            name={`${apt.patient?.first_name || ""} ${apt.patient?.last_name || ""}`}
+                            name={formatName(apt.patient?.first_name || "", apt.patient?.last_name || "")}
                             type={apt.type}
                             status={section.status}
                             appointmentId={apt.ID_RV}

@@ -147,6 +147,36 @@ export function useMedicaments(showArchived = false) {
     }
   }
 
+  const toggleFavorite = async (medicamentId: number) => {
+    // Optimistic update — flip immediately
+    setMedicaments((prev) =>
+      prev.map((m) =>
+        Number(m.ID_Medicament) === Number(medicamentId) ? { ...m, is_favorite: !m.is_favorite } : m
+      )
+    )
+    try {
+      const response = await apiClient.toggleFavoriteMedicament(medicamentId)
+      if (response.success) {
+        return { success: true }
+      }
+      // Revert on failure
+      setMedicaments((prev) =>
+        prev.map((m) =>
+          Number(m.ID_Medicament) === Number(medicamentId) ? { ...m, is_favorite: !m.is_favorite } : m
+        )
+      )
+      return { success: false, message: response.message || "Failed to update favorite" }
+    } catch {
+      // Revert on error
+      setMedicaments((prev) =>
+        prev.map((m) =>
+          Number(m.ID_Medicament) === Number(medicamentId) ? { ...m, is_favorite: !m.is_favorite } : m
+        )
+      )
+      return { success: false, message: "Network error occurred" }
+    }
+  }
+
   const toggleArchiveStatus = async (medicamentId: number) => {
     try {
       const medicament = medicaments.find((m) => m.ID_Medicament === medicamentId || m.id === medicamentId)
@@ -187,5 +217,6 @@ export function useMedicaments(showArchived = false) {
     createMedicament,
     updateMedicament,
     toggleArchiveStatus,
+    toggleFavorite,
   }
 }

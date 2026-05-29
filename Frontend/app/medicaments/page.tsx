@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { useMedicaments } from "@/hooks/use-medicaments"
+import { useToast } from "@/hooks/use-toast"
 import type { Medicament } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,9 +12,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2 } from "lucide-react"
+import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2, Star } from "lucide-react"
 
 export default function MedicamentsPage() {
+  const { toast } = useToast()
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [showArchived, setShowArchived] = useState(false)
@@ -33,7 +35,7 @@ export default function MedicamentsPage() {
     composition: "",
   })
 
-  const { medicaments, searchMedicaments, createMedicament, updateMedicament, toggleArchiveStatus, loading, error } =
+  const { medicaments, searchMedicaments, createMedicament, updateMedicament, toggleArchiveStatus, toggleFavorite, loading, error } =
     useMedicaments(showArchived)
 
   const debounceTimer = useRef<NodeJS.Timeout>()
@@ -73,13 +75,15 @@ export default function MedicamentsPage() {
   }, [debouncedSearchQuery, handleDebouncedSearch])
 
   const filteredMedicaments = useMemo(() => {
+    let list = medicaments.filter((medicament) => (showArchived ? medicament.archived : !medicament.archived))
     if (debouncedSearchQuery.trim()) {
-      return medicaments.filter((medicament) =>
-        medicament.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()),
-      )
+      list = list.filter((m) => m.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
     }
-
-    return medicaments.filter((medicament) => (showArchived ? medicament.archived : !medicament.archived))
+    return [...list].sort((a, b) => {
+      const aFav = a.is_favorite ? 1 : 0
+      const bFav = b.is_favorite ? 1 : 0
+      return bFav - aFav
+    })
   }, [medicaments, debouncedSearchQuery, showArchived])
 
   const handleSearch = useCallback((query: string) => {
@@ -232,6 +236,7 @@ export default function MedicamentsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
+              <TableHead className="text-blue-700 font-bold w-8"></TableHead>
               <TableHead className="text-blue-700 font-bold">Code</TableHead>
               <TableHead className="text-blue-700 font-bold">Nom</TableHead>
               <TableHead className="text-blue-700 font-bold">Prix (DH)</TableHead>
@@ -242,7 +247,7 @@ export default function MedicamentsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 5 : 4} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
                   <div className="flex items-center justify-center">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span className="ml-2">Chargement des médicaments...</span>
@@ -251,7 +256,7 @@ export default function MedicamentsPage() {
               </TableRow>
             ) : filteredMedicaments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 5 : 4} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
                   <div className="flex flex-col items-center justify-center">
                     <Pills className="w-12 h-12 text-blue-300 mb-2" />
                     <p className="text-gray-500">Aucun médicament {showArchived ? "archivé" : ""} trouvé</p>
@@ -265,6 +270,21 @@ export default function MedicamentsPage() {
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => handleRowClick(medicament)}
                 >
+                  <TableCell className="pr-0">
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        const result = await toggleFavorite(medicament.ID_Medicament)
+                        if (result && !result.success) {
+                          toast({ title: "Erreur", description: result.message, variant: "destructive" })
+                        }
+                      }}
+                      className="p-1 rounded hover:bg-yellow-50 transition-colors"
+                      title={medicament.is_favorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                    >
+                      <Star className={`w-4 h-4 ${medicament.is_favorite ? "fill-yellow-400 text-yellow-400" : "text-gray-300 hover:text-yellow-300"}`} />
+                    </button>
+                  </TableCell>
                   <TableCell>{medicament.ID_Medicament}</TableCell>
                   <TableCell className="font-medium">{medicament.name}</TableCell>
                   <TableCell>{Number(medicament.price || 0).toFixed(2)}</TableCell>

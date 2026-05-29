@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, FileText, Save, ExternalLink } from "lucide-react"
 import { apiClient, type Appointment } from "@/lib/api"
+import { formatName } from "@/lib/utils"
 
 interface QuickCaseModalProps {
   apt: Appointment | null
@@ -151,7 +152,7 @@ export default function QuickCaseModal({ apt, onClose, onSaved }: QuickCaseModal
   }, [apt, caseDescription, diagnostic, ddr, vitalSigns, onSaved, onClose])
 
   const patientName = apt
-    ? `${(apt as any).patient?.first_name || ""} ${(apt as any).patient?.last_name || ""}`.trim()
+    ? formatName((apt as any).patient?.first_name || "", (apt as any).patient?.last_name || "")
     : ""
 
   const ddrPregnancyInfo = (() => {

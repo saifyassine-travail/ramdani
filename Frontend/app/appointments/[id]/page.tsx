@@ -36,8 +36,10 @@ import {
   ChevronsUpDown,
   Check,
   Stethoscope,
+  Search,
+  Star,
 } from "lucide-react"
-import { cn } from "../../../lib/utils"
+import { cn, formatName } from "../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
 import { formatGlobalDate } from "../../../lib/format-date"
 
@@ -157,8 +159,8 @@ export default function AppointmentDetailsPage() {
   const [medications, setMedications] = useState<MedicationForm[]>([])
   const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
   const [openMedicationDropdown, setOpenMedicationDropdown] = useState<number | null>(null)
-  const [openAnalysisDropdown, setOpenAnalysisDropdown] = useState<number | null>(null)
   const [medicationSearchQuery, setMedicationSearchQuery] = useState("")
+  const [analysisSearchQuery, setAnalysisSearchQuery] = useState("")
 
   const [vitalSigns, setVitalSigns] = useState({
     weight: "",
@@ -263,25 +265,51 @@ export default function AppointmentDetailsPage() {
       }
 
       const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
-        ? `${appointment.patient.last_name} ${appointment.patient.first_name}`
+        ? formatName(appointment.patient.first_name, appointment.patient.last_name)
         : appointment?.patient?.name || "Patient"
 
-      const dateStr = new Date().toLocaleDateString("fr-FR", {
+      const dateStr = new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
         day: "numeric",
         month: "long",
         year: "numeric"
       })
 
-      // Helper to generate medication text
-      const getMedicationText = (med: MedicationForm) => {
-        const times = med.pivot?.frequence ? med.pivot.frequence.split(',').filter(t => t.trim()) : []
-        const mealTiming = med.pivot?.dosage || ""
-        const duration = med.pivot?.duree || ""
-        let p = med.name || "Médicament"
-        if (times.length > 0) p += ` – 1 comprimé ${times.map(t => t.toLowerCase()).join(', ')}`
-        if (mealTiming) p += `, ${mealTiming.toLowerCase()}`
-        if (duration) p += `, pendant ${duration}`
-        return p
+      // Parse medication dose entries from frequence field
+      const parseMedDoses = (frequence: string) => {
+        if (!frequence) return []
+        return frequence.split(',').map(part => {
+          const colonIdx = part.indexOf(':')
+          if (colonIdx < 0) return { time: part.trim(), mealTiming: '' }
+          return { time: part.slice(0, colonIdx).trim(), mealTiming: part.slice(colonIdx + 1).trim() }
+        }).filter(d => d.time)
+      }
+
+      // Helper to generate medication HTML block for ordonnance
+      const getMedicationHTML = (med: MedicationForm) => {
+        const doses = parseMedDoses(med.pivot?.frequence || '')
+        const duration = med.pivot?.duree || ''
+        const name = med.name || 'Médicament'
+
+        let content = ''
+
+        if (doses.length > 0) {
+          const count = doses.length
+          const timesStr = doses.map(d => d.time.toLowerCase()).join(' et ')
+          const mealTimings = [...new Set(doses.map(d => d.mealTiming).filter(Boolean))]
+          const mealTimingStr = mealTimings[0] || ''
+
+          let doseLine = `1 cp * ${count}/j ${timesStr}`
+          if (mealTimingStr) {
+            doseLine += ` ,<span style="display:inline-block;width:50px;"></span>${mealTimingStr}`
+          }
+          content += `<div style="padding-left:30px;line-height:1.9;">${doseLine}</div>`
+        }
+
+        if (duration) {
+          content += `<div style="padding-left:30px;line-height:1.9;color:#444;">pendant ${duration}</div>`
+        }
+
+        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${name} :</div>${content}</div>`
       }
 
       let ordonnanceHTML = ""
@@ -336,7 +364,7 @@ export default function AppointmentDetailsPage() {
       ${dateStr}
     </div>
     <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => `<div style="margin-bottom: 8px;">• ${getMedicationText(m)}</div>`).join('')}
+       ${medications.map(m => getMedicationHTML(m)).join('')}
     </div>
   </div>
   <script>
@@ -350,7 +378,7 @@ export default function AppointmentDetailsPage() {
 </body>
 </html>`
       } else {
-        // FALLBACK TO OLD LOGIC (Modern List)
+        // FALLBACK: simple list layout
         ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
@@ -360,24 +388,21 @@ export default function AppointmentDetailsPage() {
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { font-family: Arial, sans-serif; padding: 2cm; }
-      .header { text-align: right; margin-bottom: 2cm; }
-      .patient-info { margin-bottom: 1cm; font-size: 1.2rem; }
-      .meds-title { font-weight: bold; text-decoration: underline; margin-bottom: 10px; }
-      .medication-list { display: flex; flex-direction: column; gap: 15px; }
-        body { padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .print-container { max-width: 100%; }
-        .page-break { page-break-after: always; }
-        .page { padding-top: 80px; }
-      }
+      .header { text-align: right; margin-bottom: 1cm; font-size: 0.95rem; color: #555; }
+      .patient-info { margin-bottom: 1cm; font-size: 1.1rem; font-weight: bold; }
+      .meds-title { font-weight: bold; text-decoration: underline; margin-bottom: 0.5cm; }
+      .medication-list { display: flex; flex-direction: column; gap: 12px; }
+      .med-item { line-height: 1.5; }
     </style>
   </head>
   <body>
-    <div class="print-container">
-      <div class="page">
-        <div class="medication-list">${generateMedicationList(page1Medications)}</div>
-      </div>
-      ${hasMultiplePages ? `<div class="page-break"></div><div class="page"><div class="medication-list">${generateMedicationList(page2Medications)}</div></div>` : ""}
+    <div class="header">${dateStr}</div>
+    <div class="patient-info">${patientName}</div>
+    <div class="meds-title">Ordonnance</div>
+    <div class="medication-list">
+      ${medications.map(m => getMedicationHTML(m)).join('')}
     </div>
+    <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
   </body>
 </html>`
       }
@@ -398,12 +423,37 @@ export default function AppointmentDetailsPage() {
       new Map(availableMedicaments.map((m) => [m.ID_Medicament, m])).values()
     )
 
-    if (!medicationSearchQuery) return uniqueMedicaments
-    const query = medicationSearchQuery.toLowerCase()
-    return uniqueMedicaments.filter((m) =>
-      m.name.toLowerCase().includes(query)
-    )
+    let list = uniqueMedicaments
+    if (medicationSearchQuery) {
+      const query = medicationSearchQuery.toLowerCase()
+      list = uniqueMedicaments.filter((m) => m.name.toLowerCase().includes(query))
+    }
+    return [...list].sort((a, b) => {
+      const aFav = a.is_favorite ? 1 : 0
+      const bFav = b.is_favorite ? 1 : 0
+      return bFav - aFav
+    })
   }, [availableMedicaments, medicationSearchQuery])
+
+  const sortedFilteredAnalyses = useMemo(() => {
+    const selectedIds = new Set(analyses.map(a => a.ID_Analyse.toString()))
+    let list = availableAnalyses.filter(a => !a.archived)
+    if (analysisSearchQuery) {
+      const q = analysisSearchQuery.toLowerCase()
+      list = list.filter(a => a.type_analyse.toLowerCase().includes(q))
+    }
+    return [...list].sort((a, b) => {
+      const aSelected = selectedIds.has(a.ID_Analyse.toString())
+      const bSelected = selectedIds.has(b.ID_Analyse.toString())
+      if (aSelected && !bSelected) return -1
+      if (!aSelected && bSelected) return 1
+      // Among non-selected: favorites first
+      const aFav = a.is_favorite ? 1 : 0
+      const bFav = b.is_favorite ? 1 : 0
+      if (bFav !== aFav) return bFav - aFav
+      return a.type_analyse.localeCompare(b.type_analyse)
+    })
+  }, [availableAnalyses, analyses, analysisSearchQuery])
 
 
   const handlePrintAnalyses = useCallback(() => {
@@ -418,10 +468,10 @@ export default function AppointmentDetailsPage() {
       const background = (caseConfig as any).ordonnance_background
 
       const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
-        ? `${appointment.patient.last_name} ${appointment.patient.first_name}`
+        ? formatName(appointment.patient.first_name, appointment.patient.last_name)
         : appointment?.patient?.name || "Patient"
 
-      const dateStr = new Date().toLocaleDateString("fr-FR", {
+      const dateStr = new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
         day: "numeric", month: "long", year: "numeric"
       })
 
@@ -783,6 +833,17 @@ export default function AppointmentDetailsPage() {
     [availableAnalyses],
   )
 
+  const toggleAnalysis = useCallback((availableAnalysis: Analysis) => {
+    const idStr = availableAnalysis.ID_Analyse.toString()
+    setAnalyses(prev => {
+      const isSelected = prev.some(a => a.ID_Analyse.toString() === idStr)
+      if (isSelected) {
+        return prev.filter(a => a.ID_Analyse.toString() !== idStr)
+      }
+      return [...prev, { ID_Analyse: availableAnalysis.ID_Analyse, name: availableAnalysis.type_analyse }]
+    })
+  }, [])
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
@@ -985,7 +1046,7 @@ export default function AppointmentDetailsPage() {
           <h1 className="text-2xl font-bold text-gray-800">Détails du Rendez-vous</h1>
           <div className="flex items-center mt-1 text-gray-600">
             <User className="w-4 h-4 mr-2" />
-            <span className="font-medium">{`${appointment.patient.first_name} ${appointment.patient.last_name}`}</span>
+            <span className="font-medium">{formatName(appointment.patient.first_name, appointment.patient.last_name)}</span>
           </div>
         </div>
 
@@ -1426,7 +1487,10 @@ export default function AppointmentDetailsPage() {
                                                 : "opacity-0",
                                             )}
                                           />
-                                          {medicament.name}
+                                          <span className="flex-1">{medicament.name}</span>
+                                          {medicament.is_favorite && (
+                                            <Star className="ml-1 h-3 w-3 fill-yellow-400 text-yellow-400 flex-shrink-0" />
+                                          )}
                                         </CommandItem>
                                       ))}
                                     </CommandGroup>
@@ -1436,99 +1500,79 @@ export default function AppointmentDetailsPage() {
                             </Popover>
                           </div>
                           <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
-
-
-                            {/* Time of day checkboxes - Enhanced Design */}
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
-                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={med.pivot.frequence?.includes("Matin") || false}
-                                  onChange={(e) => {
-                                    const current = med.pivot.frequence || ""
-                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                    if (e.target.checked) {
-                                      if (!times.includes("Matin")) updateMedication(medIndex, "frequence", [...times, "Matin"].join(","))
-                                    } else {
-                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Matin").join(","))
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                                />
-                                <span className="text-xs font-semibold text-blue-700 select-none">Matin</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={med.pivot.frequence?.includes("Midi") || false}
-                                  onChange={(e) => {
-                                    const current = med.pivot.frequence || ""
-                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                    if (e.target.checked) {
-                                      if (!times.includes("Midi")) updateMedication(medIndex, "frequence", [...times, "Midi"].join(","))
-                                    } else {
-                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Midi").join(","))
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                                />
-                                <span className="text-xs font-semibold text-blue-700 select-none">Midi</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer group hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                                <input
-                                  type="checkbox"
-                                  checked={med.pivot.frequence?.includes("Soir") || false}
-                                  onChange={(e) => {
-                                    const current = med.pivot.frequence || ""
-                                    const times = current.split(",").map(t => t.trim()).filter(t => t)
-                                    if (e.target.checked) {
-                                      if (!times.includes("Soir")) updateMedication(medIndex, "frequence", [...times, "Soir"].join(","))
-                                    } else {
-                                      updateMedication(medIndex, "frequence", times.filter(t => t !== "Soir").join(","))
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
-                                />
-                                <span className="text-xs font-semibold text-blue-700 select-none">Soir</span>
-                              </label>
+                            {/* Time of day checkboxes with per-time meal timing */}
+                            <div className="grid grid-cols-3 gap-2 p-3 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
+                              {(['Matin', 'Midi', 'Soir'] as const).map(time => {
+                                const parsedDoses = (med.pivot.frequence || '').split(',').map(part => {
+                                  const idx = part.indexOf(':')
+                                  if (idx < 0) return { time: part.trim(), mealTiming: '' }
+                                  return { time: part.slice(0, idx).trim(), mealTiming: part.slice(idx + 1).trim() }
+                                }).filter(d => d.time)
+                                const dose = parsedDoses.find(d => d.time === time)
+                                const updateDoses = (newDoses: { time: string; mealTiming: string }[]) => {
+                                  const order = ['Matin', 'Midi', 'Soir']
+                                  const sorted = [...newDoses].sort((a, b) => order.indexOf(a.time) - order.indexOf(b.time))
+                                  updateMedication(medIndex, 'frequence', sorted.map(d => `${d.time}:${d.mealTiming}`).join(','))
+                                }
+                                return (
+                                  <div key={time} className="flex flex-col gap-1">
+                                    <label className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!dose}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            updateDoses([...parsedDoses, { time, mealTiming: '' }])
+                                          } else {
+                                            updateDoses(parsedDoses.filter(d => d.time !== time))
+                                          }
+                                        }}
+                                        className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                      />
+                                      <span className="text-xs font-semibold text-blue-700 select-none">{time}</span>
+                                    </label>
+                                    {dose && (
+                                      <select
+                                        value={dose.mealTiming}
+                                        onChange={(e) => {
+                                          updateDoses(parsedDoses.map(d => d.time === time ? { ...d, mealTiming: e.target.value } : d))
+                                        }}
+                                        className="h-7 text-[10px] border border-blue-200 rounded px-1 bg-white text-blue-700 w-full"
+                                      >
+                                        <option value="">-</option>
+                                        <option value="avant repas">avant repas</option>
+                                        <option value="pendant repas">pendant repas</option>
+                                        <option value="après repas">après repas</option>
+                                      </select>
+                                    )}
+                                  </div>
+                                )
+                              })}
                             </div>
 
-                            {/* Duration and Meal timing in same row for space */}
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="flex gap-1">
-                                <Input
-                                  type="number"
-                                  value={med.pivot.duree?.match(/\d+/)?.[0] || ""}
-                                  onChange={(e) => {
-                                    const unit = med.pivot.duree?.includes("mois") ? "mois" : "jours"
-                                    updateMedication(medIndex, "duree", e.target.value ? `${e.target.value} ${unit}` : "")
-                                  }}
-                                  placeholder="D"
-                                  title="Durée"
-                                  className="h-7 text-[10px] w-12 px-1 border-blue-200"
-                                />
-                                <select
-                                  value={med.pivot.duree?.includes("mois") ? "mois" : "jours"}
-                                  onChange={(e) => {
-                                    const number = med.pivot.duree?.match(/\d+/)?.[0] || ""
-                                    updateMedication(medIndex, "duree", number ? `${number} ${e.target.value}` : "")
-                                  }}
-                                  className="h-7 text-[10px] border border-blue-200 rounded px-1 flex-1 bg-white text-blue-700"
-                                >
-                                  <option value="jours">jours</option>
-                                  <option value="mois">mois</option>
-                                </select>
-                              </div>
-
+                            {/* Duration */}
+                            <div className="flex gap-1">
+                              <Input
+                                type="number"
+                                value={med.pivot.duree?.match(/\d+/)?.[0] || ""}
+                                onChange={(e) => {
+                                  const unit = med.pivot.duree?.includes("mois") ? "mois" : "jours"
+                                  updateMedication(medIndex, "duree", e.target.value ? `${e.target.value} ${unit}` : "")
+                                }}
+                                placeholder="D"
+                                title="Durée"
+                                className="h-7 text-[10px] w-12 px-1 border-blue-200"
+                              />
                               <select
-                                value={med.pivot.dosage || ""}
-                                onChange={(e) => updateMedication(medIndex, "dosage", e.target.value)}
-                                className="h-7 text-[10px] border border-blue-200 rounded px-1 bg-white text-blue-700"
+                                value={med.pivot.duree?.includes("mois") ? "mois" : "jours"}
+                                onChange={(e) => {
+                                  const number = med.pivot.duree?.match(/\d+/)?.[0] || ""
+                                  updateMedication(medIndex, "duree", number ? `${number} ${e.target.value}` : "")
+                                }}
+                                className="h-7 text-[10px] border border-blue-200 rounded px-1 flex-1 bg-white text-blue-700"
                               >
-                                <option value="">Repas...</option>
-                                <option value="Avant repas">Av. repas</option>
-                                <option value="Milieu de repas">Mil. repas</option>
-                                <option value="Après repas">Ap. repas</option>
+                                <option value="jours">jours</option>
+                                <option value="mois">mois</option>
                               </select>
                             </div>
                           </div>
@@ -1563,6 +1607,9 @@ export default function AppointmentDetailsPage() {
                     <CardTitle className="text-lg text-blue-700 flex items-center">
                       <Flask className="w-5 h-5 mr-3" />
                       Analyses
+                      {analyses.length > 0 && (
+                        <Badge className="ml-2 bg-blue-100 text-blue-700 border-0">{analyses.length}</Badge>
+                      )}
                     </CardTitle>
                     <Button
                       type="button"
@@ -1577,84 +1624,56 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      {analyses.map((analysis, index) => (
-                        <div key={index} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg border">
-                          <div className="flex-grow">
-                            <Popover
-                              open={openAnalysisDropdown === index}
-                              onOpenChange={(open) => {
-                                setOpenAnalysisDropdown(open ? index : null)
-                              }}
-                            >
-                              <PopoverTrigger asChild>
-                                <button
-                                  type="button"
-                                  className="w-full flex justify-between items-center px-3 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-8 text-sm"
-                                >
-                                  <span className="text-gray-700 truncate">
-                                    {analysis.ID_Analyse
-                                      ? availableAnalyses.find(
-                                        (a) => a.ID_Analyse.toString() === analysis.ID_Analyse.toString(),
-                                      )?.type_analyse || analysis.name
-                                      : "Sélectionner..."}
-                                  </span>
-                                  <ChevronsUpDown className="h-3 w-3 opacity-50 flex-shrink-0" />
-                                </button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[250px] p-0" align="start">
-                                <Command>
-                                  <CommandInput placeholder="Rechercher..." />
-                                  <CommandList>
-                                    <CommandEmpty>Aucun résultat.</CommandEmpty>
-                                    <CommandGroup>
-                                      {availableAnalyses.map((availableAnalysis) => (
-                                        <CommandItem
-                                          key={availableAnalysis.ID_Analyse}
-                                          onSelect={() => {
-                                            updateAnalysis(index, "ID_Analyse", availableAnalysis.ID_Analyse.toString())
-                                            setOpenAnalysisDropdown(null)
-                                          }}
-                                        >
-                                          <Check
-                                            className={cn(
-                                              "mr-2 h-4 w-4",
-                                              availableAnalysis.ID_Analyse.toString() === analysis.ID_Analyse.toString()
-                                                ? "opacity-100"
-                                                : "opacity-0",
-                                            )}
-                                          />
-                                          {availableAnalysis.type_analyse}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeAnalysis(index)}
-                            className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ))}
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      <Input
+                        placeholder="Rechercher une analyse..."
+                        value={analysisSearchQuery}
+                        onChange={(e) => setAnalysisSearchQuery(e.target.value)}
+                        className="pl-9 h-9 border-blue-200 focus-visible:ring-blue-500"
+                      />
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={addAnalysis}
-                      className="w-full bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 h-9 text-sm"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Ajouter Analyse
-                    </Button>
+                    <div className="max-h-[300px] overflow-y-auto rounded-lg border border-blue-100 divide-y divide-gray-100">
+                      {sortedFilteredAnalyses.length === 0 ? (
+                        <p className="text-center text-sm text-gray-400 py-6">Aucune analyse trouvée</p>
+                      ) : (
+                        sortedFilteredAnalyses.map((availableAnalysis) => {
+                          const isChecked = analyses.some(
+                            a => a.ID_Analyse.toString() === availableAnalysis.ID_Analyse.toString()
+                          )
+                          return (
+                            <div
+                              key={availableAnalysis.ID_Analyse}
+                              onClick={() => toggleAnalysis(availableAnalysis)}
+                              className={cn(
+                                "flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors select-none",
+                                isChecked ? "bg-blue-50" : "hover:bg-gray-50"
+                              )}
+                            >
+                              <div className={cn(
+                                "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors",
+                                isChecked ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"
+                              )}>
+                                {isChecked && <Check className="h-3 w-3 text-white" />}
+                              </div>
+                              <span className={cn(
+                                "text-sm flex-1",
+                                isChecked ? "text-blue-800 font-medium" : "text-gray-700"
+                              )}>
+                                {availableAnalysis.type_analyse}
+                              </span>
+                              {availableAnalysis.is_favorite && (
+                                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 flex-shrink-0" />
+                              )}
+                              {availableAnalysis.departement && (
+                                <span className="text-xs text-gray-400">{availableAnalysis.departement}</span>
+                              )}
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

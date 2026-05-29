@@ -10,7 +10,7 @@ class Analysis extends Model
     protected $primaryKey = 'ID_Analyse';
     protected $table = 'analyses';
 
-    protected $fillable = ['type_analyse', 'departement','archived'];
+    protected $fillable = ['type_analyse', 'departement', 'archived', 'is_favorite'];
 
     public function appointments()
     {

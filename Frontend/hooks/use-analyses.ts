@@ -142,6 +142,36 @@ export function useAnalyses(showArchived = false) {
     }
   }
 
+  const toggleFavorite = async (analysisId: number) => {
+    // Optimistic update — flip immediately so the UI responds instantly
+    setAnalyses((prev) =>
+      prev.map((a) =>
+        Number(a.ID_Analyse) === Number(analysisId) ? { ...a, is_favorite: !a.is_favorite } : a
+      )
+    )
+    try {
+      const response = await apiClient.toggleFavoriteAnalysis(analysisId)
+      if (response.success) {
+        return { success: true }
+      }
+      // Revert on failure
+      setAnalyses((prev) =>
+        prev.map((a) =>
+          Number(a.ID_Analyse) === Number(analysisId) ? { ...a, is_favorite: !a.is_favorite } : a
+        )
+      )
+      return { success: false, message: response.message || "Failed to update favorite" }
+    } catch {
+      // Revert on error
+      setAnalyses((prev) =>
+        prev.map((a) =>
+          Number(a.ID_Analyse) === Number(analysisId) ? { ...a, is_favorite: !a.is_favorite } : a
+        )
+      )
+      return { success: false, message: "Network error occurred" }
+    }
+  }
+
   const toggleArchiveStatus = async (analysisId: number) => {
     try {
       const analysis = analyses.find((a) => a.ID_Analyse === analysisId || a.id === analysisId)
@@ -182,5 +212,6 @@ export function useAnalyses(showArchived = false) {
     createAnalysis,
     updateAnalysis,
     toggleArchiveStatus,
+    toggleFavorite,
   }
 }

@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp } from 'lucide-react'
 import { apiClient, type PatientDocument } from "@/lib/api"
 import { formatGlobalDate } from "@/lib/format-date"
+import { formatName } from "@/lib/utils"
 
 interface PatientDetails {
   ID_patient: number
@@ -544,7 +545,7 @@ export default function PatientDetailsPage() {
         if (response.success && response.data?.certificate) {
           const certificate = response.data.certificate
           const patientName = patient?.first_name && patient?.last_name
-            ? `${patient.first_name} ${patient.last_name}`
+            ? formatName(patient.first_name, patient.last_name)
             : "Patient"
 
           console.log("[v0] Certificate object:", certificate)
@@ -705,7 +706,7 @@ export default function PatientDetailsPage() {
         if (response.success && response.data?.medicaments && response.data.medicaments.length > 0) {
           const medicaments = response.data.medicaments
           const patientName = patient?.first_name && patient?.last_name
-            ? `${patient.first_name} ${patient.last_name}`
+            ? formatName(patient.first_name, patient.last_name)
             : "Patient"
 
           const medicamentsPerPage = 8
@@ -966,7 +967,7 @@ export default function PatientDetailsPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-800">
-                  {patient.first_name} {patient.last_name}
+                  {formatName(patient.first_name, patient.last_name)}
                 </h1>
                 <div className="flex items-center space-x-2 mt-1">
                   <span className="text-sm text-gray-600">

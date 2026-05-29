@@ -96,6 +96,19 @@ class AnalysisController extends Controller
         ]);
     }
 
+    // PATCH /api/analyses/{id}/favorite
+    public function toggleFavorite($id)
+    {
+        $analyse = Analysis::findOrFail($id);
+        $analyse->update(['is_favorite' => !$analyse->is_favorite]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $analyse->is_favorite ? 'Ajoutée aux favoris!' : 'Retirée des favoris!',
+            'data' => $analyse
+        ]);
+    }
+
     public function search(Request $request)
 {
     $term = $request->query('term');
