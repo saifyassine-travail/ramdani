@@ -40,6 +40,23 @@ class SettingsController extends Controller
                     'default_consultation_price' => 250,
                     'default_control_price' => 0,
                     'default_control_days' => 90,
+                    'medical_acts' => json_encode([
+                        ['name' => 'Consultation',        'price' => 250],
+                        ['name' => 'Contrôle',            'price' => 0],
+                        ['name' => 'Aspiration',          'price' => 2000],
+                        ['name' => 'CG',                  'price' => 0],
+                        ['name' => 'Échographie pelvienne','price' => 400],
+                        ['name' => 'Scopie',              'price' => 300],
+                        ['name' => 'Hysteroscopie (hscp)','price' => 1500],
+                        ['name' => 'Vaginisme',           'price' => 400],
+                        ['name' => 'Biopsie du sein',     'price' => 700],
+                        ['name' => 'Biopsie du col',      'price' => 700],
+                        ['name' => 'Polype',              'price' => 500],
+                        ['name' => 'Stérilet au cuivre',  'price' => 800],
+                        ['name' => 'Stérilet hormonal',   'price' => 500],
+                        ['name' => 'Échographie mammaire','price' => 400],
+                        ['name' => 'Insémination',        'price' => 1000],
+                    ]),
                 ];
             }
 
@@ -77,7 +94,7 @@ class SettingsController extends Controller
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
                 'ordonnance_background', 'ordonnance_layout', 'show_ddr',
-                'default_consultation_price', 'default_control_price', 'default_control_days'
+                'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts'
             ];
 
             $data = [];
@@ -91,7 +108,7 @@ class SettingsController extends Controller
             \Log::info('Filtered data before json encode', $data);
 
             // Handle arrays to JSON for DB query builder
-            foreach (['custom_measures', 'ordonnance_layout', 'working_days'] as $jsonField) {
+            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts'] as $jsonField) {
                 if (isset($data[$jsonField])) {
                     if (is_array($data[$jsonField]) || is_object($data[$jsonField])) {
                         $data[$jsonField] = json_encode($data[$jsonField]);

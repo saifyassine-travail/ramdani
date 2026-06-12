@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText } from "lucide-react"
+import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import OrdonnanceLayoutEditor from "@/components/ordonnance-layout-editor"
 
@@ -30,6 +30,9 @@ export default function SettingsPage() {
     password: "",
     role: "nurse"
   })
+
+  // Medical Acts State
+  const [newAct, setNewAct] = useState({ name: "", price: "" })
 
   // Custom Measures State
   const [newMeasure, setNewMeasure] = useState({
@@ -91,6 +94,12 @@ export default function SettingsPage() {
         if (!Array.isArray(parsedData.custom_measures)) {
           parsedData.custom_measures = []
         }
+
+        // Ensure medical_acts is always an array
+        if (typeof parsedData.medical_acts === 'string') {
+          try { parsedData.medical_acts = JSON.parse(parsedData.medical_acts) } catch { parsedData.medical_acts = [] }
+        }
+        if (!Array.isArray(parsedData.medical_acts)) parsedData.medical_acts = []
 
         // Parse ordonnance_layout if it's a string
         if (typeof parsedData.ordonnance_layout === 'string') {
@@ -722,6 +731,119 @@ export default function SettingsPage() {
                     onChange={(e) => setSettings({ ...settings, default_control_days: Number(e.target.value) })}
                   />
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Medical Acts */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Stethoscope className="h-5 w-5 text-blue-600" />
+                Actes Médicaux
+              </CardTitle>
+              <CardDescription>Personnalisez la liste des actes et leurs tarifs affichés lors des consultations</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* List */}
+              <div className="space-y-2">
+                {(Array.isArray(settings?.medical_acts) ? settings.medical_acts : []).map((act: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-3 p-3 border rounded-lg bg-white">
+                    <span className="flex-1 text-sm font-medium text-gray-800">{act.name}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={act.price}
+                      onChange={(e) => {
+                        const updated = [...(settings?.medical_acts ?? [])]
+                        updated[idx] = { ...act, price: Number(e.target.value) }
+                        setSettings({ ...settings, medical_acts: updated })
+                      }}
+                      className="w-28 h-8 text-sm text-right"
+                    />
+                    <span className="text-xs text-gray-400 w-6">DH</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                      onClick={async () => {
+                        const updated = [...(settings?.medical_acts ?? [])]
+                        updated.splice(idx, 1)
+                        const next = { ...settings, medical_acts: updated }
+                        setSettings(next)
+                        try {
+                          await apiClient.updateUserSettings(sanitizeSettings(next))
+                          await fetchSettings()
+                          toast({ title: "Succès", description: "Acte supprimé" })
+                        } catch { toast({ title: "Erreur", description: "Impossible de supprimer", variant: "destructive" }) }
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add new act */}
+              <div className="flex gap-2 items-end pt-2 border-t">
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs">Nom de l'acte</Label>
+                  <Input
+                    placeholder="Ex: Biopsie"
+                    className="h-8 text-sm"
+                    value={newAct.name}
+                    onChange={(e) => setNewAct({ ...newAct, name: e.target.value })}
+                  />
+                </div>
+                <div className="w-28 space-y-1">
+                  <Label className="text-xs">Prix (DH)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    className="h-8 text-sm"
+                    value={newAct.price}
+                    onChange={(e) => setNewAct({ ...newAct, price: e.target.value })}
+                  />
+                </div>
+                <Button
+                  className="h-8 bg-blue-600 hover:bg-blue-700 shrink-0"
+                  disabled={!newAct.name.trim()}
+                  onClick={async () => {
+                    if (!newAct.name.trim()) return
+                    const updated = [...(settings?.medical_acts ?? []), { name: newAct.name.trim(), price: Number(newAct.price) || 0 }]
+                    const next = { ...settings, medical_acts: updated }
+                    setSettings(next)
+                    setNewAct({ name: "", price: "" })
+                    try {
+                      await apiClient.updateUserSettings(sanitizeSettings(next))
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Acte ajouté" })
+                    } catch { toast({ title: "Erreur", description: "Impossible d'ajouter", variant: "destructive" }) }
+                  }}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Ajouter
+                </Button>
+              </div>
+
+              {/* Save prices button */}
+              <div className="flex justify-end pt-1">
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={async () => {
+                    try {
+                      await apiClient.updateUserSettings(sanitizeSettings(settings))
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Tarifs des actes enregistrés" })
+                    } catch { toast({ title: "Erreur", description: "Enregistrement échoué", variant: "destructive" }) }
+                  }}
+                >
+                  <Save className="w-3 h-3 mr-1" />
+                  Enregistrer les tarifs
+                </Button>
               </div>
             </CardContent>
           </Card>

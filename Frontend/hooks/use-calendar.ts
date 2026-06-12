@@ -29,12 +29,16 @@ export function useCalendar() {
       } else {
         const errorMsg = response.message || "Failed to fetch monthly counts"
         console.error("[v0] Calendar fetch error:", errorMsg)
+        console.error("[v0] Calendar fetch error details:", response)
+        // expose full response for debugging in browser console
         setError(errorMsg)
         setAppointmentCounts({})
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "An error occurred"
       console.error("[v0] Calendar hook error:", errorMsg)
+      console.error("[v0] Calendar hook caught:", err)
+      // store full error string for UI
       setError(errorMsg)
       setAppointmentCounts({})
     } finally {

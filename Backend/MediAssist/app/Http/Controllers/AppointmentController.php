@@ -763,16 +763,20 @@ public function store(Request $request)
 
     /**
      * POST /api/appointments/{id}/add-control
-     * Adds a "control" appointment 3 months minus 10 days ahead (skipping Sunday)
+     * Adds a "control" appointment. Uses the provided date or defaults to 3 months ahead (skipping Sunday).
      */
-    public function addControl($id)
+    public function addControl(Request $request, $id)
     {
         try {
             $patient = Patient::findOrFail($id);
 
-            $date = Carbon::today()->addMonths(3)->subDays(10);
-            if ($date->isSunday()) {
-                $date->addDay();
+            if ($request->filled('date')) {
+                $date = Carbon::parse($request->input('date'));
+            } else {
+                $date = Carbon::today()->addMonths(3);
+                if ($date->isSunday()) {
+                    $date->addDay();
+                }
             }
 
             $appointment = Appointment::create([
@@ -1024,6 +1028,7 @@ public function getLastMedicamentsByPatient($patientId)
 
         // Get latest appointment that has medicaments
         $appointment = Appointment::where('ID_patient', $patientId)
+            ->whereHas('medicaments')
             ->with(['medicaments' => function ($q) {
                 $q->withPivot('dosage', 'frequence', 'duree');
             }])
@@ -1033,14 +1038,7 @@ public function getLastMedicamentsByPatient($patientId)
         if (!$appointment) {
             return response()->json([
                 'success' => false,
-                'message' => 'No appointment found for this patient',
-            ], 404);
-        }
-
-        if ($appointment->medicaments->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'The last appointment has no medicaments',
+                'message' => 'Aucune ordonnance trouvée pour ce patient',
             ], 404);
         }
 
@@ -1057,6 +1055,7 @@ public function getLastMedicamentsByPatient($patientId)
 
         return response()->json([
             'success' => true,
+            'appointment_id' => $appointment->ID_RV,
             'date' => $appointment->appointment_date,
             'medicaments' => $medicaments,
         ]);

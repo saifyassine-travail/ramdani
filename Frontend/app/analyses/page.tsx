@@ -62,9 +62,11 @@ export default function AnalysesPage() {
         } finally {
           setIsSearching(false)
         }
+      } else {
+        fetchAnalyses(1)
       }
     },
-    [searchAnalyses],
+    [searchAnalyses, fetchAnalyses],
   )
 
   useEffect(() => {

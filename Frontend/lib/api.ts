@@ -1,6 +1,6 @@
 import { getAuthToken } from "@/lib/auth-api"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.3:8000/api"
 
 
 const requestCache = new Map<string, { data: any; timestamp: number }>()
@@ -394,13 +394,12 @@ class ApiClient {
     })
   }
 
-  async addControlAppointment(patientId: number): Promise<ApiResponse<Appointment>> {
+  async addControlAppointment(patientId: number, date?: string): Promise<ApiResponse<Appointment>> {
     return this.request(`/appointments/${patientId}/add-control`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
+      headers: { "Content-Type": "application/json" },
+      body: date ? JSON.stringify({ date }) : undefined,
+    }, true)
   }
 
   // Search endpoints
@@ -1064,6 +1063,10 @@ class ApiClient {
     }>
   > {
     return this.request(`/patients/${patientId}/last-medicaments`)
+  }
+
+  async getAppointmentCountByDate(date: string): Promise<ApiResponse<{ date: string; count: number }>> {
+    return this.request(`/appointments/count/${date}`, {}, true)
   }
 
   async getDoctorStats(): Promise<ApiResponse<any>> {

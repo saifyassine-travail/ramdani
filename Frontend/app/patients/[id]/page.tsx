@@ -79,13 +79,54 @@ export default function PatientDetailsPage() {
   const [savingMutuelleId, setSavingMutuelleId] = useState<number | null>(null)
   const [savingCreditId, setSavingCreditId] = useState<number | null>(null)
   const [loadingMedicaments, setLoadingMedicaments] = useState(false)
+  const [isControlModalOpen, setIsControlModalOpen] = useState(false)
+  const [controlDays, setControlDays] = useState(90)
+  const [controlDate, setControlDate] = useState("")
+  const [controlDayCount, setControlDayCount] = useState<number | null>(null)
+  const [loadingCount, setLoadingCount] = useState(false)
+  const [submittingControl, setSubmittingControl] = useState(false)
   const [documents, setDocuments] = useState<PatientDocument[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
+  const countDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const priceDebounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
   const creditDebounceTimers = useRef<Record<number, NodeJS.Timeout>>({})
+
+  // Calculate target date from number of days, skipping Saturday & Sunday
+  const getControlDateFromDays = (days: number): string => {
+    if (!days || days < 1) return ""
+    const d = new Date()
+    d.setDate(d.getDate() + days)
+    const day = d.getDay()
+    if (day === 6) d.setDate(d.getDate() + 2)      // Saturday → Monday
+    else if (day === 0) d.setDate(d.getDate() + 1) // Sunday → Monday
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, "0")
+    const dd = String(d.getDate()).padStart(2, "0")
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  // Fetch appointment count whenever the computed date changes
+  useEffect(() => {
+    if (!isControlModalOpen || !controlDate) {
+      setControlDayCount(null)
+      return
+    }
+    setLoadingCount(true)
+    clearTimeout(countDebounceRef.current)
+    countDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await apiClient.getAppointmentCountByDate(controlDate)
+        const data = (res as any).data
+        setControlDayCount(data?.count ?? 0)
+      } catch {
+        setControlDayCount(null)
+      } finally {
+        setLoadingCount(false)
+      }
+    }, 350)
+  }, [controlDate, isControlModalOpen])
 
   useEffect(() => {
     const fetchPatientDetails = async () => {
@@ -726,138 +767,213 @@ export default function PatientDetailsPage() {
     [toast, patient],
   )
 
-  const handlePrintLastMedicaments = useCallback(
-    async () => {
-      try {
-        console.log("[v0] Fetching last medicaments for patient:", patientId)
-        setLoadingMedicaments(true)
+  const handleAddControl = useCallback(async () => {
+    if (!controlDate) return
+    setSubmittingControl(true)
+    try {
+      const response = await apiClient.addControlAppointment(patientId, controlDate)
+      const backendData = (response as any).data
+      const succeeded = backendData?.success ?? response.success
 
-        const response = await apiClient.getLastMedicamentsByPatient(patientId)
-        console.log("[v0] Last medicaments response:", response)
+      if (succeeded) {
+        const [y, m, d] = controlDate.split("-")
+        const formatted = new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("fr-FR", {
+          day: "numeric", month: "long", year: "numeric",
+        })
+        toast({ title: "Contrôle planifié", description: `Rendez-vous de contrôle ajouté pour le ${formatted}` })
+        setIsControlModalOpen(false)
+        setPatient((prev) => prev ? { ...prev, nextAppointment: { appointment_date: controlDate } } : prev)
+      } else {
+        const msg = backendData?.message || response.message || "Impossible d'ajouter le contrôle"
+        toast({ title: "Erreur", description: msg, variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Erreur", description: err?.message || "Une erreur s'est produite", variant: "destructive" })
+    } finally {
+      setSubmittingControl(false)
+    }
+  }, [patientId, controlDate, toast])
 
-        if (response.success && response.data?.medicaments && response.data.medicaments.length > 0) {
-          const medicaments = response.data.medicaments
-          const patientName = patient?.first_name && patient?.last_name
-            ? formatName(patient.first_name, patient.last_name)
-            : "Patient"
+  const handlePrintLastMedicaments = useCallback(async () => {
+    try {
+      setLoadingMedicaments(true)
 
-          const medicamentsPerPage = 8
-          const page1Medicaments = medicaments.slice(0, medicamentsPerPage)
-          const page2Medicaments = medicaments.slice(medicamentsPerPage)
-          const hasMultiplePages = medicaments.length > medicamentsPerPage
+      const [medResponse, settingsResponse] = await Promise.all([
+        apiClient.getLastMedicamentsByPatient(patientId),
+        apiClient.getUserSettings(),
+      ])
 
-          const printWindow = window.open("", "_blank")
-          if (!printWindow) {
-            toast({
-              title: "Erreur",
-              description: "Impossible d'ouvrir la fenêtre d'impression",
-              variant: "destructive",
-            })
-            return
+      // Extract medications (handle both direct and nested response)
+      const medData = (medResponse as any).data
+      const rawMeds = medData?.medicaments ?? []
+      if (!rawMeds.length) {
+        toast({ title: "Aucun médicament", description: "Aucune ordonnance trouvée pour ce patient" })
+        return
+      }
+      const appointmentDate: string = medData?.date ?? ""
+
+      // Build medication list in the same pivot format used by the appointments page
+      const medications: Array<{ name: string; pivot: { dosage: string; frequence: string; duree: string } }> =
+        rawMeds.map((m: any) => ({
+          name: m.name || "Médicament",
+          pivot: { dosage: m.dosage || "", frequence: m.frequence || "", duree: m.duree || "" },
+        }))
+
+      // Load ordonnance settings — same as appointments page
+      const settingsData = (settingsResponse as any).data?.data ?? (settingsResponse as any).data ?? {}
+      const background: string | null = settingsData.ordonnance_background || null
+      const layout: any = typeof settingsData.ordonnance_layout === "string"
+        ? JSON.parse(settingsData.ordonnance_layout)
+        : settingsData.ordonnance_layout || null
+
+      const patientName = patient?.first_name && patient?.last_name
+        ? formatName(patient.first_name, patient.last_name)
+        : "Patient"
+
+      const dateStr = new Date(appointmentDate || Date.now()).toLocaleDateString("fr-FR", {
+        day: "numeric", month: "long", year: "numeric",
+      })
+
+      // — Exact same helpers as appointments/[id]/page.tsx —
+      const parseMedDoses = (frequence: string) => {
+        if (!frequence) return []
+        return frequence.split(',').map(part => {
+          const colonIdx = part.indexOf(':')
+          if (colonIdx < 0) return { time: part.trim(), mealTiming: '' }
+          return { time: part.slice(0, colonIdx).trim(), mealTiming: part.slice(colonIdx + 1).trim() }
+        }).filter(d => d.time)
+      }
+
+      const getMedicationHTML = (med: { name: string; pivot: { dosage: string; frequence: string; duree: string } }) => {
+        const doses = parseMedDoses(med.pivot?.frequence || '')
+        const duration = med.pivot?.duree || ''
+        const name = med.name || 'Médicament'
+        let content = ''
+        if (doses.length > 0) {
+          const count = doses.length
+          const timesStr = doses.map(d => d.time.toLowerCase()).join(' et ')
+          const mealTimings = [...new Set(doses.map(d => d.mealTiming).filter(Boolean))]
+          const mealTimingStr = mealTimings[0] || ''
+          let doseLine = `1 cp * ${count}/j ${timesStr}`
+          if (mealTimingStr) {
+            doseLine += ` ,<span style="display:inline-block;width:50px;"></span>${mealTimingStr}`
           }
+          content += `<div style="padding-left:30px;line-height:1.9;">${doseLine}</div>`
+        }
+        if (duration) {
+          content += `<div style="padding-left:30px;line-height:1.9;color:#444;">pendant ${duration}</div>`
+        }
+        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${name} :</div>${content}</div>`
+      }
 
-          const generateMedicationList = (meds: typeof medicaments) => {
-            return meds.length > 0
-              ? meds
-                .map(
-                  (med) => `
-                  <div class="medication-item">• ${med.name || "Médicament"} </div>
-                `,
-                )
-                .join("")
-              : '<div class="medication-item" style="color: #999;">Aucun médicament prescrit</div>'
-          }
+      const printWindow = window.open("", "_blank")
+      if (!printWindow) {
+        toast({ title: "Erreur", description: "Impossible d'ouvrir la fenêtre d'impression", variant: "destructive" })
+        return
+      }
 
-          const ordonnanceHTML = `
+      let ordonnanceHTML = ""
+
+      if (layout) {
+        // CUSTOM LAYOUT — identical to appointments page
+        const elements = layout as any
+        const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
+
+        ordonnanceHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Ordonnance - ${patientName}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    @page {
+      size: ${paper.width}mm ${paper.height}mm;
+      margin: 0;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      width: ${paper.width}mm;
+      height: ${paper.height}mm;
+      overflow: hidden;
+    }
+    .page {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background-image: ${background ? `url('${background}')` : 'none'};
+      background-size: cover;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+    .element { position: absolute; transform: translate(0, -50%); }
+    .meds-container { display: flex; flex-direction: column; transform: none; }
+
+    @media screen {
+      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
+      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${patientName}
+    </div>
+    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+      ${dateStr}
+    </div>
+    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
+       ${medications.map(m => getMedicationHTML(m)).join('')}
+    </div>
+  </div>
+  <script>
+    window.onload = () => {
+      setTimeout(() => { window.print(); }, 500);
+    };
+  </script>
+</body>
+</html>`
+      } else {
+        // FALLBACK simple list — identical to appointments page fallback
+        ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8">
-    <title>Ordonnance</title>
+    <title>Ordonnance - ${patientName}</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { 
-        font-family: Arial, sans-serif; 
-        font-size: 7px;
-        display: flex; 
-        justify-content: center; 
-        align-items: center; 
-        min-height: 100vh; 
-      }
-      .print-container { max-width: 800px; width: 100%; }
-      .medication-list { display: flex; flex-direction: column; gap: 15px; }
-      .medication-item { font-size: 12px; text-align: left; padding: 5px 10px; bold }
-      .page-break { page-break-after: always; }
-      .page { padding-top: 80px; }
-      @media print {
-        body { 
-          padding: 20px; 
-          display: flex; 
-          justify-content: center; 
-          align-items: center; 
-          min-height: 100vh;
-        }
-        .print-container { max-width: 100%; }
-        .page-break { page-break-after: always; }
-        .page { padding-top: 80px; }
-      }
+      body { font-family: Arial, sans-serif; padding: 2cm; }
+      .header { text-align: right; margin-bottom: 1cm; font-size: 0.95rem; color: #555; }
+      .patient-info { margin-bottom: 1cm; font-size: 1.1rem; font-weight: bold; }
+      .meds-title { font-weight: bold; text-decoration: underline; margin-bottom: 0.5cm; }
+      .medication-list { display: flex; flex-direction: column; gap: 12px; }
+      .med-item { line-height: 1.5; }
     </style>
   </head>
   <body>
-    <div class="print-container">
-      <!-- Page 1 -->
-      <div class="page">
-        <div class="medication-list">
-          ${generateMedicationList(page1Medicaments)}
-        </div>
-      </div>
-      
-      <!-- Page 2 (if needed) -->
-      ${hasMultiplePages
-              ? `
-        <div class="page-break"></div>
-        <div class="page">
-          <div class="medication-list">
-            ${generateMedicationList(page2Medicaments)}
-          </div>
-        </div>
-      `
-              : ""
-            }
+    <div class="header">${dateStr}</div>
+    <div class="patient-info">${patientName}</div>
+    <div class="meds-title">Ordonnance</div>
+    <div class="medication-list">
+      ${medications.map(m => getMedicationHTML(m)).join('')}
     </div>
+    <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
   </body>
-</html>
-          `
-
-          printWindow.document.write(ordonnanceHTML)
-          printWindow.document.close()
-
-          // Wait for content to load then print
-          setTimeout(() => {
-            printWindow.print()
-          }, 250)
-
-          console.log("[v0] Last medicaments printed successfully")
-        } else {
-          toast({
-            title: "Aucun médicament",
-            description: "Aucun médicament trouvé pour le dernier rendez-vous du patient",
-            variant: "default",
-          })
-        }
-      } catch (err) {
-        console.error("[v0] Error printing last medicaments:", err)
-        toast({
-          title: "Erreur",
-          description: "Une erreur s'est produite lors de l'impression des médicaments",
-          variant: "destructive",
-        })
-      } finally {
-        setLoadingMedicaments(false)
+</html>`
       }
-    },
-    [patientId, toast, patient],
-  )
+
+      printWindow.document.write(ordonnanceHTML)
+      printWindow.document.close()
+      setTimeout(() => { printWindow.print() }, 250)
+    } catch (err) {
+      console.error("[v0] Error printing ordonnance:", err)
+      toast({ title: "Erreur", description: "Une erreur s'est produite lors de l'impression", variant: "destructive" })
+    } finally {
+      setLoadingMedicaments(false)
+    }
+  }, [patientId, toast, patient])
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]

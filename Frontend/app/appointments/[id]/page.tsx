@@ -161,7 +161,8 @@ export default function AppointmentDetailsPage() {
     show_ddr: true,
     default_consultation_price: 250,
     default_control_price: 0,
-    custom_measures: [] as any[]
+    custom_measures: [] as any[],
+    medical_acts: null as Array<{ name: string; price: number }> | null,
   })
 
   // Fetch settings on mount
@@ -194,6 +195,13 @@ export default function AppointmentDetailsPage() {
             default_consultation_price: settingsData.default_consultation_price ?? 250,
             default_control_price: settingsData.default_control_price ?? 0,
             custom_measures: parsedMeasures,
+            medical_acts: (() => {
+              try {
+                const raw = settingsData.medical_acts
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+                return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
+              } catch { return null }
+            })(),
             ordonnance_background: settingsData.ordonnance_background || null,
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
@@ -227,23 +235,37 @@ export default function AppointmentDetailsPage() {
   const [ddr, setDdr] = useState<string>("")
 
   // Medical Acts List
-  const medicalActs = useMemo(() => [
-    { name: "Consultation", price: caseConfig.default_consultation_price },
-    { name: "Aspiration", price: 2000 },
-    { name: "CG", price: 0 },
-    { name: "Échographie pelvienne", price: 400 },
-    { name: "Scopie", price: 300 },
-    { name: "Hysteroscopie (hscp)", price: 1500 },
-    { name: "Vaginisme", price: 400 },
-    { name: "Biopsie du sein", price: 700 },
-    { name: "Biopsie du col", price: 700 },
-    { name: "Polype", price: 500 },
-    { name: "Stérilet au cuivre", price: 800 },
-    { name: "Stérilet hormonal", price: 500 },
-    { name: "Échographie mammaire", price: 400 },
-    { name: "Insémination", price: 1000 },
-    { name: "Contrôle", price: caseConfig.default_control_price },
-  ], [caseConfig.default_consultation_price, caseConfig.default_control_price])
+  const medicalActs = useMemo(() => {
+    // Use personalized list from settings if available
+    if (caseConfig.medical_acts && caseConfig.medical_acts.length > 0) {
+      return caseConfig.medical_acts.map((act) => ({
+        name: act.name,
+        price: act.name === "Consultation"
+          ? caseConfig.default_consultation_price
+          : act.name === "Contrôle"
+          ? caseConfig.default_control_price
+          : act.price,
+      }))
+    }
+    // Fallback to defaults
+    return [
+      { name: "Consultation", price: caseConfig.default_consultation_price },
+      { name: "Contrôle",     price: caseConfig.default_control_price },
+      { name: "Aspiration",          price: 2000 },
+      { name: "CG",                  price: 0 },
+      { name: "Échographie pelvienne", price: 400 },
+      { name: "Scopie",              price: 300 },
+      { name: "Hysteroscopie (hscp)", price: 1500 },
+      { name: "Vaginisme",           price: 400 },
+      { name: "Biopsie du sein",     price: 700 },
+      { name: "Biopsie du col",      price: 700 },
+      { name: "Polype",              price: 500 },
+      { name: "Stérilet au cuivre",  price: 800 },
+      { name: "Stérilet hormonal",   price: 500 },
+      { name: "Échographie mammaire", price: 400 },
+      { name: "Insémination",        price: 1000 },
+    ]
+  }, [caseConfig.medical_acts, caseConfig.default_consultation_price, caseConfig.default_control_price])
 
   const [selectedActs, setSelectedActs] = useState<string[]>([])
   const [totalActsPrice, setTotalActsPrice] = useState(0)

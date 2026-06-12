@@ -13,6 +13,8 @@ class AnalysisController extends Controller
         $showArchived = $request->boolean('archived', false);
 
         $analyses = Analysis::where('archived', $showArchived ? 1 : 0)
+            ->orderBy('is_favorite', 'desc')
+            ->orderBy('ID_Analyse', 'asc')
             ->paginate(20);
 
         return response()->json([
@@ -125,11 +127,13 @@ class AnalysisController extends Controller
                   ->orWhere('departement', 'LIKE', "%{$term}%");
         })
         ->select([
-            'ID_Analyse as id',
+            'ID_Analyse',
             'type_analyse',
             'departement',
-            'archived'
+            'archived',
+            'is_favorite'
         ])
+        ->orderBy('is_favorite', 'desc')
         ->orderBy('type_analyse')
         ->limit(15)
         ->get();
