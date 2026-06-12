@@ -46,6 +46,8 @@ import { formatGlobalDate } from "../../../lib/format-date"
 interface MedicationForm {
   ID_Medicament: number | string
   name?: string
+  type?: string
+  type_category?: string
   pivot: {
     dosage: string
     frequence: string
@@ -78,6 +80,57 @@ interface LastAppointmentData {
   pulse?: string | number | null
   blood_pressure?: string | null
   custom_measures_values?: any
+}
+
+// ── Posology helpers ────────────────────────────────────────────────────────
+const TIME_ORDER = ['Matin', 'Midi', 'Soir'] as const
+const MEAL_TIMINGS = ['avant repas', 'pendant repas', 'après repas'] as const
+
+interface MedDose {
+  time: string
+  units: string
+}
+
+function isInjType(med: { type?: string; type_category?: string }): boolean {
+  const src = `${med.type_category || ''} ${med.type || ''}`.toLowerCase()
+  return src.includes('injectable') || src.includes('injection')
+}
+
+// Parse the `frequence` field into per-time units + a single meal timing.
+// New format: "Matin:2,Midi:1,Soir:2;après repas"
+// Stays tolerant of the legacy "Matin:après repas" / "Matin:2:après repas" formats.
+function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: string } {
+  if (!frequence) return { doses: [], mealTiming: '' }
+  let mealTiming = ''
+  let dosePart = frequence
+  const semiIdx = frequence.indexOf(';')
+  if (semiIdx >= 0) {
+    dosePart = frequence.slice(0, semiIdx)
+    mealTiming = frequence.slice(semiIdx + 1).trim()
+  }
+  const doses = dosePart
+    .split(',')
+    .map((part) => {
+      const seg = part.split(':')
+      const time = (seg[0] || '').trim()
+      let units = (seg[1] || '').trim()
+      if (units && isNaN(Number(units))) {
+        if (!mealTiming) mealTiming = units
+        units = ''
+      }
+      if (seg.length >= 3 && !mealTiming) mealTiming = seg.slice(2).join(':').trim()
+      return { time, units }
+    })
+    .filter((d) => (TIME_ORDER as readonly string[]).includes(d.time))
+  return { doses, mealTiming }
+}
+
+function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
+  const sorted = [...doses].sort(
+    (a, b) => TIME_ORDER.indexOf(a.time as any) - TIME_ORDER.indexOf(b.time as any),
+  )
+  const dosePart = sorted.map((d) => `${d.time}:${d.units}`).join(',')
+  return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
 export default function AppointmentDetailsPage() {
@@ -274,42 +327,59 @@ export default function AppointmentDetailsPage() {
         year: "numeric"
       })
 
-      // Parse medication dose entries from frequence field
-      const parseMedDoses = (frequence: string) => {
-        if (!frequence) return []
-        return frequence.split(',').map(part => {
-          const colonIdx = part.indexOf(':')
-          if (colonIdx < 0) return { time: part.trim(), mealTiming: '' }
-          return { time: part.slice(0, colonIdx).trim(), mealTiming: part.slice(colonIdx + 1).trim() }
-        }).filter(d => d.time)
+      // Helper to resolve the short pharmaceutical form label
+      const getMedTypeLabel = (med: MedicationForm): string => {
+        const cat = (med.type_category || '').toLowerCase()
+        const raw = (med.type || '').toLowerCase()
+        const src = cat || raw
+        if (!src) {
+          // fallback: extract from name after last comma
+          const afterComma = (med.name || '').split(',').pop()?.trim().toLowerCase() || ''
+          if (afterComma.includes('comprim')) return 'cp'
+          if (afterComma.includes('sirop')) return 'sirop'
+          if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+          if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
+          return afterComma.split(' ')[0] || 'cp'
+        }
+        if (src.includes('comprim')) return 'cp'
+        if (src.includes('sirop')) return 'sirop'
+        if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+        if (src.includes('suspension injectable')) return 'susp inj'
+        if (src.includes('injectable') || src.includes('injection')) return 'inj'
+        if (src.includes('perfusion')) return 'perf'
+        if (src.includes('solution')) return 'sol'
+        if (src.includes('suspension')) return 'susp'
+        if (src.includes('sachet')) return 'sachet'
+        if (src.includes('creme') || src.includes('crème') || src.includes('pommade')) return 'crème'
+        if (src.includes('spray') || src.includes('aerosol') || src.includes('aérosol')) return 'spray'
+        if (src.includes('suppositoire')) return 'supp'
+        if (src.includes('goutte') || src.includes('collyre')) return 'gouttes'
+        if (src.includes('patch')) return 'patch'
+        if (src.includes('poudre')) return 'pdr'
+        if (src.includes('lotion')) return 'lotion'
+        return cat.split(' ')[0] || raw.split(' ')[0] || 'cp'
       }
 
-      // Helper to generate medication HTML block for ordonnance
+      // Helper to generate medication HTML block for ordonnance (2 lines: name + posology)
       const getMedicationHTML = (med: MedicationForm) => {
-        const doses = parseMedDoses(med.pivot?.frequence || '')
+        const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
         const duration = med.pivot?.duree || ''
-        const name = med.name || 'Médicament'
+        const fullName = med.name || 'Médicament'
+        const typeLabel = getMedTypeLabel(med)
+        const isInj = isInjType(med)
+        // Show clean name: part before comma
+        const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
 
-        let content = ''
+        const parts = doses.map(d => {
+          const qty = d.units || '1'
+          const label = isInj ? (Number(qty) > 1 ? 'unités' : 'unité') : typeLabel
+          return `${qty} ${label} ${d.time.toLowerCase()}`
+        })
+        if (mealTiming) parts.push(mealTiming)
+        if (duration) parts.push(`pendant ${duration}`)
+        const posology = parts.join(', ')
 
-        if (doses.length > 0) {
-          const count = doses.length
-          const timesStr = doses.map(d => d.time.toLowerCase()).join(' et ')
-          const mealTimings = [...new Set(doses.map(d => d.mealTiming).filter(Boolean))]
-          const mealTimingStr = mealTimings[0] || ''
-
-          let doseLine = `1 cp * ${count}/j ${timesStr}`
-          if (mealTimingStr) {
-            doseLine += ` ,<span style="display:inline-block;width:50px;"></span>${mealTimingStr}`
-          }
-          content += `<div style="padding-left:30px;line-height:1.9;">${doseLine}</div>`
-        }
-
-        if (duration) {
-          content += `<div style="padding-left:30px;line-height:1.9;color:#444;">pendant ${duration}</div>`
-        }
-
-        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${name} :</div>${content}</div>`
+        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
       }
 
       let ordonnanceHTML = ""
@@ -772,6 +842,8 @@ export default function AppointmentDetailsPage() {
           const med = availableMedicaments.find((m) => m.ID_Medicament.toString() === value)
           if (med) {
             updated[index].name = med.name
+            updated[index].type = med.type || undefined
+            updated[index].type_category = med.type_category || undefined
           }
         } else if (field === "name") {
           updated[index].name = value
@@ -1500,55 +1572,82 @@ export default function AppointmentDetailsPage() {
                             </Popover>
                           </div>
                           <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
-                            {/* Time of day checkboxes with per-time meal timing */}
+                            {/* Time of day with per-time units */}
                             <div className="grid grid-cols-3 gap-2 p-3 bg-white rounded-lg border-2 border-blue-200 shadow-sm">
-                              {(['Matin', 'Midi', 'Soir'] as const).map(time => {
-                                const parsedDoses = (med.pivot.frequence || '').split(',').map(part => {
-                                  const idx = part.indexOf(':')
-                                  if (idx < 0) return { time: part.trim(), mealTiming: '' }
-                                  return { time: part.slice(0, idx).trim(), mealTiming: part.slice(idx + 1).trim() }
-                                }).filter(d => d.time)
-                                const dose = parsedDoses.find(d => d.time === time)
-                                const updateDoses = (newDoses: { time: string; mealTiming: string }[]) => {
-                                  const order = ['Matin', 'Midi', 'Soir']
-                                  const sorted = [...newDoses].sort((a, b) => order.indexOf(a.time) - order.indexOf(b.time))
-                                  updateMedication(medIndex, 'frequence', sorted.map(d => `${d.time}:${d.mealTiming}`).join(','))
+                              {TIME_ORDER.map(time => {
+                                const { doses, mealTiming } = parseMedFrequence(med.pivot.frequence || '')
+                                const isInj = isInjType(med)
+                                const dose = doses.find(d => d.time === time)
+                                const active = !!dose
+                                const toggle = () => {
+                                  const next = active ? doses.filter(d => d.time !== time) : [...doses, { time, units: '' }]
+                                  updateMedication(medIndex, 'frequence', buildMedFrequence(next, mealTiming))
+                                }
+                                const setUnits = (units: string) => {
+                                  updateMedication(medIndex, 'frequence', buildMedFrequence(doses.map(d => d.time === time ? { ...d, units } : d), mealTiming))
                                 }
                                 return (
                                   <div key={time} className="flex flex-col gap-1">
-                                    <label className="flex items-center gap-2 cursor-pointer hover:bg-blue-50 px-2 py-1.5 rounded-md transition-colors">
-                                      <input
-                                        type="checkbox"
-                                        checked={!!dose}
-                                        onChange={(e) => {
-                                          if (e.target.checked) {
-                                            updateDoses([...parsedDoses, { time, mealTiming: '' }])
-                                          } else {
-                                            updateDoses(parsedDoses.filter(d => d.time !== time))
-                                          }
-                                        }}
-                                        className="w-4 h-4 text-blue-600 border-2 border-blue-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                                      />
+                                    <button
+                                      type="button"
+                                      onClick={toggle}
+                                      className={cn(
+                                        "flex items-center gap-1.5 px-2 py-1.5 rounded-md transition-colors",
+                                        active ? "bg-blue-100" : "hover:bg-blue-50",
+                                      )}
+                                    >
+                                      <span className={cn(
+                                        "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                                        active ? "border-blue-600 bg-blue-600 text-white" : "border-blue-300 bg-white",
+                                      )}>
+                                        {active && <Check className="h-3 w-3" />}
+                                      </span>
                                       <span className="text-xs font-semibold text-blue-700 select-none">{time}</span>
-                                    </label>
-                                    {dose && (
-                                      <select
-                                        value={dose.mealTiming}
-                                        onChange={(e) => {
-                                          updateDoses(parsedDoses.map(d => d.time === time ? { ...d, mealTiming: e.target.value } : d))
-                                        }}
-                                        className="h-7 text-[10px] border border-blue-200 rounded px-1 bg-white text-blue-700 w-full"
-                                      >
-                                        <option value="">-</option>
-                                        <option value="avant repas">avant repas</option>
-                                        <option value="pendant repas">pendant repas</option>
-                                        <option value="après repas">après repas</option>
-                                      </select>
+                                    </button>
+                                    {active && (
+                                      <div className="flex items-center gap-1 px-1">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          value={dose!.units}
+                                          onChange={(e) => setUnits(e.target.value)}
+                                          placeholder="1"
+                                          className="h-7 text-[10px] text-center px-1 border-blue-200 w-full"
+                                        />
+                                        {isInj && <span className="text-[10px] text-blue-600 font-medium">unité</span>}
+                                      </div>
                                     )}
                                   </div>
                                 )
                               })}
                             </div>
+
+                            {/* Meal timing (applies to all times) */}
+                            {(() => {
+                              const { doses, mealTiming } = parseMedFrequence(med.pivot.frequence || '')
+                              if (doses.length === 0) return null
+                              const setMeal = (m: string) =>
+                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, mealTiming === m ? '' : m))
+                              return (
+                                <div className="grid grid-cols-3 gap-1">
+                                  {MEAL_TIMINGS.map(m => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => setMeal(m)}
+                                      className={cn(
+                                        "rounded-md border py-1 text-[10px] font-medium capitalize transition-colors",
+                                        mealTiming === m
+                                          ? "border-blue-400 bg-blue-100 text-blue-700"
+                                          : "border-blue-200 bg-white text-gray-500 hover:bg-blue-50",
+                                      )}
+                                    >
+                                      {m.replace(' repas', '')}
+                                    </button>
+                                  ))}
+                                </div>
+                              )
+                            })()}
 
                             {/* Duration */}
                             <div className="flex gap-1">
