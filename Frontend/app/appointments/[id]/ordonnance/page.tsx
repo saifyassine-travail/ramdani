@@ -218,11 +218,11 @@ export default function AppointmentDetailsPage() {
         const duration = med.pivot?.duree || ''
         const fullName = med.name || 'Médicament'
         const typeLabel = getMedTypeLabel(med)
-        const isInj = isInjType(med)
+        const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
         const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
         const parts = doses.map(d => {
           const qty = d.units || '1'
-          const label = isInj ? (Number(qty) > 1 ? 'unités' : 'unité') : typeLabel
+          const label = isInj ? 'UI' : typeLabel
           return `${qty} ${label} ${d.time.toLowerCase()}`
         })
         if (mealTiming) parts.push(mealTiming)
@@ -747,11 +747,11 @@ export default function AppointmentDetailsPage() {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Détails du Rendez-vous</h1>
-          <div className="flex items-center mt-2 text-gray-600">
-            <User className="w-4 h-4 mr-2" />
-            <span className="font-medium">{appointment.patient.name}</span>
-          </div>
+          <h1 className="text-3xl font-bold text-blue-700 flex items-center">
+            <User className="w-6 h-6 mr-2" />
+            {appointment.patient.name}
+          </h1>
+          <p className="mt-2 text-sm text-gray-500">Détails du Rendez-vous</p>
         </div>
         <div className="flex items-center space-x-4 mt-4 md:mt-0">
           <Badge variant="secondary" className="bg-blue-100 text-blue-800">
@@ -981,7 +981,8 @@ export default function AppointmentDetailsPage() {
               <div className="space-y-4">
                 {medications.map((med, index) => {
                   const { doses, mealTiming } = parseMedFrequence(med.pivot.frequence || '')
-                  const unitLabel = isInjType(med) ? 'unité' : getMedTypeLabel(med)
+                  const _typeLabel = getMedTypeLabel(med)
+                  const unitLabel = (isInjType(med) || _typeLabel === 'inj' || _typeLabel === 'susp inj') ? 'UI' : _typeLabel
                   const toggleTime = (time: string) => {
                     const exists = doses.some(d => d.time === time)
                     const next = exists ? doses.filter(d => d.time !== time) : [...doses, { time, units: '' }]

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import PatientCard from "../components/patient-card"
 import AppointmentCalendar from "../components/appointment-calendar"
 import { useAppointments } from "../hooks/use-appointments"
-import { Appointment } from "@/lib/api"
+import { Appointment, apiClient } from "@/lib/api"
 import { formatName } from "@/lib/utils"
 import { useGlobalSync } from "@/hooks/use-global-sync"
 import EditAppointmentModal from "@/components/edit-appointment-modal"
@@ -49,6 +49,9 @@ const Dashboard = () => {
 
   // Quick case modal (right-click on "preparing")
   const [contextMenuApt, setContextMenuApt] = useState<Appointment | null>(null)
+  // Add-control modal (right-click on "completed" / terminé)
+  const [controlApt, setControlApt] = useState<Appointment | null>(null)
+  const [addingControl, setAddingControl] = useState(false)
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // État local géré manuellement
@@ -362,10 +365,28 @@ const Dashboard = () => {
   }, [toggleMutuelle, showNotification, refetch])
 
   const handleCardRightClick = useCallback((e: React.MouseEvent, apt: Appointment, status: string) => {
-    if (status !== "preparing") return
-    e.preventDefault()
-    setContextMenuApt(apt)
+    if (status === "preparing") {
+      e.preventDefault()
+      setContextMenuApt(apt)
+    } else if (status === "completed") {
+      e.preventDefault()
+      setControlApt(apt)
+    }
   }, [])
+
+  const handleConfirmAddControl = useCallback(async () => {
+    if (!controlApt) return
+    setAddingControl(true)
+    const result = await apiClient.addControlAppointment(controlApt.ID_patient)
+    setAddingControl(false)
+    if (result.success) {
+      showNotification((result.data as any)?.message || "Rendez-vous de contrôle ajouté", "success")
+      setControlApt(null)
+      refetch(selectedDate, true)
+    } else {
+      showNotification(result.message || "Erreur lors de l'ajout du contrôle", "error")
+    }
+  }, [controlApt, showNotification, refetch, selectedDate])
 
   const handleCardDoubleClick = useCallback((apt: Appointment) => {
     if (clickTimerRef.current) {
@@ -546,6 +567,35 @@ const Dashboard = () => {
         onClose={() => setContextMenuApt(null)}
         onSaved={() => showNotification("Fiche sauvegardée", "success")}
       />
+
+      {/* Add control appointment (right-click on "Terminé") */}
+      <AlertDialog open={!!controlApt} onOpenChange={(open) => !open && !addingControl && setControlApt(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ajouter un rendez-vous de contrôle</AlertDialogTitle>
+            <AlertDialogDescription>
+              Un rendez-vous de contrôle sera programmé automatiquement (environ 3 mois) pour{" "}
+              <strong>
+                {formatName(controlApt?.patient?.first_name || "", controlApt?.patient?.last_name || "")}
+              </strong>
+              . Confirmer ?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={addingControl}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmAddControl()
+              }}
+              disabled={addingControl}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {addingControl ? "Ajout..." : "Ajouter Contrôle"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!confirmingAppointment} onOpenChange={(open) => !open && setConfirmingAppointment(null)}>
         <AlertDialogContent>

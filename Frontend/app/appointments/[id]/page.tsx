@@ -366,13 +366,13 @@ export default function AppointmentDetailsPage() {
         const duration = med.pivot?.duree || ''
         const fullName = med.name || 'Médicament'
         const typeLabel = getMedTypeLabel(med)
-        const isInj = isInjType(med)
+        const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
         // Show clean name: part before comma
         const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
 
         const parts = doses.map(d => {
           const qty = d.units || '1'
-          const label = isInj ? (Number(qty) > 1 ? 'unités' : 'unité') : typeLabel
+          const label = isInj ? 'UI' : typeLabel
           return `${qty} ${label} ${d.time.toLowerCase()}`
         })
         if (mealTiming) parts.push(mealTiming)
@@ -1115,11 +1115,11 @@ export default function AppointmentDetailsPage() {
     <div className="p-4 max-w-[1800px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Détails du Rendez-vous</h1>
-          <div className="flex items-center mt-1 text-gray-600">
-            <User className="w-4 h-4 mr-2" />
-            <span className="font-medium">{formatName(appointment.patient.first_name, appointment.patient.last_name)}</span>
-          </div>
+          <h1 className="text-2xl font-bold text-blue-700 flex items-center">
+            <User className="w-5 h-5 mr-2" />
+            {formatName(appointment.patient.first_name, appointment.patient.last_name)}
+          </h1>
+          <p className="mt-1 text-sm text-gray-500">Détails du Rendez-vous</p>
         </div>
 
         {/* Medical Acts Checklist Section */}
@@ -1614,7 +1614,7 @@ export default function AppointmentDetailsPage() {
                                           placeholder="1"
                                           className="h-7 text-[10px] text-center px-1 border-blue-200 w-full"
                                         />
-                                        {isInj && <span className="text-[10px] text-blue-600 font-medium">unité</span>}
+                                        {isInj && <span className="text-[10px] text-blue-600 font-medium">UI</span>}
                                       </div>
                                     )}
                                   </div>
@@ -1733,9 +1733,9 @@ export default function AppointmentDetailsPage() {
                         className="pl-9 h-9 border-blue-200 focus-visible:ring-blue-500"
                       />
                     </div>
-                    <div className="max-h-[300px] overflow-y-auto rounded-lg border border-blue-100 divide-y divide-gray-100">
+                    <div className="max-h-[460px] overflow-y-auto rounded-lg border border-blue-100 p-1 grid grid-cols-1 sm:grid-cols-2 gap-1">
                       {sortedFilteredAnalyses.length === 0 ? (
-                        <p className="text-center text-sm text-gray-400 py-6">Aucune analyse trouvée</p>
+                        <p className="col-span-full text-center text-sm text-gray-400 py-6">Aucune analyse trouvée</p>
                       ) : (
                         sortedFilteredAnalyses.map((availableAnalysis) => {
                           const isChecked = analyses.some(
@@ -1746,7 +1746,7 @@ export default function AppointmentDetailsPage() {
                               key={availableAnalysis.ID_Analyse}
                               onClick={() => toggleAnalysis(availableAnalysis)}
                               className={cn(
-                                "flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors select-none",
+                                "flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors select-none",
                                 isChecked ? "bg-blue-50" : "hover:bg-gray-50"
                               )}
                             >
