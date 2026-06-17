@@ -14,10 +14,13 @@
         "doctrine/dbal": "^4.3",
         "google/apiclient": "2.19.0",
         "laravel/framework": "^12.0",
+        "laravel/octane": "*",
         "laravel/sanctum": "^4.2",
         "laravel/socialite": "^5.24",
         "laravel/tinker": "^2.10.1",
-        "predis/predis": "^3.3"
+        "predis/predis": "^3.3",
+        "spiral/roadrunner-cli": "*",
+        "spiral/roadrunner-http": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -33,7 +36,10 @@
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
-        }
+        },
+        "files": [
+            "bootstrap/windows-signals.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

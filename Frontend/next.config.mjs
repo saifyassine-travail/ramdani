@@ -1,4 +1,16 @@
+import path from "path"
+import { fileURLToPath } from "url"
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 const nextConfig = {
+  // Pin the workspace root to this folder so Turbopack/Next only scans & watches
+  // the frontend — not the whole monorepo (Backend, MobileApp, radiology-ai, db files).
+  // This is what was making dev route compilation take 10-20s.
+  turbopack: {
+    root: __dirname,
+  },
+  outputFileTracingRoot: __dirname,
   eslint: {
     ignoreDuringBuilds: true,
   },

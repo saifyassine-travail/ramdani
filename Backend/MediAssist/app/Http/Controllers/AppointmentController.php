@@ -517,7 +517,11 @@ if (!empty($caseData)) {
     {
         try {
             $appointment = Appointment::with(['patient', 'caseDescription', 'medicaments', 'analyses'])->findOrFail($id);
-            $availableMedicaments = Medicament::all();
+            // Only the columns the prescription UI actually needs — avoids shipping
+            // ~5000 rows × all columns (incl. long composition/description text) per open.
+            $availableMedicaments = Medicament::where('archived', false)
+                ->orderBy('name')
+                ->get(['ID_Medicament', 'name', 'type', 'type_category', 'is_favorite']);
             $availableAnalyses = Analysis::all();
 
             return response()->json([

@@ -1,0 +1,31 @@
+# fast-backend.ps1
+# Runs the Laravel backend FAST via Laravel Octane (RoadRunner) inside WSL2 Ubuntu.
+#
+# Why WSL: Octane needs the Unix `pcntl` extension (unavailable on Windows), and
+# RoadRunner needs a real Linux filesystem (the /mnt/c mount is too slow). So the
+# backend code is mirrored into WSL at ~/mediassist and served there. The DATABASE
+# stays as your Windows PostgreSQL (reachable from WSL via mirrored networking),
+# so there is only ONE database — no data divergence.
+#
+# Usage:
+#   .\fast-backend.ps1            # sync code -> WSL, then START Octane (keep this window open)
+#   .\fast-backend.ps1 -Reload    # sync code -> WSL, then RELOAD workers (use after editing backend code while it runs)
+#
+# After changing composer dependencies, run once in WSL:
+#   wsl -d Ubuntu -- bash -lc "cd ~/mediassist && composer install"
+
+param([switch]$Reload)
+
+$src = "/mnt/c/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist"
+
+Write-Host "Syncing backend code -> WSL (~/mediassist)..." -ForegroundColor Cyan
+wsl -d Ubuntu -- bash -lc "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/"
+
+if ($Reload) {
+    Write-Host "Reloading Octane workers..." -ForegroundColor Cyan
+    wsl -d Ubuntu -- bash -lc "cd ~/mediassist && php artisan octane:reload"
+}
+else {
+    Write-Host "Starting Octane on http://localhost:8000  (press Ctrl+C to stop)" -ForegroundColor Green
+    wsl -d Ubuntu -- bash -lc "cd ~/mediassist && php artisan octane:start --server=roadrunner --host=0.0.0.0 --port=8000 --workers=4"
+}

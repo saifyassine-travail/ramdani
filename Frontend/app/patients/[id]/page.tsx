@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import PlanControlModal from "@/components/plan-control-modal"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -68,6 +69,7 @@ export default function PatientDetailsPage() {
   const [error, setError] = useState<string | null>(null)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isCertificateModalOpen, setIsCertificateModalOpen] = useState(false)
+  const [confirmControlOpen, setConfirmControlOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [isAvatarZoomed, setIsAvatarZoomed] = useState(false)
   const [savingAppointmentId, setSavingAppointmentId] = useState<number | null>(null)
@@ -221,6 +223,31 @@ export default function PatientDetailsPage() {
       }
     },
     [patientId],
+  )
+
+  const handleControlResult = useCallback(
+    async (success: boolean, message: string) => {
+      if (success) {
+        toast({ title: "Succès", description: message })
+        // Refresh appointment data so the new control shows up
+        const refreshed = await apiClient.getPatient(patientId)
+        if (refreshed.success && refreshed.data) {
+          const data: any = refreshed.data
+          setPatient((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  appointmentsHistory: data.appointmentsHistory || prev.appointmentsHistory,
+                  nextAppointment: data.nextAppointment || prev.nextAppointment,
+                }
+              : prev,
+          )
+        }
+      } else {
+        toast({ title: "Erreur", description: message, variant: "destructive" })
+      }
+    },
+    [patientId, toast],
   )
 
   const handleAddCertificate = useCallback(
@@ -1274,7 +1301,10 @@ export default function PatientDetailsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
-              <Button className="w-full flex items-center justify-between bg-blue-50 text-blue-600 hover:bg-blue-100 border-0">
+              <Button
+                onClick={() => setConfirmControlOpen(true)}
+                className="w-full flex items-center justify-between bg-blue-50 text-blue-600 hover:bg-blue-100 border-0"
+              >
                 <span className="flex items-center gap-2">
                   <Plus className="h-4 w-4" />
                   Ajouter Contrôle
@@ -1522,6 +1552,15 @@ export default function PatientDetailsPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Plan Control Appointment */}
+      <PlanControlModal
+        open={confirmControlOpen}
+        onOpenChange={setConfirmControlOpen}
+        patientId={patientId}
+        patientName={patient ? formatName(patient.first_name, patient.last_name) : ""}
+        onResult={handleControlResult}
+      />
 
       {/* Avatar Zoom Modal */}
       {

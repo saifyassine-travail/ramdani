@@ -702,6 +702,30 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Control Appointment Defaults */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Rendez-vous de contrôle</CardTitle>
+              <CardDescription>Nombre de jours proposé par défaut lors de l'ajout d'un contrôle</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="control_days">Nombre de jours par défaut</Label>
+                  <Input
+                    id="control_days"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="90"
+                    value={settings?.default_control_days ?? 90}
+                    onChange={(e) => setSettings({ ...settings, default_control_days: Number(e.target.value) })}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Notification Settings */}
           <Card>
             <CardHeader>

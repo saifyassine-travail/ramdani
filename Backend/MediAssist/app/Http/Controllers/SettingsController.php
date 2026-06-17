@@ -39,6 +39,7 @@ class SettingsController extends Controller
                     'show_ddr' => true,
                     'default_consultation_price' => 250,
                     'default_control_price' => 0,
+                    'default_control_days' => 90,
                 ];
             }
 
@@ -76,7 +77,7 @@ class SettingsController extends Controller
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
                 'ordonnance_background', 'ordonnance_layout', 'show_ddr',
-                'default_consultation_price', 'default_control_price'
+                'default_consultation_price', 'default_control_price', 'default_control_days'
             ];
 
             $data = [];

@@ -24,6 +24,11 @@ export function useAppointments(selectedDate?: string) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const cacheRef = useRef<Map<string, GroupedAppointments>>(new Map())
+  // Latest appointments snapshot, so callbacks can read current state without re-creating
+  const appointmentsRef = useRef<GroupedAppointments>(appointments)
+  useEffect(() => {
+    appointmentsRef.current = appointments
+  }, [appointments])
 
   const mapStatusToKey = (status: string): keyof GroupedAppointments => {
     const statusMap: Record<string, keyof GroupedAppointments> = {
@@ -161,36 +166,51 @@ export function useAppointments(selectedDate?: string) {
     [fetchAppointments, selectedDate],
   )
 
-  const toggleMutuelle = useCallback(async (appointmentId: number) => {
-    try {
-      const response = await apiClient.toggleMutuelle(appointmentId)
-
-      if (response.success) {
-        setAppointments((prev) => {
-          const newAppointments = { ...prev }
-
-          Object.keys(newAppointments).forEach((status) => {
-            const statusKey = status as keyof GroupedAppointments
-            const appointmentIndex = newAppointments[statusKey].findIndex((app) => app.ID_RV === appointmentId)
-            if (appointmentIndex !== -1) {
-              newAppointments[statusKey][appointmentIndex].mutuelle = Boolean(response.data?.mutuelle)
-            }
-          })
-
-          cacheRef.current.clear()
-          return newAppointments
-        })
-
-        return { success: true }
-      } else {
-        throw new Error(response.message || "Failed to toggle mutuelle")
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred"
-      setError(errorMessage)
-      return { success: false, message: errorMessage }
-    }
+  const setMutuelleValue = useCallback((appointmentId: number, value: boolean) => {
+    setAppointments((prev) => {
+      const next = { ...prev }
+      Object.keys(next).forEach((status) => {
+        const statusKey = status as keyof GroupedAppointments
+        const i = next[statusKey].findIndex((app) => app.ID_RV === appointmentId)
+        if (i !== -1) {
+          next[statusKey] = [...next[statusKey]]
+          next[statusKey][i] = { ...next[statusKey][i], mutuelle: value }
+        }
+      })
+      cacheRef.current.clear()
+      return next
+    })
   }, [])
+
+  const toggleMutuelle = useCallback(
+    async (appointmentId: number) => {
+      // Optimistic flip so the toggle feels instant
+      let previous = false
+      Object.values(appointmentsRef.current).some((list: Appointment[]) => {
+        const found = list.find((app: Appointment) => app.ID_RV === appointmentId)
+        if (found) {
+          previous = Boolean(found.mutuelle)
+          return true
+        }
+        return false
+      })
+      setMutuelleValue(appointmentId, !previous)
+
+      try {
+        const response = await apiClient.toggleMutuelle(appointmentId)
+        if (!response.success) throw new Error(response.message || "Failed to toggle mutuelle")
+        // Align with the server's authoritative value
+        setMutuelleValue(appointmentId, Boolean(response.data?.mutuelle))
+        return { success: true }
+      } catch (err) {
+        setMutuelleValue(appointmentId, previous) // revert
+        const errorMessage = err instanceof Error ? err.message : "An error occurred"
+        setError(errorMessage)
+        return { success: false, message: errorMessage }
+      }
+    },
+    [setMutuelleValue],
+  )
 
   const deleteAppointment = useCallback(async (appointmentId: number) => {
     try {
@@ -223,11 +243,40 @@ export function useAppointments(selectedDate?: string) {
   useEffect(() => {
     fetchAppointments(selectedDate)
 
-    const intervalId = setInterval(() => {
-      fetchAppointments(selectedDate, true)
-    }, 3000) // Poll every 3 seconds
+    let intervalId: ReturnType<typeof setInterval> | null = null
+    const stop = () => {
+      if (intervalId) {
+        clearInterval(intervalId)
+        intervalId = null
+      }
+    }
+    const start = () => {
+      if (intervalId) return
+      intervalId = setInterval(() => {
+        if (typeof document === "undefined" || document.visibilityState === "visible") {
+          fetchAppointments(selectedDate, true)
+        }
+      }, 5000) // Poll every 5s while the tab is visible
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchAppointments(selectedDate, true) // catch up immediately on focus
+        start()
+      } else {
+        stop() // don't poll in the background
+      }
+    }
 
-    return () => clearInterval(intervalId)
+    start()
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibility)
+    }
+    return () => {
+      stop()
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibility)
+      }
+    }
   }, [fetchAppointments, selectedDate])
 
   return {

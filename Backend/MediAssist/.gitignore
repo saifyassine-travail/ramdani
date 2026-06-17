@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+# Laravel Octane / RoadRunner binary + config (downloaded per-platform)
+rr
+rr.exe
+.rr.yaml
