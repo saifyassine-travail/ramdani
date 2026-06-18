@@ -305,23 +305,23 @@ export default function AnalysesPage() {
                         <>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleEditAnalysis(analysis)
                             }}
-                            className="w-8 h-8 p-0 bg-blue-600 text-white hover:bg-blue-700"
+                            className="text-green-600 hover:text-green-900 hover:bg-green-50"
                           >
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleArchive(analysis)
                             }}
-                            className="w-8 h-8 p-0 bg-gray-500 text-white hover:bg-gray-600"
+                            className="text-gray-600 hover:text-gray-900 hover:bg-gray-50"
                           >
                             <Archive className="w-4 h-4" />
                           </Button>
@@ -329,12 +329,12 @@ export default function AnalysesPage() {
                       ) : (
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="ghost"
                           onClick={(e) => {
                             e.stopPropagation()
                             handleRestore(analysis)
                           }}
-                          className="w-8 h-8 p-0 bg-green-600 text-white hover:bg-green-700"
+                          className="text-yellow-600 hover:text-yellow-900 hover:bg-yellow-50"
                         >
                           <RotateCcw className="w-4 h-4" />
                         </Button>
