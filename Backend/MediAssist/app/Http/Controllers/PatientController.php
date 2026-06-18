@@ -38,14 +38,34 @@ class PatientController extends Controller
         return response()->json($patients);
     }
 
+    /**
+     * Minors (under 18) have no CIN of their own; the parent/guardian CIN is
+     * stored instead. Age is derived from birth_day.
+     */
+    private function isMinor(?string $birthDay): bool
+    {
+        if (empty($birthDay)) {
+            return false;
+        }
+        try {
+            return Carbon::parse($birthDay)->age < 18;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
     public function store(Request $request)
 {
+    $isMinor = $this->isMinor($request->input('birth_day'));
+
     $validated = $request->validate([
         'first_name' => 'required|string|max:255',
         'last_name' => 'required|string|max:255',
         'birth_day' => 'required|date',
         'gender' => 'required|in:Male,Female',
-        'CIN' => 'required|string|max:255|unique:patients,CIN',
+        'CIN' => [$isMinor ? 'nullable' : 'required', 'string', 'max:255', 'unique:patients,CIN'],
+        'guardian_cin' => [$isMinor ? 'required' : 'nullable', 'string', 'max:255'],
+        'guardian_relation' => 'nullable|in:father,mother',
         'phone_num' => 'required|string|max:255',
         'email' => 'nullable|email|max:255',
         'mutuelle' => 'nullable|string',
@@ -57,7 +77,17 @@ class PatientController extends Controller
 
     // Normalize values for DB
     $validated['gender'] = ucfirst(strtolower($validated['gender']));
-    $validated['CIN'] = strtoupper($validated['CIN']);
+    $validated['CIN'] = !empty($validated['CIN']) ? strtoupper($validated['CIN']) : null;
+    $validated['guardian_cin'] = !empty($validated['guardian_cin']) ? strtoupper($validated['guardian_cin']) : null;
+
+    // Keep the two paths mutually exclusive.
+    if ($isMinor) {
+        $validated['CIN'] = null;
+    } else {
+        $validated['guardian_cin'] = null;
+        $validated['guardian_relation'] = null;
+    }
+
     $validated['archived'] = 0;
 
     $patient = Patient::create($validated);
@@ -74,12 +104,16 @@ class PatientController extends Controller
     {
         $patient = Patient::findOrFail($id);
 
+        $isMinor = $this->isMinor($request->input('birth_day'));
+
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'birth_day' => 'required|date',
             'gender' => 'required|in:Male,Female',
-            'CIN' => 'required|string|max:255|unique:patients,CIN,' . $id . ',ID_patient',
+            'CIN' => [$isMinor ? 'nullable' : 'required', 'string', 'max:255', 'unique:patients,CIN,' . $id . ',ID_patient'],
+            'guardian_cin' => [$isMinor ? 'required' : 'nullable', 'string', 'max:255'],
+            'guardian_relation' => 'nullable|in:father,mother',
             'phone_num' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
             'mutuelle' => 'nullable|string',
@@ -88,6 +122,17 @@ class PatientController extends Controller
             'notes' => 'nullable|string',
             'blood_type' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
         ]);
+
+        $validated['gender'] = ucfirst(strtolower($validated['gender']));
+        $validated['CIN'] = !empty($validated['CIN']) ? strtoupper($validated['CIN']) : null;
+        $validated['guardian_cin'] = !empty($validated['guardian_cin']) ? strtoupper($validated['guardian_cin']) : null;
+
+        if ($isMinor) {
+            $validated['CIN'] = null;
+        } else {
+            $validated['guardian_cin'] = null;
+            $validated['guardian_relation'] = null;
+        }
 
         $patient->update($validated);
 

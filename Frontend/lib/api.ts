@@ -27,7 +27,9 @@ export interface Patient {
   last_name: string
   birth_day?: string
   gender?: string
-  CIN?: string
+  CIN?: string | null
+  guardian_cin?: string | null
+  guardian_relation?: "father" | "mother" | null
   phone_num?: string
   mutuelle?: string | null
   allergies?: string
@@ -548,10 +550,13 @@ class ApiClient {
     params.append("per_page", perPage.toString())
 
     const endpoint = `/patients?${params.toString()}`
-    console.log("[v0] Calling getPatients endpoint:", endpoint)
+
+    // Always fetch fresh: the list changes on archive/restore/create/edit, and a
+    // stale cache entry would otherwise hide the change until a full page refresh.
+    const cacheKey = `${this.baseURL}${endpoint}`
+    requestCache.delete(cacheKey)
 
     const response = await this.request(endpoint)
-    console.log("[v0] getPatients raw response:", response)
 
     return response
   }
@@ -565,7 +570,9 @@ class ApiClient {
     last_name: string
     birth_day: string
     gender: "Male" | "Female"
-    CIN: string
+    CIN?: string
+    guardian_cin?: string
+    guardian_relation?: string
     phone_num: string
     email?: string
     mutuelle?: string
@@ -587,7 +594,9 @@ class ApiClient {
       last_name: patientData.last_name,
       birth_day: patientData.birth_day,
       gender: patientData.gender,
-      CIN: patientData.CIN,
+      CIN: patientData.CIN || null,
+      guardian_cin: patientData.guardian_cin || null,
+      guardian_relation: patientData.guardian_relation || null,
       phone_num: patientData.phone_num,
       email: patientData.email || null,
       mutuelle: patientData.mutuelle === 'AUTRE' && (patientData as any).autre_mutuelle
@@ -619,7 +628,9 @@ class ApiClient {
       last_name: string
       birth_day: string
       gender: "Male" | "Female"
-      CIN: string
+      CIN?: string
+      guardian_cin?: string
+      guardian_relation?: string
       phone_num: string
       email?: string
       mutuelle?: string

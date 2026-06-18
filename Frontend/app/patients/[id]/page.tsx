@@ -18,6 +18,7 @@ import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calen
 import { apiClient, type PatientDocument } from "@/lib/api"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
+import { isMinor } from "@/lib/age"
 
 interface PatientDetails {
   ID_patient: number
@@ -25,7 +26,9 @@ interface PatientDetails {
   last_name: string
   birth_day: string
   gender: string
-  CIN: string
+  CIN?: string | null
+  guardian_cin?: string | null
+  guardian_relation?: string | null
   phone_num: string
   email?: string
   mutuelle?: string
@@ -128,6 +131,8 @@ export default function PatientDetailsPage() {
             birth_day: patientData.birth_day,
             gender: patientData.gender,
             CIN: patientData.CIN,
+            guardian_cin: patientData.guardian_cin,
+            guardian_relation: patientData.guardian_relation,
             phone_num: patientData.phone_num,
             email: patientData.email,
             mutuelle: patientData.mutuelle,
@@ -1060,8 +1065,19 @@ export default function PatientDetailsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">CIN</p>
-                    <p className="text-sm font-medium text-gray-800">{patient.CIN || "Non renseigné"}</p>
+                    {patient.guardian_cin && !patient.CIN ? (
+                      <>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          CIN {patient.guardian_relation === "mother" ? "de la mère" : "du père"}
+                        </p>
+                        <p className="text-sm font-medium text-gray-800">{patient.guardian_cin}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">CIN</p>
+                        <p className="text-sm font-medium text-gray-800">{patient.CIN || "Non renseigné"}</p>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -1606,6 +1622,8 @@ function PatientForm({
     gender: initialData?.gender || "Male",
     birth_day: initialData?.birth_day || "",
     CIN: initialData?.CIN || "",
+    guardian_cin: initialData?.guardian_cin || "",
+    guardian_relation: initialData?.guardian_relation || "father",
     phone_num: initialData?.phone_num || "",
     email: initialData?.email || "",
     mutuelle: initialData?.mutuelle || "none",
@@ -1614,6 +1632,8 @@ function PatientForm({
     notes: initialData?.notes || "",
     blood_type: initialData?.blood_type || "",
   })
+
+  const patientIsMinor = isMinor(formData.birth_day)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1675,10 +1695,41 @@ function PatientForm({
           />
         </div>
 
-        <div>
-          <Label htmlFor="CIN">CIN</Label>
-          <Input id="CIN" value={formData.CIN} onChange={(e) => handleChange("CIN", e.target.value)} required />
-        </div>
+        {patientIsMinor ? (
+          <>
+            <div>
+              <Label htmlFor="guardian_cin">CIN du parent/tuteur</Label>
+              <Input
+                id="guardian_cin"
+                placeholder="CIN du père ou de la mère"
+                value={formData.guardian_cin}
+                onChange={(e) => handleChange("guardian_cin", e.target.value)}
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="guardian_relation">Lien de parenté</Label>
+              <Select
+                value={formData.guardian_relation}
+                onValueChange={(value) => handleChange("guardian_relation", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="father">Père</SelectItem>
+                  <SelectItem value="mother">Mère</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : (
+          <div>
+            <Label htmlFor="CIN">CIN</Label>
+            <Input id="CIN" value={formData.CIN} onChange={(e) => handleChange("CIN", e.target.value)} required />
+          </div>
+        )}
 
         <div>
           <Label htmlFor="phone_num">Téléphone</Label>

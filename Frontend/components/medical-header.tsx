@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import { useCalendar } from "@/hooks/use-calendar"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
+import { isMinor } from "@/lib/age"
 
 const Calendar = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,6 +135,8 @@ const MedicalHeader = () => {
     gender: "Female",
     birth_day: "",
     CIN: "",
+    guardian_cin: "",
+    guardian_relation: "father",
     phone_num: "",
     email: "",
     mutuelle: "",
@@ -143,6 +146,8 @@ const MedicalHeader = () => {
     notes: "",
     blood_type: "",
   })
+
+  const patientIsMinor = isMinor(patientFormData.birth_day)
 
   const [appointmentFormData, setAppointmentFormData] = useState({
     patient_id: 0,
@@ -167,7 +172,11 @@ const MedicalHeader = () => {
     if (!patientFormData.birth_day) {
       errors.push("La date de naissance est requise")
     }
-    if (!patientFormData.CIN.trim()) {
+    if (patientIsMinor) {
+      if (!patientFormData.guardian_cin.trim()) {
+        errors.push("Le CIN du parent/tuteur est requis pour un mineur")
+      }
+    } else if (!patientFormData.CIN.trim()) {
       errors.push("Le CIN est requis")
     }
     if (!patientFormData.phone_num.trim()) {
@@ -203,6 +212,8 @@ const MedicalHeader = () => {
           gender: "Female",
           birth_day: "",
           CIN: "",
+          guardian_cin: "",
+          guardian_relation: "father",
           phone_num: "",
           email: "",
           mutuelle: "",
@@ -698,18 +709,56 @@ const MedicalHeader = () => {
                           required
                         />
                       </div>
-                      <div>
-                        <Label htmlFor="cin" className="text-gray-700">
-                          CIN
-                        </Label>
-                        <Input
-                          id="cin"
-                          placeholder="CIN"
-                          value={patientFormData.CIN}
-                          onChange={(e) => setPatientFormData({ ...patientFormData, CIN: e.target.value })}
-                          required
-                        />
-                      </div>
+                      {patientIsMinor ? (
+                        <>
+                          <div>
+                            <Label htmlFor="guardianCin" className="text-gray-700">
+                              CIN du parent/tuteur
+                            </Label>
+                            <Input
+                              id="guardianCin"
+                              placeholder="CIN du père ou de la mère"
+                              value={patientFormData.guardian_cin}
+                              onChange={(e) =>
+                                setPatientFormData({ ...patientFormData, guardian_cin: e.target.value })
+                              }
+                              required
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="guardianRelation" className="text-gray-700">
+                              Lien de parenté
+                            </Label>
+                            <Select
+                              value={patientFormData.guardian_relation}
+                              onValueChange={(value) =>
+                                setPatientFormData({ ...patientFormData, guardian_relation: value })
+                              }
+                            >
+                              <SelectTrigger id="guardianRelation">
+                                <SelectValue placeholder="Sélectionner" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="father">Père</SelectItem>
+                                <SelectItem value="mother">Mère</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <Label htmlFor="cin" className="text-gray-700">
+                            CIN
+                          </Label>
+                          <Input
+                            id="cin"
+                            placeholder="CIN"
+                            value={patientFormData.CIN}
+                            onChange={(e) => setPatientFormData({ ...patientFormData, CIN: e.target.value })}
+                            required
+                          />
+                        </div>
+                      )}
                       <div>
                         <Label htmlFor="phone" className="text-gray-700">
                           Téléphone

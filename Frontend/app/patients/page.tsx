@@ -16,6 +16,7 @@ import { usePatients } from "@/hooks/use-patients"
 import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart } from "lucide-react"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
+import { isMinor } from "@/lib/age"
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -26,6 +27,9 @@ export default function PatientsPage() {
   const [selectedPatient, setSelectedPatient] = useState<any>(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [patientToArchive, setPatientToArchive] = useState<any>(null)
+  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false)
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false)
   const [expandedPatient, setExpandedPatient] = useState<number | null>(null)
   const [isSearching, setIsSearching] = useState(false)
 
@@ -122,6 +126,24 @@ export default function PatientsPage() {
         variant: "destructive",
       })
     }
+  }
+
+  const requestArchiveToggle = (patient: any) => {
+    setPatientToArchive(patient)
+    if (patient.archived) {
+      setIsRestoreModalOpen(true)
+    } else {
+      setIsArchiveModalOpen(true)
+    }
+  }
+
+  const confirmArchiveToggle = async () => {
+    if (patientToArchive) {
+      await handleToggleArchiveStatus(patientToArchive.ID_patient)
+    }
+    setIsArchiveModalOpen(false)
+    setIsRestoreModalOpen(false)
+    setPatientToArchive(null)
   }
 
   const handleAddPatient = async (formData: any) => {
@@ -348,7 +370,7 @@ export default function PatientsPage() {
                                 size="sm"
                                 onClick={(e) => {
                                   e.stopPropagation()
-                                  handleToggleArchiveStatus(patient.ID_patient)
+                                  requestArchiveToggle(patient)
                                 }}
                                 className={
                                   patient.archived
@@ -512,6 +534,62 @@ export default function PatientsPage() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Archive Confirmation Modal */}
+        <Dialog open={isArchiveModalOpen} onOpenChange={setIsArchiveModalOpen}>
+          <DialogContent className="max-w-md">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 text-yellow-500 bg-yellow-50 p-4 rounded-full">
+                <Archive className="w-8 h-8" />
+              </div>
+              <DialogTitle>Confirmer l'archivage</DialogTitle>
+              <p className="mt-2 text-gray-600">
+                Êtes-vous sûr de vouloir archiver{" "}
+                <span className="font-bold text-gray-800">
+                  {patientToArchive ? formatName(patientToArchive.first_name, patientToArchive.last_name) : ""}
+                </span>{" "}
+                ?
+              </p>
+            </div>
+            <div className="flex justify-center space-x-4 pt-4">
+              <Button variant="outline" onClick={() => setIsArchiveModalOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={confirmArchiveToggle} className="bg-gray-500 hover:bg-yellow-600">
+                <Archive className="w-4 h-4 mr-2" />
+                Archiver
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Restore Confirmation Modal */}
+        <Dialog open={isRestoreModalOpen} onOpenChange={setIsRestoreModalOpen}>
+          <DialogContent className="max-w-md">
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 text-yellow-500 bg-yellow-50 p-4 rounded-full">
+                <Undo className="w-8 h-8" />
+              </div>
+              <DialogTitle>Confirmer la restauration</DialogTitle>
+              <p className="mt-2 text-gray-600">
+                Êtes-vous sûr de vouloir restaurer{" "}
+                <span className="font-bold text-gray-800">
+                  {patientToArchive ? formatName(patientToArchive.first_name, patientToArchive.last_name) : ""}
+                </span>{" "}
+                ?
+              </p>
+            </div>
+            <div className="flex justify-center space-x-4 pt-4">
+              <Button variant="outline" onClick={() => setIsRestoreModalOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={confirmArchiveToggle} className="bg-yellow-500 hover:bg-yellow-600 text-white">
+                <Undo className="w-4 h-4 mr-2" />
+                Restaurer
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )
@@ -533,6 +611,8 @@ function PatientForm({
     gender: initialData?.gender || "Female",
     birth_day: initialData?.birth_day || "",
     CIN: initialData?.CIN || "",
+    guardian_cin: initialData?.guardian_cin || "",
+    guardian_relation: initialData?.guardian_relation || "father",
     phone_num: initialData?.phone_num || "",
     email: initialData?.email || "",
     mutuelle: initialData?.mutuelle || "",
@@ -546,6 +626,8 @@ function PatientForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const patientIsMinor = isMinor(formData.birth_day)
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
@@ -558,7 +640,11 @@ function PatientForm({
     if (!formData.birth_day) {
       newErrors.birth_day = "La date de naissance est requise"
     }
-    if (!formData.CIN.trim()) {
+    if (patientIsMinor) {
+      if (!formData.guardian_cin.trim()) {
+        newErrors.guardian_cin = "Le CIN du parent/tuteur est requis pour un mineur"
+      }
+    } else if (!formData.CIN.trim()) {
       newErrors.CIN = "Le CIN est requis"
     }
     if (!formData.phone_num.trim()) {
@@ -653,19 +739,54 @@ function PatientForm({
           {errors.birth_day && <p className="text-red-500 text-sm mt-1">{errors.birth_day}</p>}
         </div>
 
-        <div>
-          <Label htmlFor="CIN">
-            CIN <span className="text-red-500">*</span>
-          </Label>
-          <Input
-            id="CIN"
-            value={formData.CIN}
-            onChange={(e) => handleChange("CIN", e.target.value)}
-            className={errors.CIN ? "border-red-500" : ""}
-            required
-          />
-          {errors.CIN && <p className="text-red-500 text-sm mt-1">{errors.CIN}</p>}
-        </div>
+        {patientIsMinor ? (
+          <>
+            <div>
+              <Label htmlFor="guardian_cin">
+                CIN du parent/tuteur <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="guardian_cin"
+                placeholder="CIN du père ou de la mère"
+                value={formData.guardian_cin}
+                onChange={(e) => handleChange("guardian_cin", e.target.value)}
+                className={errors.guardian_cin ? "border-red-500" : ""}
+                required
+              />
+              {errors.guardian_cin && <p className="text-red-500 text-sm mt-1">{errors.guardian_cin}</p>}
+            </div>
+
+            <div>
+              <Label htmlFor="guardian_relation">Lien de parenté</Label>
+              <Select
+                value={formData.guardian_relation}
+                onValueChange={(value) => handleChange("guardian_relation", value)}
+              >
+                <SelectTrigger id="guardian_relation">
+                  <SelectValue placeholder="Sélectionner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="father">Père</SelectItem>
+                  <SelectItem value="mother">Mère</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : (
+          <div>
+            <Label htmlFor="CIN">
+              CIN <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="CIN"
+              value={formData.CIN}
+              onChange={(e) => handleChange("CIN", e.target.value)}
+              className={errors.CIN ? "border-red-500" : ""}
+              required
+            />
+            {errors.CIN && <p className="text-red-500 text-sm mt-1">{errors.CIN}</p>}
+          </div>
+        )}
 
         <div>
           <Label htmlFor="phone_num">

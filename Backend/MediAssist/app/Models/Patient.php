@@ -19,6 +19,8 @@ class Patient extends Model
         'birth_day',
         'gender',
         'CIN',
+        'guardian_cin',
+        'guardian_relation',
         'phone_num',
         'email',
         'mutuelle',

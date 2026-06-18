@@ -58,25 +58,31 @@ export function usePatients(showArchived = false) {
           }
 
           if (Array.isArray(patientsArray)) {
-            // Transform the data to match the frontend interface
-            const transformedPatients = patientsArray.map((patient) => ({
-              ...patient,
-              id: patient.ID_patient,
-              archived: Boolean(patient.archived),
-              age: patient.birth_day ? calculateAge(patient.birth_day) : undefined,
-              lastAppointment: patient.lastAppointment
-                ? {
-                    appointment_date: patient.lastAppointment.appointment_date,
-                    type: patient.lastAppointment.type,
-                    diagnostic: patient.lastAppointment.diagnostic,
-                  }
-                : undefined,
-              nextAppointment: patient.nextAppointment
-                ? {
-                    appointment_date: patient.nextAppointment.appointment_date,
-                  }
-                : undefined,
-            }))
+            // Transform the data to match the frontend interface.
+            // Laravel serializes the eager-loaded relationships with snake_case
+            // keys (last_appointment / next_appointment), so read those.
+            const transformedPatients = patientsArray.map((patient) => {
+              const last = patient.last_appointment ?? patient.lastAppointment
+              const next = patient.next_appointment ?? patient.nextAppointment
+              return {
+                ...patient,
+                id: patient.ID_patient,
+                archived: Boolean(patient.archived),
+                age: patient.birth_day ? calculateAge(patient.birth_day) : undefined,
+                lastAppointment: last
+                  ? {
+                      appointment_date: last.appointment_date,
+                      type: last.type,
+                      diagnostic: last.diagnostic,
+                    }
+                  : undefined,
+                nextAppointment: next
+                  ? {
+                      appointment_date: next.appointment_date,
+                    }
+                  : undefined,
+              }
+            })
 
             setPatients(transformedPatients)
             setTotal(paginationInfo.total)
@@ -230,19 +236,32 @@ export function usePatients(showArchived = false) {
   }
 
   const toggleArchiveStatus = async (patientId: number) => {
-    try {
-      const patient = patients.find((p) => p.ID_patient === patientId || p.id === patientId)
-      if (!patient) return { success: false, message: "Patient not found" }
+    const patient = patients.find((p) => p.ID_patient === patientId || (p as any).id === patientId)
+    if (!patient) return { success: false, message: "Patient not found" }
 
+    // Optimistically drop the patient from the current view: archiving removes it
+    // from the active list, restoring removes it from the archived list. This makes
+    // the change visible immediately instead of waiting on the background refetch.
+    const previousPatients = patients
+    const previousTotal = total
+    setPatients((cur) => cur.filter((p) => p.ID_patient !== patientId && (p as any).id !== patientId))
+    setTotal((t) => Math.max(0, t - 1))
+
+    try {
       const response = await apiClient.archivePatient(patientId, !patient.archived, showArchived)
 
       if (response.success) {
-        fetchPatients() // Refresh the list
+        fetchPatients(currentPage) // Reconcile counts/pagination in the background
         return { success: true, message: response.data?.message }
-      } else {
-        return { success: false, message: response.message || "Failed to update patient status" }
       }
+
+      // Revert on failure
+      setPatients(previousPatients)
+      setTotal(previousTotal)
+      return { success: false, message: response.message || "Failed to update patient status" }
     } catch (err) {
+      setPatients(previousPatients)
+      setTotal(previousTotal)
       return { success: false, message: "Network error occurred" }
     }
   }
