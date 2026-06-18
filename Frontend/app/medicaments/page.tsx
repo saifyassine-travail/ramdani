@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2, Star } from "lucide-react"
+import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2, Star, ChevronLeft, ChevronRight } from "lucide-react"
 
 export default function MedicamentsPage() {
   const { toast } = useToast()
@@ -35,8 +35,20 @@ export default function MedicamentsPage() {
     composition: "",
   })
 
-  const { medicaments, searchMedicaments, createMedicament, updateMedicament, toggleArchiveStatus, toggleFavorite, loading, error } =
-    useMedicaments(showArchived)
+  const {
+    medicaments,
+    searchMedicaments,
+    createMedicament,
+    updateMedicament,
+    toggleArchiveStatus,
+    toggleFavorite,
+    fetchMedicaments,
+    currentPage,
+    totalPages,
+    total,
+    loading,
+    error,
+  } = useMedicaments(showArchived)
 
   const debounceTimer = useRef<NodeJS.Timeout>()
 
@@ -56,23 +68,20 @@ export default function MedicamentsPage() {
     }
   }, [searchQuery])
 
-  const handleDebouncedSearch = useCallback(
-    async (term: string) => {
-      if (term.trim()) {
-        setIsSearching(true)
-        try {
-          await searchMedicaments(term)
-        } finally {
-          setIsSearching(false)
-        }
-      }
-    },
-    [searchMedicaments],
-  )
-
   useEffect(() => {
-    handleDebouncedSearch(debouncedSearchQuery)
-  }, [debouncedSearchQuery, handleDebouncedSearch])
+    if (debouncedSearchQuery.trim()) {
+      let active = true
+      setIsSearching(true)
+      searchMedicaments(debouncedSearchQuery).finally(() => {
+        if (active) setIsSearching(false)
+      })
+      return () => {
+        active = false
+      }
+    }
+    // No search term: load the (paginated) full list, page 1.
+    fetchMedicaments(1)
+  }, [debouncedSearchQuery, searchMedicaments, fetchMedicaments])
 
   const filteredMedicaments = useMemo(() => {
     let list = medicaments.filter((medicament) => (showArchived ? medicament.archived : !medicament.archived))
@@ -100,7 +109,7 @@ export default function MedicamentsPage() {
     setEditingMedicament(medicament)
     setFormData({
       name: medicament.name,
-      price: medicament.price.toString(),
+      price: medicament.price != null ? medicament.price.toString() : "",
       description: medicament.description || "",
       dosage: medicament.dosage || "",
       composition: medicament.composition || "",
@@ -239,6 +248,7 @@ export default function MedicamentsPage() {
               <TableHead className="text-blue-700 font-bold w-8"></TableHead>
               <TableHead className="text-blue-700 font-bold">Code</TableHead>
               <TableHead className="text-blue-700 font-bold">Nom</TableHead>
+              <TableHead className="text-blue-700 font-bold">Type</TableHead>
               <TableHead className="text-blue-700 font-bold">Prix (DH)</TableHead>
               {showArchived && <TableHead className="text-blue-700 font-bold">Statut</TableHead>}
               <TableHead className="text-blue-700 font-bold">Actions</TableHead>
@@ -247,7 +257,7 @@ export default function MedicamentsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 7 : 6} className="text-center py-8">
                   <div className="flex items-center justify-center">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span className="ml-2">Chargement des médicaments...</span>
@@ -256,7 +266,7 @@ export default function MedicamentsPage() {
               </TableRow>
             ) : filteredMedicaments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 6 : 5} className="text-center py-8">
+                <TableCell colSpan={showArchived ? 7 : 6} className="text-center py-8">
                   <div className="flex flex-col items-center justify-center">
                     <Pills className="w-12 h-12 text-blue-300 mb-2" />
                     <p className="text-gray-500">Aucun médicament {showArchived ? "archivé" : ""} trouvé</p>
@@ -287,7 +297,20 @@ export default function MedicamentsPage() {
                   </TableCell>
                   <TableCell>{medicament.ID_Medicament}</TableCell>
                   <TableCell className="font-medium">{medicament.name}</TableCell>
-                  <TableCell>{Number(medicament.price || 0).toFixed(2)}</TableCell>
+                  <TableCell>
+                    {medicament.type_category ? (
+                      <Badge variant="outline" className="text-xs text-blue-700 border-blue-200 bg-blue-50">
+                        {medicament.type_category}
+                      </Badge>
+                    ) : medicament.type ? (
+                      <Badge variant="outline" className="text-xs text-gray-600 border-gray-200">
+                        {medicament.type}
+                      </Badge>
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{medicament.price != null ? Number(medicament.price).toFixed(2) : "—"}</TableCell>
                   {showArchived && (
                     <TableCell>
                       <Badge variant={medicament.archived ? "secondary" : "default"}>
@@ -353,6 +376,34 @@ export default function MedicamentsPage() {
           </TableBody>
         </Table>
       </div>
+
+      {!debouncedSearchQuery.trim() && !loading && totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+          <p className="text-sm text-gray-500">
+            Page {currentPage} sur {totalPages} • {total} médicaments
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage <= 1 || loading}
+              onClick={() => fetchMedicaments(currentPage - 1)}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Précédent
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= totalPages || loading}
+              onClick={() => fetchMedicaments(currentPage + 1)}
+            >
+              Suivant
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-md">
@@ -434,49 +485,91 @@ export default function MedicamentsPage() {
       </Dialog>
 
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-blue-600">{selectedMedicament?.name}</DialogTitle>
-            <p className="text-sm text-gray-500">
-              Code: <span className="font-medium text-gray-700">{selectedMedicament?.ID_Medicament}</span>
-            </p>
-            <p className="text-xl font-bold text-gray-600 mt-2">
-              {Number(selectedMedicament?.price || 0).toFixed(2)} DH
-            </p>
+            <DialogTitle className="text-blue-600 leading-tight">{selectedMedicament?.name}</DialogTitle>
+            <div className="flex items-center gap-3 mt-1">
+              <p className="text-sm text-gray-500">
+                Code: <span className="font-medium text-gray-700">{selectedMedicament?.ID_Medicament}</span>
+              </p>
+              {selectedMedicament?.type_category && (
+                <Badge variant="outline" className="text-xs text-blue-700 border-blue-200 bg-blue-50">
+                  {selectedMedicament.type_category}
+                </Badge>
+              )}
+            </div>
+            <div className="flex gap-4 mt-2">
+              <div>
+                <span className="text-xs text-gray-400">PPV</span>
+                <p className="text-lg font-bold text-gray-700">
+                  {selectedMedicament?.price != null ? `${Number(selectedMedicament.price).toFixed(2)} DH` : "—"}
+                </p>
+              </div>
+              {selectedMedicament?.prix_hospitalier != null && (
+                <div>
+                  <span className="text-xs text-gray-400">Prix hospitalier</span>
+                  <p className="text-lg font-bold text-blue-600">
+                    {Number(selectedMedicament.prix_hospitalier).toFixed(2)} DH
+                  </p>
+                </div>
+              )}
+            </div>
           </DialogHeader>
           <div className="border border-gray-200 rounded-lg overflow-hidden">
             <table className="w-full">
               <tbody className="divide-y divide-gray-200">
+                {selectedMedicament?.type && (
+                  <tr>
+                    <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Forme</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament.type}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-1/3">Dosage</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament?.dosage || "Non spécifié"}</td>
+                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Dosage</td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament?.dosage || "—"}</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-1/3">Composition</td>
+                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Composition</td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {selectedMedicament?.composition || "Non spécifié"}
+                    {selectedMedicament?.composition
+                      ? selectedMedicament.composition.split("|").map((c, i) => (
+                          <span key={i} className="block">{c.trim()}</span>
+                        ))
+                      : "—"}
                   </td>
                 </tr>
+                {selectedMedicament?.['Classe_thérapeutique'] && (
+                  <tr>
+                    <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Classe thérapeutique</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament['Classe_thérapeutique']}</td>
+                  </tr>
+                )}
+                {selectedMedicament?.Code_ATCv && (
+                  <tr>
+                    <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Code ATC</td>
+                    <td className="px-4 py-3 text-sm font-mono text-gray-600">{selectedMedicament.Code_ATCv}</td>
+                  </tr>
+                )}
+                {selectedMedicament?.laboratory && (
+                  <tr>
+                    <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Laboratoire</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament.laboratory}</td>
+                  </tr>
+                )}
+                {selectedMedicament?.statut && (
+                  <tr>
+                    <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Statut commercial</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{selectedMedicament.statut}</td>
+                  </tr>
+                )}
                 <tr>
-                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-1/3">Description</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">
-                    {selectedMedicament?.description || "Non spécifié"}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-1/3">Statut</td>
+                  <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Archive</td>
                   <td className="px-4 py-3 text-sm">
                     <Badge variant={selectedMedicament?.archived ? "secondary" : "default"}>
                       {selectedMedicament?.archived ? (
-                        <>
-                          <Archive className="w-3 h-3 mr-1" />
-                          Archivé
-                        </>
+                        <><Archive className="w-3 h-3 mr-1" />Archivé</>
                       ) : (
-                        <>
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Actif
-                        </>
+                        <><CheckCircle className="w-3 h-3 mr-1" />Actif</>
                       )}
                     </Badge>
                   </td>
@@ -484,7 +577,7 @@ export default function MedicamentsPage() {
               </tbody>
             </table>
           </div>
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end pt-2">
             <Button variant="outline" onClick={() => setIsDetailsModalOpen(false)}>
               <X className="w-4 h-4 mr-2" />
               Fermer

@@ -21,17 +21,25 @@ class MedicamentController extends Controller
 
     $medicaments = Medicament::query()
         ->where(function ($query) use ($term) {
-            $query->where('name', 'LIKE', "%{$term}%")
-                  ->orWhere('dosage', 'LIKE', "%{$term}%")
-                  ->orWhere('composition', 'LIKE', "%{$term}%")
-                  ->orWhere('price', 'LIKE', "%{$term}%");
+            $query->where('name', 'ILIKE', "%{$term}%")
+                  ->orWhere('dosage', 'ILIKE', "%{$term}%")
+                  ->orWhere('composition', 'ILIKE', "%{$term}%")
+                  ->orWhere('type', 'ILIKE', "%{$term}%")
+                  ->orWhere('type_category', 'ILIKE', "%{$term}%");
         })
         ->select([
             'ID_Medicament as id',
             'name',
             'price',
+            'prix_hospitalier',
             'dosage',
-            'composition'
+            'composition',
+            'Classe_thérapeutique',
+            'Code_ATCv',
+            'type',
+            'type_category',
+            'laboratory',
+            'statut',
         ])
         ->orderBy('name')
         ->limit(15)
@@ -44,16 +52,41 @@ class MedicamentController extends Controller
     public function index(Request $request)
     {
         $showArchived = $request->boolean('archived', false);
+        $perPage = max(1, min((int) $request->query('per_page', 50), 100));
 
-        $medicaments = Medicament::when(!$showArchived, function($query) {
-            return $query->where('archived', 0);
-        })->when($showArchived, function($query) {
-            return $query->where('archived', 1);
-        })->get();
+        $medicaments = Medicament::query()
+            ->where('archived', $showArchived ? 1 : 0)
+            ->select([
+                'ID_Medicament',
+                'name',
+                'price',
+                'prix_hospitalier',
+                'dosage',
+                'composition',
+                'Classe_thérapeutique',
+                'Code_ATCv',
+                'type',
+                'type_category',
+                'laboratory',
+                'statut',
+                'archived',
+                'is_favorite',
+                'created_at',
+                'updated_at',
+            ])
+            ->orderByDesc('is_favorite')
+            ->orderBy('name')
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
-            'data' => $medicaments
+            'data' => $medicaments->items(),
+            'meta' => [
+                'current_page' => $medicaments->currentPage(),
+                'last_page' => $medicaments->lastPage(),
+                'total' => $medicaments->total(),
+                'per_page' => $medicaments->perPage(),
+            ],
         ]);
     }
 

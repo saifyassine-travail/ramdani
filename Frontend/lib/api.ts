@@ -76,12 +76,20 @@ export interface CaseDescription {
 
 export interface Medicament {
   ID_Medicament: number
+  id?: number
   name: string
-  price: number
+  price: number | null
+  prix_hospitalier?: number | null
   description?: string
   dosage?: string
   composition?: string
-  archived: boolean | number // Backend returns 0/1, frontend uses boolean
+  'Classe_thérapeutique'?: string
+  Code_ATCv?: string
+  type?: string
+  type_category?: string
+  laboratory?: string
+  statut?: string
+  archived: boolean | number
   is_favorite?: boolean | number
   created_at?: string
   updated_at?: string
@@ -687,27 +695,26 @@ class ApiClient {
   }
 
   // Medicament management endpoints
-  async getMedicaments(showArchived = false): Promise<ApiResponse<Medicament[]>> {
+  async getMedicaments(showArchived = false, page = 1, perPage = 50): Promise<ApiResponse<Medicament[]>> {
     const params = new URLSearchParams()
     if (showArchived) params.append("archived", "true")
+    params.append("page", String(page))
+    params.append("per_page", String(perPage))
 
     const endpoint = `/medicaments?${params.toString()}`
-    console.log("[v0] Calling getMedicaments endpoint:", endpoint)
 
     const cacheKey = `${this.baseURL}${endpoint}`
     requestCache.delete(cacheKey)
 
-    const response = await this.request<{ success: boolean; data: Medicament[] }>(endpoint)
-
-    console.log("[v0] getMedicaments raw response:", JSON.stringify(response, null, 2))
+    const response = await this.request<{ success: boolean; data: Medicament[]; meta?: ApiResponse<Medicament[]>["meta"] }>(endpoint)
 
     // Transform the response to extract the data array
     if (response.success && response.data) {
       const extractedData = response.data.data || response.data
-      console.log("[v0] getMedicaments extracted data:", extractedData)
       return {
         success: true,
         data: extractedData as Medicament[],
+        meta: response.data.meta,
       }
     }
 

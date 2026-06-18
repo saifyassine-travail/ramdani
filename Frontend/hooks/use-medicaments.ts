@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { apiClient } from "../lib/api"
 import type { Medicament } from "../lib/api"
+
+const PER_PAGE = 50
 
 export function useMedicaments(showArchived = false) {
   const [medicaments, setMedicaments] = useState<Medicament[]>([])
@@ -11,7 +13,7 @@ export function useMedicaments(showArchived = false) {
   const [total, setTotal] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
-  const [perPage, setPerPage] = useState(10)
+  const perPage = PER_PAGE
 
   const fetchMedicaments = useCallback(
     async (page = 1) => {
@@ -19,32 +21,27 @@ export function useMedicaments(showArchived = false) {
         setLoading(true)
         setError(null)
 
-        const response = await apiClient.getMedicaments(showArchived)
+        const response = await apiClient.getMedicaments(showArchived, page, PER_PAGE)
 
-        if (response && response.success && response.data) {
-          let medicamentsArray = []
+        if (response && response.success && Array.isArray(response.data)) {
+          const transformedMedicaments = response.data.map((medicament) => ({
+            ...medicament,
+            id: medicament.ID_Medicament || medicament.id,
+            price: Number(medicament.price || 0),
+            archived: Boolean(medicament.archived),
+          }))
 
-          if (Array.isArray(response.data)) {
-            medicamentsArray = response.data
-          } else if (response.data.data && Array.isArray(response.data.data)) {
-            medicamentsArray = response.data.data
-          }
+          setMedicaments(transformedMedicaments)
 
-          if (Array.isArray(medicamentsArray)) {
-            const transformedMedicaments = medicamentsArray.map((medicament) => ({
-              ...medicament,
-              id: medicament.ID_Medicament || medicament.id,
-              price: Number(medicament.price || 0),
-              archived: Boolean(medicament.archived),
-            }))
-
-            setMedicaments(transformedMedicaments)
+          const meta = response.meta
+          if (meta) {
+            setTotal(meta.total)
+            setCurrentPage(meta.current_page)
+            setTotalPages(meta.last_page)
+          } else {
             setTotal(transformedMedicaments.length)
             setCurrentPage(1)
             setTotalPages(1)
-          } else {
-            setError("Invalid data format received")
-            setMedicaments([])
           }
         } else {
           setError("Failed to fetch medicaments - unexpected response format")
@@ -137,7 +134,7 @@ export function useMedicaments(showArchived = false) {
       const response = await apiClient.updateMedicament(id, medicamentData)
 
       if (response.success) {
-        fetchMedicaments() // Refresh the list
+        fetchMedicaments(currentPage) // Refresh the current page
         return { success: true }
       } else {
         return { success: false, message: response.message || "Failed to update medicament" }
@@ -190,7 +187,7 @@ export function useMedicaments(showArchived = false) {
       }
 
       if (response.success) {
-        await fetchMedicaments(1)
+        await fetchMedicaments(currentPage)
         return { success: true, message: response.data?.message }
       } else {
         return { success: false, message: response.message || "Failed to update medicament status" }
@@ -199,10 +196,6 @@ export function useMedicaments(showArchived = false) {
       return { success: false, message: "Network error occurred" }
     }
   }
-
-  useEffect(() => {
-    fetchMedicaments(1)
-  }, [showArchived, fetchMedicaments])
 
   return {
     medicaments,
