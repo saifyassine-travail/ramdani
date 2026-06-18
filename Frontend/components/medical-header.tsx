@@ -98,6 +98,16 @@ const Settings = () => (
   </svg>
 )
 
+const getTodayDate = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+const getNowTime = () => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+}
+
 const MedicalHeader = () => {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [isPatientModalOpen, setIsPatientModalOpen] = useState(false)
@@ -137,8 +147,8 @@ const MedicalHeader = () => {
   const [appointmentFormData, setAppointmentFormData] = useState({
     patient_id: 0,
     type: "Consultation",
-    appointment_date: "",
-    appointment_time: "",
+    appointment_date: getTodayDate(),
+    appointment_time: getNowTime(),
     notes: "",
   })
 
@@ -272,8 +282,8 @@ const MedicalHeader = () => {
         setAppointmentFormData({
           patient_id: 0,
           type: "Consultation",
-          appointment_date: "",
-          appointment_time: "",
+          appointment_date: getTodayDate(),
+          appointment_time: getNowTime(),
           notes: "",
         })
         window.dispatchEvent(new Event("appointmentCreated"))
@@ -474,7 +484,19 @@ const MedicalHeader = () => {
 
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <Dialog open={isAppointmentModalOpen} onOpenChange={setIsAppointmentModalOpen}>
+              <Dialog
+                open={isAppointmentModalOpen}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setAppointmentFormData((prev) => ({
+                      ...prev,
+                      appointment_date: getTodayDate(),
+                      appointment_time: getNowTime(),
+                    }))
+                  }
+                  setIsAppointmentModalOpen(open)
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button
                     size="sm"
