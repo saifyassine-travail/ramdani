@@ -39,6 +39,9 @@
         },
         "files": [
             "bootstrap/windows-signals.php"
+        ],
+        "exclude-from-classmap": [
+            "/roadrunner-php/roadrunner-api-dto/generated/"
         ]
     },
     "autoload-dev": {

@@ -21,6 +21,23 @@ const nextConfig = {
     unoptimized: false,
     formats: ["image/avif", "image/webp"],
   },
+  // Proxy all /api/* requests through Next.js to the Laravel backend on localhost.
+  // This means the browser never connects to port 8000 directly — it always goes through
+  // port 3000 (the Next.js server), which then forwards to 127.0.0.1:8000 internally.
+  // Benefit: the 192.168.1.3:8000 portproxy is no longer needed; only 127.0.0.1:8000
+  // (the localhost portproxy) is used, which is far more stable.
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: "http://127.0.0.1:8000/api/:path*",
+      },
+      {
+        source: "/storage/:path*",
+        destination: "http://127.0.0.1:8000/storage/:path*",
+      },
+    ]
+  },
   compress: true,
   productionBrowserSourceMaps: false,
   experimental: {

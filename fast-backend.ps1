@@ -12,14 +12,16 @@
 #   .\fast-backend.ps1 -Reload    # sync code -> WSL, then RELOAD workers (use after editing backend code while it runs)
 #
 # After changing composer dependencies, run once in WSL:
-#   wsl -d Ubuntu -- bash -lc "cd ~/mediassist && composer install"
+#   wsl -d Ubuntu -- bash -lc "cd ~/mediassist && COMPOSER_ALLOW_SUPERUSER=1 composer install --ignore-platform-reqs"
 
 param([switch]$Reload)
 
-$src = "/mnt/c/Users/Saif/Desktop/ramdani/ramdani/Backend/MediAssist"
+$src = "/mnt/c/Users/dell/Desktop/ramdani/Backend/MediAssist"
+
+$winHostIp = (wsl -d Ubuntu -- bash -c "ip route show default | grep -oP '(?<=via )\S+'").Trim()
 
 Write-Host "Syncing backend code -> WSL (~/mediassist)..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -lc "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/"
+wsl -d Ubuntu -- bash -c "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/ && sed -i 's/^DB_HOST=localhost/DB_HOST=$winHostIp/' ~/mediassist/.env"
 
 if ($Reload) {
     Write-Host "Reloading Octane workers..." -ForegroundColor Cyan
