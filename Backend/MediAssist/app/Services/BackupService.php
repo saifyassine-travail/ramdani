@@ -6,6 +6,7 @@ use App\Models\BackupLog;
 use App\Models\User;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BackupService
 {
@@ -89,10 +90,14 @@ class BackupService
                 throw new Exception('Failed to parse backup data — file may be corrupted.');
             }
 
-            // 3. Restore in a single transaction (conflict: last-write-wins via updated_at)
-            $stats = DB::transaction(function () use ($user, $data) {
-                return $this->restoreUserData($user, $data);
+            // 3. Replace the current data with the snapshot, in one transaction.
+            $stats = DB::transaction(function () use ($data) {
+                return $this->restoreUserData($data);
             });
+
+            // 4. Realign auto-increment sequences with the restored IDs (outside the
+            //    transaction: Postgres sequence changes are not rolled back).
+            $this->resetSequences();
 
             @unlink($tempPath);
 
@@ -131,107 +136,146 @@ class BackupService
     }
 
     /**
-     * Re-insert or update data from backup using updated_at for conflict resolution.
+     * Replace the current data with the backup snapshot: wipe the backed-up
+     * tables, then re-insert the backup rows preserving their original IDs.
+     * This makes the database match the backup exactly (records added after the
+     * backup are removed). Medicament/analysis CATALOGS are global and not part
+     * of the backup, so they are left untouched — only the per-appointment pivots
+     * are replaced.
      */
-    private function restoreUserData(User $user, array $data): array
+    private function restoreUserData(array $data): array
     {
-        $stats = [
-            'patients_restored'     => 0,
-            'appointments_restored' => 0,
-            'skipped'               => 0,
-        ];
+        $patients = $data['patients'] ?? [];
 
-        foreach ($data['patients'] ?? [] as $patientData) {
+        // Catalog IDs that still exist (skip pivots pointing at deleted catalog rows).
+        $validMedIds      = \App\Models\Medicament::pluck('ID_Medicament')->flip();
+        $validAnalysisIds = \App\Models\Analysis::pluck('ID_Analyse')->flip();
+
+        // Keep only real table columns, so a backup taken on a slightly different
+        // schema still inserts cleanly.
+        $columns = [
+            'patients'             => Schema::getColumnListing('patients'),
+            'appointments'         => Schema::getColumnListing('appointments'),
+            'case_descriptions'    => Schema::getColumnListing('case_descriptions'),
+            'certificats_medicaux' => Schema::getColumnListing('certificats_medicaux'),
+            'patient_documents'    => Schema::getColumnListing('patient_documents'),
+        ];
+        // Keep valid columns and JSON-encode array values (raw inserts don't apply
+        // Eloquent casts, so JSON columns like medical_acts / custom_measures_values
+        // must be encoded here or they'd be stored as the literal "Array").
+        $only = function (array $row, string $table) use ($columns): array {
+            $row = array_intersect_key($row, array_flip($columns[$table]));
+            foreach ($row as $key => $value) {
+                if (is_array($value)) {
+                    $row[$key] = json_encode($value, JSON_UNESCAPED_UNICODE);
+                }
+            }
+            return $row;
+        };
+
+        // 1. Wipe current data (children first for FK safety).
+        DB::table('appointment_medicament')->delete();
+        DB::table('appointment_analyse')->delete();
+        DB::table('case_descriptions')->delete();
+        DB::table('patient_documents')->delete();
+        DB::table('certificats_medicaux')->delete();
+        DB::table('appointments')->delete();
+        DB::table('patients')->delete();
+
+        $stats = ['patients_restored' => 0, 'appointments_restored' => 0];
+        $now   = now();
+
+        // 2. Re-insert from the snapshot, preserving IDs.
+        foreach ($patients as $patientData) {
             $appointments = $patientData['appointment'] ?? [];
             $certificates = $patientData['certificats'] ?? [];
+            $documents    = $patientData['documents'] ?? [];
             unset($patientData['appointment'], $patientData['certificats'], $patientData['documents']);
 
-            // Find or create patient by ID
-            $existing = \App\Models\Patient::find($patientData['ID_patient']);
-
-            if ($existing) {
-                // Last-write-wins: only overwrite if backup is newer
-                $backupUpdatedAt = $patientData['updated_at'] ?? null;
-                if ($backupUpdatedAt && $existing->updated_at < $backupUpdatedAt) {
-                    $existing->update(array_intersect_key($patientData, array_flip($existing->getFillable())));
-                } else {
-                    $stats['skipped']++;
-                    continue;
-                }
-                $patient = $existing;
-            } else {
-                $patient = \App\Models\Patient::create(
-                    array_intersect_key($patientData, array_flip((new \App\Models\Patient())->getFillable()))
-                );
-            }
-
+            DB::table('patients')->insert($only($patientData, 'patients'));
             $stats['patients_restored']++;
 
-            // Restore appointments
             foreach ($appointments as $apptData) {
-                $medicaments  = $apptData['medicaments'] ?? [];
-                $analyses     = $apptData['analyses'] ?? [];
-                $caseDesc     = $apptData['case_description'] ?? null;
+                $medicaments = $apptData['medicaments'] ?? [];
+                $analyses    = $apptData['analyses'] ?? [];
+                $caseDesc    = $apptData['case_description'] ?? null;
                 unset($apptData['medicaments'], $apptData['analyses'], $apptData['case_description'], $apptData['patient']);
 
-                $apptData['ID_patient'] = $patient->ID_patient;
-                $existingAppt = \App\Models\Appointment::find($apptData['ID_RV']);
+                DB::table('appointments')->insert($only($apptData, 'appointments'));
+                $stats['appointments_restored']++;
+                $rv = $apptData['ID_RV'];
 
-                if ($existingAppt) {
-                    if (($apptData['updated_at'] ?? null) && $existingAppt->updated_at < $apptData['updated_at']) {
-                        $existingAppt->update(array_intersect_key($apptData, array_flip($existingAppt->getFillable())));
-                        $appt = $existingAppt;
-                    } else {
+                foreach ($medicaments as $med) {
+                    $medId = $med['ID_Medicament'] ?? null;
+                    if ($medId === null || !$validMedIds->has($medId)) {
                         continue;
                     }
-                } else {
-                    $appt = \App\Models\Appointment::create(
-                        array_intersect_key($apptData, array_flip((new \App\Models\Appointment())->getFillable()))
-                    );
+                    $pivot = $med['pivot'] ?? [];
+                    DB::table('appointment_medicament')->insert([
+                        'ID_RV'         => $rv,
+                        'ID_Medicament' => $medId,
+                        'dosage'        => $pivot['dosage'] ?? null,
+                        'frequence'     => $pivot['frequence'] ?? null,
+                        'duree'         => $pivot['duree'] ?? null,
+                        'created_at'    => $pivot['created_at'] ?? $now,
+                        'updated_at'    => $pivot['updated_at'] ?? $now,
+                    ]);
                 }
 
-                $stats['appointments_restored']++;
-
-                // Restore medicament pivot
-                if ($medicaments) {
-                    $pivotData = [];
-                    foreach ($medicaments as $med) {
-                        $pivotData[$med['ID_Medicament']] = [
-                            'dosage'   => $med['pivot']['dosage'] ?? null,
-                            'frequence'=> $med['pivot']['frequence'] ?? null,
-                            'duree'    => $med['pivot']['duree'] ?? null,
-                        ];
+                foreach ($analyses as $an) {
+                    $anId = $an['ID_Analyse'] ?? null;
+                    if ($anId === null || !$validAnalysisIds->has($anId)) {
+                        continue;
                     }
-                    $appt->medicaments()->syncWithoutDetaching($pivotData);
+                    $pivot = $an['pivot'] ?? [];
+                    DB::table('appointment_analyse')->insert([
+                        'ID_RV'      => $rv,
+                        'ID_Analyse' => $anId,
+                        'created_at' => $pivot['created_at'] ?? $now,
+                        'updated_at' => $pivot['updated_at'] ?? $now,
+                    ]);
                 }
 
-                // Restore analysis pivot
-                if ($analyses) {
-                    $appt->analyses()->syncWithoutDetaching(
-                        array_column($analyses, 'ID_Analyse')
-                    );
-                }
-
-                // Restore case description
                 if ($caseDesc) {
-                    \App\Models\CaseDescription::updateOrCreate(
-                        ['ID_RV' => $appt->ID_RV],
-                        array_intersect_key($caseDesc, array_flip((new \App\Models\CaseDescription())->getFillable()))
-                    );
+                    DB::table('case_descriptions')->insert($only($caseDesc, 'case_descriptions'));
                 }
             }
 
-            // Restore certificates
             foreach ($certificates as $cert) {
-                unset($cert['id']);
-                $cert['ID_patient'] = $patient->ID_patient;
-                \App\Models\Certificate::firstOrCreate(
-                    ['ID_patient' => $patient->ID_patient, 'created_at' => $cert['created_at']],
-                    array_intersect_key($cert, array_flip((new \App\Models\Certificate())->getFillable()))
-                );
+                DB::table('certificats_medicaux')->insert($only($cert, 'certificats_medicaux'));
+            }
+
+            foreach ($documents as $doc) {
+                DB::table('patient_documents')->insert($only($doc, 'patient_documents'));
             }
         }
 
         return $stats;
+    }
+
+    /**
+     * Realign Postgres auto-increment sequences with the max restored IDs so the
+     * next insert doesn't collide with a restored row.
+     */
+    private function resetSequences(): void
+    {
+        $tables = [
+            'patients'             => 'ID_patient',
+            'appointments'         => 'ID_RV',
+            'case_descriptions'    => 'id',
+            'certificats_medicaux' => 'ID_CM',
+            'patient_documents'    => 'id',
+        ];
+
+        foreach ($tables as $table => $column) {
+            try {
+                DB::statement(
+                    "SELECT setval(pg_get_serial_sequence(?, ?), (SELECT COALESCE(MAX(\"$column\"), 0) + 1 FROM \"$table\"), false)",
+                    [$table, $column]
+                );
+            } catch (\Throwable $e) {
+                // Non-fatal (sequence may not exist for this column).
+            }
+        }
     }
 }

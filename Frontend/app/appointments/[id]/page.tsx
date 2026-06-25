@@ -9,6 +9,8 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "../../../c
 import { Button } from "../../../components/ui/button"
 import { Input } from "../../../components/ui/input"
 import { Textarea } from "../../../components/ui/textarea"
+import { AutocompleteTextarea } from "../../../components/autocomplete-textarea"
+import { COMMON_CASE_PHRASES } from "../../../lib/case-suggestions"
 import { Badge } from "../../../components/ui/badge"
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover"
 import {
@@ -41,6 +43,7 @@ import {
 } from "lucide-react"
 import { cn, formatName } from "../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
+import OrdonnancePrintPreview from "../../../components/ordonnance-print-preview"
 import { formatGlobalDate } from "../../../lib/format-date"
 
 interface MedicationForm {
@@ -48,6 +51,8 @@ interface MedicationForm {
   name?: string
   type?: string
   type_category?: string
+  /** True when the doctor typed a drug that isn't in the catalog. */
+  custom?: boolean
   pivot: {
     dosage: string
     frequence: string
@@ -133,6 +138,62 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// Short pharmaceutical-form label (cp, sirop, inj, ...).
+function getMedTypeLabel(med: { type?: string; type_category?: string; name?: string }): string {
+  const cat = (med.type_category || '').toLowerCase()
+  const raw = (med.type || '').toLowerCase()
+  const src = cat || raw
+  if (!src) {
+    const name = med.name || ''
+    const hasComma = name.includes(',')
+    const afterComma = name.split(',').pop()?.trim().toLowerCase() || ''
+    if (afterComma.includes('comprim')) return 'cp'
+    if (afterComma.includes('sirop')) return 'sirop'
+    if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+    if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
+    // A name with a comma usually ends in its form ("…, ovule"); use that word.
+    // A brand-only name (no comma, e.g. "Doliprane 1000") has no form, so default
+    // to a tablet rather than labelling the dose with the drug's own name.
+    return hasComma ? (afterComma.split(' ')[0] || 'cp') : 'cp'
+  }
+  if (src.includes('comprim')) return 'cp'
+  if (src.includes('sirop')) return 'sirop'
+  if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+  if (src.includes('suspension injectable')) return 'susp inj'
+  if (src.includes('injectable') || src.includes('injection')) return 'inj'
+  if (src.includes('perfusion')) return 'perf'
+  if (src.includes('solution')) return 'sol'
+  if (src.includes('suspension')) return 'susp'
+  if (src.includes('sachet')) return 'sachet'
+  if (src.includes('creme') || src.includes('crème') || src.includes('pommade')) return 'crème'
+  if (src.includes('spray') || src.includes('aerosol') || src.includes('aérosol')) return 'spray'
+  if (src.includes('suppositoire')) return 'supp'
+  if (src.includes('goutte') || src.includes('collyre')) return 'gouttes'
+  if (src.includes('patch')) return 'patch'
+  if (src.includes('poudre')) return 'pdr'
+  if (src.includes('lotion')) return 'lotion'
+  return cat.split(' ')[0] || raw.split(' ')[0] || 'cp'
+}
+
+// One medication block for the ordonnance (name + posology).
+function getMedicationHTML(med: MedicationForm): string {
+  const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
+  const duration = med.pivot?.duree || ''
+  const fullName = med.name || 'Médicament'
+  const typeLabel = getMedTypeLabel(med)
+  const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
+  const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
+  const parts = doses.map((d) => {
+    const qty = d.units || '1'
+    const label = isInj ? 'UI' : typeLabel
+    return `${qty} ${label} ${d.time.toLowerCase()}`
+  })
+  if (mealTiming) parts.push(mealTiming)
+  if (duration) parts.push(`pendant ${duration}`)
+  const posology = parts.join(', ')
+  return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
+}
+
 export default function AppointmentDetailsPage() {
   const params = useParams()
   const router = useRouter()
@@ -151,6 +212,7 @@ export default function AppointmentDetailsPage() {
   const [availableAnalyses, setAvailableAnalyses] = useState<Analysis[]>([])
 
   // Settings Configuration for visibility
+  const [showPrintPreview, setShowPrintPreview] = useState(false)
   const [caseConfig, setCaseConfig] = useState({
     show_weight: true,
     show_height: true,
@@ -159,11 +221,15 @@ export default function AppointmentDetailsPage() {
     show_pressure: true,
     show_glycemia: true,
     show_ddr: true,
+    case_autosuggest: true,
     default_consultation_price: 250,
     default_control_price: 0,
     custom_measures: [] as any[],
     medical_acts: null as Array<{ name: string; price: number }> | null,
   })
+
+  // History source for the case-description inline auto-suggest
+  const [pastCaseDescriptions, setPastCaseDescriptions] = useState<string[]>([])
 
   // Fetch settings on mount
   useEffect(() => {
@@ -192,6 +258,7 @@ export default function AppointmentDetailsPage() {
             show_pressure: settingsData.show_pressure ?? true,
             show_glycemia: settingsData.show_glycemia ?? true,
             show_ddr: settingsData.show_ddr ?? true,
+            case_autosuggest: settingsData.case_autosuggest ?? true,
             default_consultation_price: settingsData.default_consultation_price ?? 250,
             default_control_price: settingsData.default_control_price ?? 0,
             custom_measures: parsedMeasures,
@@ -214,6 +281,22 @@ export default function AppointmentDetailsPage() {
     }
     loadSettings()
   }, [])
+
+  // Load the doctor's past case descriptions for the auto-suggest history
+  useEffect(() => {
+    apiClient
+      .getCaseDescriptionSuggestions()
+      .then((res) => {
+        if (res.success && Array.isArray(res.data)) setPastCaseDescriptions(res.data)
+      })
+      .catch(() => {})
+  }, [])
+
+  // History first, common phrases as fallback
+  const caseSuggestions = useMemo(
+    () => [...pastCaseDescriptions, ...COMMON_CASE_PHRASES],
+    [pastCaseDescriptions],
+  )
 
   const [caseDescription, setCaseDescription] = useState("")
   const [diagnostic, setDiagnostic] = useState("")
@@ -855,6 +938,27 @@ export default function AppointmentDetailsPage() {
     setMedications((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
+  // Accept a free-text drug name the doctor typed (not in the catalog). It prints
+  // on the ordonnance immediately and is persisted on save.
+  const selectCustomMedication = useCallback((index: number, rawName: string) => {
+    const name = rawName.trim()
+    if (!name) return
+    setMedications((prev) => {
+      const updated = [...prev]
+      updated[index] = {
+        ...updated[index],
+        ID_Medicament: "",
+        name,
+        custom: true,
+        type: undefined,
+        type_category: undefined,
+      }
+      return updated
+    })
+    setOpenMedicationDropdown(null)
+    setMedicationSearchQuery("")
+  }, [])
+
   const updateMedication = useCallback(
     (index: number, field: string, value: string) => {
       setMedications((prevMedications) => {
@@ -947,13 +1051,19 @@ export default function AppointmentDetailsPage() {
         setError(null)
 
         const medicamentsData = medications
-          .filter((med) => med.ID_Medicament && med.ID_Medicament !== "")
-          .map((med) => ({
-            ID_Medicament: Number(med.ID_Medicament),
-            dosage: med.pivot.dosage,
-            frequence: med.pivot.frequence,
-            duree: med.pivot.duree,
-          }))
+          .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
+          .map((med) => {
+            const base = {
+              dosage: med.pivot.dosage,
+              frequence: med.pivot.frequence,
+              duree: med.pivot.duree,
+            }
+            // Catalog drug -> send its id; free-typed drug -> send the name so the
+            // backend can find-or-create it.
+            return med.ID_Medicament && med.ID_Medicament !== ""
+              ? { ID_Medicament: Number(med.ID_Medicament), ...base }
+              : { custom_name: (med.name || "").trim(), ...base }
+          })
 
         const analysesData = analyses
           .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
@@ -1243,9 +1353,11 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
-                  <Textarea
+                  <AutocompleteTextarea
                     value={caseDescription}
-                    onChange={(e) => setCaseDescription(e.target.value)}
+                    onChange={setCaseDescription}
+                    enabled={caseConfig.case_autosuggest}
+                    suggestions={caseSuggestions}
                     placeholder="Décrivez les plaintes et symptômes du patient..."
                     className="min-h-[120px] resize-y text-blue-700 bg-blue-50/50 border-blue-200 focus-visible:ring-blue-500 placeholder:text-blue-300"
                     rows={4}
@@ -1518,7 +1630,7 @@ export default function AppointmentDetailsPage() {
                         variant="outline"
                         size="sm"
                         className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
-                        onClick={handlePrintOrdonnance}
+                        onClick={() => setShowPrintPreview(true)}
                       >
                         <Print className="w-3 h-3 mr-1" />
                         Imprimer
@@ -1544,12 +1656,23 @@ export default function AppointmentDetailsPage() {
                                   type="button"
                                   className="w-full flex justify-between items-center px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 text-left bg-white hover:bg-gray-50 h-9"
                                 >
-                                  <span className="text-gray-700 truncate">
-                                    {med.ID_Medicament
-                                      ? availableMedicaments.find(
-                                        (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
-                                      )?.name || med.name
-                                      : "Sélectionner..."}
+                                  <span className="text-gray-700 truncate flex items-center gap-1.5 min-w-0">
+                                    {med.ID_Medicament ? (
+                                      <span className="truncate">
+                                        {availableMedicaments.find(
+                                          (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
+                                        )?.name || med.name}
+                                      </span>
+                                    ) : med.name ? (
+                                      <>
+                                        <span className="truncate">{med.name}</span>
+                                        <span className="flex-shrink-0 text-[10px] font-medium bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                          hors liste
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-gray-400">Sélectionner...</span>
+                                    )}
                                   </span>
                                   <ChevronsUpDown className="h-4 w-4 opacity-50 flex-shrink-0" />
                                 </button>
@@ -1563,6 +1686,20 @@ export default function AppointmentDetailsPage() {
                                   />
                                   <CommandList>
                                     <CommandEmpty>Aucun résultat.</CommandEmpty>
+                                    {medicationSearchQuery.trim() && (
+                                      <CommandGroup heading="Hors liste">
+                                        <CommandItem
+                                          value={`__custom__${medicationSearchQuery}`}
+                                          onSelect={() => selectCustomMedication(medIndex, medicationSearchQuery)}
+                                          className="text-amber-700"
+                                        >
+                                          <Plus className="mr-2 h-4 w-4 flex-shrink-0" />
+                                          <span className="flex-1">
+                                            Ajouter «&nbsp;{medicationSearchQuery.trim()}&nbsp;»
+                                          </span>
+                                        </CommandItem>
+                                      </CommandGroup>
+                                    )}
                                     <CommandGroup className="max-h-[300px] overflow-y-auto">
                                       {filteredMedicaments.slice(0, 100).map((medicament) => (
                                         <CommandItem
@@ -1961,6 +2098,24 @@ export default function AppointmentDetailsPage() {
           </Button>
         </div>
       </form>
+
+      <OrdonnancePrintPreview
+        open={showPrintPreview}
+        onOpenChange={setShowPrintPreview}
+        layout={(caseConfig as any).ordonnance_layout || null}
+        background={(caseConfig as any).ordonnance_background || null}
+        patientName={
+          appointment?.patient?.last_name && appointment?.patient?.first_name
+            ? formatName(appointment.patient.first_name, appointment.patient.last_name)
+            : (appointment?.patient as any)?.name || "Patient"
+        }
+        dateStr={new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+        medicationsHTML={medications.map(getMedicationHTML).join("")}
+      />
     </div>
   )
 }

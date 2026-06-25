@@ -44,6 +44,9 @@ Route::middleware('api')->group(function () {
     Route::get('/patients/search', [AppointmentController::class, 'search']);
 });
 
+// Case-description auto-suggest history (kept out of the greedy appointments/{date?} prefix)
+Route::get('/case-descriptions/suggestions', [AppointmentController::class, 'caseDescriptionSuggestions']);
+
 // PATIENTS
 Route::prefix('patients')->group(function () {
     Route::get('/', [PatientController::class, 'index']);          // GET list of patients (with pagination, supports ?archived=true)
@@ -140,6 +143,7 @@ Route::prefix('users')->middleware('auth:sanctum')->group(function () {
 // BACKUP & GOOGLE DRIVE SYNC
 Route::prefix('backup')->middleware('auth:sanctum')->group(function () {
     Route::post('/create', [App\Http\Controllers\BackupController::class, 'createBackup']);
+    Route::get('/export', [App\Http\Controllers\BackupController::class, 'exportLocal']);
     Route::get('/list', [App\Http\Controllers\BackupController::class, 'listBackups']);
     Route::post('/restore', [App\Http\Controllers\BackupController::class, 'restoreBackup']);
     Route::delete('/{driveFileId}', [App\Http\Controllers\BackupController::class, 'deleteBackup']);

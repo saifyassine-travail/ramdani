@@ -16,12 +16,23 @@
 
 param([switch]$Reload)
 
-$src = "/mnt/c/Users/dell/Desktop/ramdani/Backend/MediAssist"
+# Derive the backend path from this script's own location so it works on any
+# machine (no hardcoded user/path). Convert C:\path -> /mnt/c/path in pure
+# PowerShell to avoid backslash mangling when passing args through wsl.
+$backendWin = Join-Path $PSScriptRoot "Backend\MediAssist"
+$drive = $backendWin.Substring(0, 1).ToLower()
+$src = "/mnt/$drive" + $backendWin.Substring(2).Replace('\', '/')
+if (-not (Test-Path $backendWin)) {
+    Write-Host "ERROR: backend not found at $backendWin" -ForegroundColor Red
+    exit 1
+}
 
-$winHostIp = (wsl -d Ubuntu -- bash -c "ip route show default | grep -oP '(?<=via )\S+'").Trim()
+# With WSL2 mirrored networking, WSL reaches the Windows PostgreSQL via
+# 127.0.0.1 (the source .env ships DB_HOST=localhost, which we normalize here).
+$dbHost = "127.0.0.1"
 
 Write-Host "Syncing backend code -> WSL (~/mediassist)..." -ForegroundColor Cyan
-wsl -d Ubuntu -- bash -c "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/ && sed -i 's/^DB_HOST=localhost/DB_HOST=$winHostIp/' ~/mediassist/.env"
+wsl -d Ubuntu -- bash -c "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/ && sed -i 's/^DB_HOST=.*/DB_HOST=$dbHost/' ~/mediassist/.env"
 
 if ($Reload) {
     Write-Host "Reloading Octane workers..." -ForegroundColor Cyan

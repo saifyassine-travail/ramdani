@@ -13,7 +13,8 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  Menu
+  Menu,
+  ScanLine,
 } from "lucide-react"
 
 // Custom Logo Component (Kept as requested, it's the specific branding)
@@ -86,6 +87,13 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       icon: <FlaskConical size={20} />,
       href: "/analyses",
       show: user.role === "admin" || hasPermission("analyses"),
+    },
+    {
+      id: "radiology",
+      label: "Radiologie IA",
+      icon: <ScanLine size={20} />,
+      href: "/radiology",
+      show: user.role === "admin" || hasPermission("radiology"),
     },
     {
       id: "statistics",

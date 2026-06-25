@@ -3,8 +3,17 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { apiClient } from "@/lib/api"
-import { Loader2, TrendingUp, Users, Calendar, Activity, Zap, AlertCircle, DollarSign, BarChart3 } from "lucide-react"
+import { Loader2, TrendingUp, Users, Calendar, Activity, Zap, AlertCircle, DollarSign, BarChart3, Database, FileSpreadsheet, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
+import { useToast } from "@/hooks/use-toast"
 import {
     BarChart,
     Bar,
@@ -45,8 +54,35 @@ interface StatsData {
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444"]
 
 export default function StatisticsPage() {
+    const { toast } = useToast()
     const [loading, setLoading] = useState(true)
     const [data, setData] = useState<StatsData | null>(null)
+    const [exporting, setExporting] = useState<"db" | "csv" | null>(null)
+
+    const handleExport = async (format: "db" | "csv") => {
+        setExporting(format)
+        try {
+            const result = await apiClient.exportDatabase(format)
+            if (result.canceled) return
+            if (result.success) {
+                toast({
+                    title: "Sauvegarde réussie",
+                    description:
+                        format === "db"
+                            ? "La base de données (.db) a été enregistrée."
+                            : "L'archive CSV (.zip) a été enregistrée.",
+                })
+            } else {
+                toast({
+                    variant: "destructive",
+                    title: "Échec de la sauvegarde",
+                    description: result.message || "Une erreur est survenue.",
+                })
+            }
+        } finally {
+            setExporting(null)
+        }
+    }
 
     // Chart Filter States
     const [viewMode, setViewMode] = useState<'year' | 'month'>('year')
@@ -144,9 +180,51 @@ export default function StatisticsPage() {
 
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-800">Tableau de Bord IA & Statistiques</h1>
-                <p className="text-gray-500 mt-2">Vue d'overview de votre activité et insights prédictifs</p>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-gray-800">Tableau de Bord IA & Statistiques</h1>
+                    <p className="text-gray-500 mt-2">Vue d'overview de votre activité et insights prédictifs</p>
+                </div>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button className="gap-2 bg-blue-600 hover:bg-blue-700" disabled={exporting !== null}>
+                            {exporting !== null ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Database className="h-4 w-4" />
+                            )}
+                            Sauvegarder la base
+                            <ChevronDown className="h-4 w-4 opacity-70" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                        <DropdownMenuLabel>Choisir le format</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            className="gap-2 cursor-pointer"
+                            disabled={exporting !== null}
+                            onClick={() => handleExport("db")}
+                        >
+                            <Database className="h-4 w-4 text-blue-600" />
+                            <div className="flex flex-col">
+                                <span className="font-medium">Base de données (.db)</span>
+                                <span className="text-xs text-gray-500">Fichier SQLite, toutes les tables</span>
+                            </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            className="gap-2 cursor-pointer"
+                            disabled={exporting !== null}
+                            onClick={() => handleExport("csv")}
+                        >
+                            <FileSpreadsheet className="h-4 w-4 text-green-600" />
+                            <div className="flex flex-col">
+                                <span className="font-medium">Fichiers CSV (.zip)</span>
+                                <span className="text-xs text-gray-500">Un CSV par table, dans une archive</span>
+                            </div>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
             {/* KPI Cards */}

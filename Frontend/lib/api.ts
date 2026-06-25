@@ -294,7 +294,9 @@ class ApiClient {
       diagnostic?: string
       custom_measures_values?: Record<string, string>
       medicaments?: Array<{
-        ID_Medicament: number
+        // Either a catalog id, or a free-text name for a drug not in the catalog.
+        ID_Medicament?: number
+        custom_name?: string
         dosage?: string
         frequence?: string
         duree?: string
@@ -1089,6 +1091,15 @@ class ApiClient {
     return this.request("/settings", {}, true) // always skip cache for settings
   }
 
+  // Past case-description texts, used as the history source for inline auto-suggest
+  async getCaseDescriptionSuggestions(): Promise<ApiResponse<string[]>> {
+    const response = await this.request<{ success: boolean; data: string[] }>("/case-descriptions/suggestions")
+    if (response.success && response.data) {
+      return { success: true, data: ((response.data as any).data ?? response.data) as string[] }
+    }
+    return { success: response.success, message: response.message, error: response.error, data: [] }
+  }
+
   async updateUserSettings(settings: any): Promise<ApiResponse<any>> {
     // Bust cache before sending so the next GET returns fresh data
     const url = `${this.baseURL}/settings`
@@ -1227,7 +1238,10 @@ class ApiClient {
 
   // ── Google Drive / Backup ──────────────────────────────────────────────────
   getGoogleOAuthUrl(userId: number): string {
-    return `http://127.0.0.1:8000/auth/google?user_id=${userId}`
+    // Pass the current frontend origin so the OAuth callback returns the browser
+    // to the same origin it started from (localhost vs 127.0.0.1 differ).
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
+    return `http://127.0.0.1:8000/auth/google?user_id=${userId}&origin=${encodeURIComponent(origin)}`
   }
 
   async listBackups(): Promise<ApiResponse<any>> {
@@ -1252,6 +1266,78 @@ class ApiClient {
 
   async deleteBackup(driveFileId: string): Promise<ApiResponse<any>> {
     return this.request(`/backup/${driveFileId}`, { method: "DELETE" })
+  }
+
+  /**
+   * Download a full local copy of the database and let the user choose where to
+   * save it. `format` selects a self-contained SQLite file (.db) or a ZIP of
+   * per-table CSVs (.zip). Where supported (Chrome/Edge), the user picks the
+   * exact location via the native "Save As" dialog; otherwise it falls back to a
+   * regular browser download.
+   */
+  async exportDatabase(
+    format: "db" | "csv"
+  ): Promise<{ success: boolean; message?: string; canceled?: boolean }> {
+    const ext = format === "csv" ? "zip" : "db"
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+    const suggestedName = `mediassist_export_${stamp}.${ext}`
+    const mime = format === "csv" ? "application/zip" : "application/octet-stream"
+
+    // 1. Ask the user for a save location FIRST, while we still have the click's
+    //    user-activation (required by showSaveFilePicker).
+    let handle: any = null
+    const picker = (typeof window !== "undefined" && (window as any).showSaveFilePicker) || null
+    if (typeof picker === "function") {
+      try {
+        handle = await picker.call(window, {
+          suggestedName,
+          types: [
+            {
+              description: format === "csv" ? "Archive ZIP (CSV)" : "Base de données SQLite",
+              accept: { [mime]: [`.${ext}`] },
+            },
+          ],
+        })
+      } catch (e: any) {
+        if (e?.name === "AbortError") return { success: false, canceled: true }
+        handle = null // unsupported / blocked -> fall back to anchor download
+      }
+    }
+
+    // 2. Fetch the file (authenticated).
+    try {
+      const token = getAuthToken()
+      const res = await fetch(`${this.baseURL}/backup/export?format=${format}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "")
+        return { success: false, message: `Erreur ${res.status}: ${text || res.statusText}` }
+      }
+
+      const blob = await res.blob()
+
+      // 3. Save it.
+      if (handle) {
+        const writable = await handle.createWritable()
+        await writable.write(blob)
+        await writable.close()
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = suggestedName
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      }
+
+      return { success: true }
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : "Échec de l'export" }
+    }
   }
 }
 

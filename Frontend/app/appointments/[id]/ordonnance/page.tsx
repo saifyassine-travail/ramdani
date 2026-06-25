@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { cn } from "../../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../../lib/api"
+import OrdonnancePrintPreview from "../../../../components/ordonnance-print-preview"
 
 interface MedicationForm {
   ID_Medicament: number | string
@@ -145,6 +146,25 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// One medication block for the ordonnance (2 lines: name + posology).
+function getMedicationHTML(med: MedicationForm): string {
+  const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
+  const duration = med.pivot?.duree || ''
+  const fullName = med.name || 'Médicament'
+  const typeLabel = getMedTypeLabel(med)
+  const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
+  const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
+  const parts = doses.map((d) => {
+    const qty = d.units || '1'
+    const label = isInj ? 'UI' : typeLabel
+    return `${qty} ${label} ${d.time.toLowerCase()}`
+  })
+  if (mealTiming) parts.push(mealTiming)
+  if (duration) parts.push(`pendant ${duration}`)
+  const posology = parts.join(', ')
+  return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
+}
+
 export default function AppointmentDetailsPage() {
   const params = useParams()
   const router = useRouter()
@@ -173,6 +193,7 @@ export default function AppointmentDetailsPage() {
   const [medications, setMedications] = useState<MedicationForm[]>([])
   const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
   const [ordonnanceConfig, setOrdonnanceConfig] = useState<any>(null)
+  const [showPrintPreview, setShowPrintPreview] = useState(false)
 
   // Fetch settings on mount
   useEffect(() => {
@@ -211,25 +232,6 @@ export default function AppointmentDetailsPage() {
 
       const patientName = appointment?.patient?.name || "Patient"
       const dateStr = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
-
-      // Helper to generate medication HTML block for ordonnance (2 lines: name + posology)
-      const getMedicationHTML = (med: MedicationForm) => {
-        const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
-        const duration = med.pivot?.duree || ''
-        const fullName = med.name || 'Médicament'
-        const typeLabel = getMedTypeLabel(med)
-        const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
-        const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
-        const parts = doses.map(d => {
-          const qty = d.units || '1'
-          const label = isInj ? 'UI' : typeLabel
-          return `${qty} ${label} ${d.time.toLowerCase()}`
-        })
-        if (mealTiming) parts.push(mealTiming)
-        if (duration) parts.push(`pendant ${duration}`)
-        const posology = parts.join(', ')
-        return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
-      }
 
       let ordonnanceHTML = ""
 
@@ -967,7 +969,7 @@ export default function AppointmentDetailsPage() {
                   variant="outline"
                   size="sm"
                   className="bg-green-500 text-white hover:bg-green-600"
-                  onClick={handlePrintOrdonnance}
+                  onClick={() => setShowPrintPreview(true)}
                 >
                   <Print className="w-4 h-4 mr-2" />
                   Imprimer
@@ -1211,6 +1213,20 @@ export default function AppointmentDetailsPage() {
           </Button>
         </div>
       </form>
+
+      <OrdonnancePrintPreview
+        open={showPrintPreview}
+        onOpenChange={setShowPrintPreview}
+        layout={ordonnanceConfig?.layout || null}
+        background={ordonnanceConfig?.background || null}
+        patientName={
+          (appointment?.patient as any)?.name ||
+          `${(appointment?.patient as any)?.first_name ?? ""} ${(appointment?.patient as any)?.last_name ?? ""}`.trim() ||
+          "Patient"
+        }
+        dateStr={new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+        medicationsHTML={medications.map(getMedicationHTML).join("")}
+      />
     </div>
   )
 }

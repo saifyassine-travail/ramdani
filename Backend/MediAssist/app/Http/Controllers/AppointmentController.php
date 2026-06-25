@@ -248,7 +248,10 @@ class AppointmentController extends Controller
                 'custom_measures_values' => 'nullable|array',
                 'diagnostic' => 'nullable|string',
                 'medicaments' => 'nullable|array',
-                'medicaments.*.ID_Medicament' => 'required_with:medicaments|exists:medicaments,ID_Medicament',
+                // Either an existing catalog id OR a free-text name the doctor typed
+                // (a drug not yet in the catalog) is accepted for each row.
+                'medicaments.*.ID_Medicament' => 'nullable|integer|exists:medicaments,ID_Medicament',
+                'medicaments.*.custom_name' => 'nullable|string|max:255',
                 'medicaments.*.dosage' => 'nullable|string|max:50',
                 'medicaments.*.frequence' => 'nullable|string|max:50',
                 'medicaments.*.duree' => 'nullable|string|max:50',
@@ -294,8 +297,22 @@ if (!empty($caseData)) {
             $medSync = [];
             if ($request->has('medicaments')) {
                 foreach ($request->input('medicaments') as $med) {
-                    if (!empty($med['ID_Medicament'])) {
-                        $medSync[$med['ID_Medicament']] = [
+                    $medId = $med['ID_Medicament'] ?? null;
+
+                    // Doctor typed a drug that isn't in the catalog: reuse an existing
+                    // row with the same name (case-insensitive) or create a new one, so
+                    // the prescription persists and prints like any other medicament.
+                    if (empty($medId) && !empty($med['custom_name'])) {
+                        $name = trim($med['custom_name']);
+                        if ($name !== '') {
+                            $medId = Medicament::whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                                ->value('ID_Medicament')
+                                ?? Medicament::create(['name' => $name])->ID_Medicament;
+                        }
+                    }
+
+                    if (!empty($medId)) {
+                        $medSync[$medId] = [
                             'dosage' => $med['dosage'] ?? null,
                             'frequence' => $med['frequence'] ?? null,
                             'duree' => $med['duree'] ?? null,
@@ -1071,7 +1088,37 @@ public function getLastMedicamentsByPatient($patientId)
     }
 }
 
+    /**
+     * Distinct, most-recent case-description texts, used as the history source
+     * for the inline auto-suggest in the case-description field.
+     */
+    public function caseDescriptionSuggestions(Request $request)
+    {
+        $rows = CaseDescription::query()
+            ->whereNotNull('case_description')
+            ->where('case_description', '!=', '')
+            ->orderByDesc('updated_at')
+            ->limit(500)
+            ->pluck('case_description');
 
+        $seen = [];
+        $suggestions = [];
+        foreach ($rows as $text) {
+            $t = trim((string) $text);
+            if ($t === '') {
+                continue;
+            }
+            $key = mb_strtolower($t);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $suggestions[] = $t;
+            if (count($suggestions) >= 200) {
+                break;
+            }
+        }
 
-
+        return response()->json(['success' => true, 'data' => $suggestions]);
+    }
 }

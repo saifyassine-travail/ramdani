@@ -63,6 +63,20 @@ export default function SettingsPage() {
     fetchUsers()
     fetchBackups()
     fetchUserProfile()
+
+    // Feedback when returning from the Google OAuth callback
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("google_linked") === "success") {
+      toast({ title: "Succès", description: "Google Drive connecté avec succès" })
+      window.history.replaceState({}, "", window.location.pathname)
+    } else if (params.get("error")) {
+      toast({
+        title: "Erreur",
+        description: "Échec de la connexion à Google Drive. Veuillez réessayer.",
+        variant: "destructive",
+      })
+      window.history.replaceState({}, "", window.location.pathname)
+    }
   }, [])
 
   const fetchUserProfile = async () => {
@@ -911,6 +925,19 @@ export default function SettingsPage() {
                 <Switch
                   checked={settings?.show_ddr ?? true}
                   onCheckedChange={(checked) => setSettings({ ...settings, show_ddr: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <Label>Suggestions automatiques (Description du cas)</Label>
+                  <p className="text-sm text-gray-500">
+                    Proposer une complétion en gris pendant la saisie ; appuyez sur Tab pour l'accepter
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.case_autosuggest ?? true}
+                  onCheckedChange={(checked) => setSettings({ ...settings, case_autosuggest: checked })}
                 />
               </div>
 

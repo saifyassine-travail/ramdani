@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { AuthProvider } from "@/components/auth-provider"
 import { LayoutWrapper } from "@/components/layout-wrapper"
+import { Toaster } from "@/components/toaster"
 
 export const metadata: Metadata = {
   title: "MediAssist - Gestion Médicale",
@@ -22,6 +23,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <AuthProvider>
           <LayoutWrapper>{children}</LayoutWrapper>
+          <Toaster />
         </AuthProvider>
       </body>
     </html>
