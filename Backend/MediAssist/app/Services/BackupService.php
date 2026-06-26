@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AppNotification;
 use App\Models\BackupLog;
 use App\Models\User;
 use Exception;
@@ -59,6 +60,15 @@ class BackupService
 
             @unlink($tempPath);
 
+            AppNotification::record(
+                'backup',
+                'Sauvegarde réussie',
+                'Sauvegarde Google Drive (' . $this->humanSize($fileSize) . ') terminée.',
+                'success',
+                null,
+                ['drive_file_id' => $driveFileId],
+            );
+
             return [
                 'success'       => true,
                 'drive_file_id' => $driveFileId,
@@ -68,6 +78,14 @@ class BackupService
         } catch (Exception $e) {
             $log->update(['status' => 'failed', 'error_message' => $e->getMessage()]);
             @unlink($tempPath);
+
+            AppNotification::record(
+                'backup',
+                'Échec de la sauvegarde',
+                'La sauvegarde Google Drive a échoué : ' . $e->getMessage(),
+                'error',
+            );
+
             throw $e;
         }
     }
@@ -277,5 +295,17 @@ class BackupService
                 // Non-fatal (sequence may not exist for this column).
             }
         }
+    }
+
+    /** Human-friendly byte size, e.g. "3.2 MB". */
+    private function humanSize(int $bytes): string
+    {
+        if ($bytes >= 1048576) {
+            return round($bytes / 1048576, 1) . ' MB';
+        }
+        if ($bytes >= 1024) {
+            return round($bytes / 1024, 1) . ' KB';
+        }
+        return $bytes . ' B';
     }
 }

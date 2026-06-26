@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppNotification;
 use App\Models\BackupLog;
 use App\Services\BackupService;
 use App\Services\DatabaseExportService;
@@ -235,6 +236,13 @@ class BackupController extends Controller
                 $path     = $exporter->exportSqlite();
                 $fileName = "mediassist_export_{$date}.db";
             }
+
+            AppNotification::record(
+                'backup',
+                'Export local de la base',
+                'La base a été exportée localement (' . strtoupper($format) . ').',
+                'success',
+            );
 
             return response()->download($path, $fileName)->deleteFileAfterSend(true);
         } catch (Exception $e) {

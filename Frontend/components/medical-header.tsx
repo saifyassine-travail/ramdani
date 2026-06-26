@@ -15,6 +15,7 @@ import { apiClient } from "../lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+import NotificationsBell from "./notifications-bell"
 import { useCalendar } from "@/hooks/use-calendar"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
@@ -951,6 +952,8 @@ const MedicalHeader = () => {
                 </div>
               </PopoverContent>
             </Popover>
+
+            <NotificationsBell />
 
             <div className="flex items-center space-x-3">
               <div

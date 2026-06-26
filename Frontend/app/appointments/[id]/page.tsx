@@ -1680,23 +1680,32 @@ export default function AppointmentDetailsPage() {
                               <PopoverContent className="w-[300px] p-0" align="start">
                                 <Command shouldFilter={false}>
                                   <CommandInput
-                                    placeholder="Rechercher..."
+                                    placeholder="Rechercher ou saisir un nouveau médicament…"
                                     value={medicationSearchQuery}
                                     onValueChange={setMedicationSearchQuery}
                                   />
                                   <CommandList>
-                                    <CommandEmpty>Aucun résultat.</CommandEmpty>
+                                    <CommandEmpty>
+                                      <span className="text-gray-400">Tapez le nom d'un médicament…</span>
+                                    </CommandEmpty>
                                     {medicationSearchQuery.trim() && (
-                                      <CommandGroup heading="Hors liste">
+                                      <CommandGroup heading="Hors liste (non répertorié)">
                                         <CommandItem
                                           value={`__custom__${medicationSearchQuery}`}
                                           onSelect={() => selectCustomMedication(medIndex, medicationSearchQuery)}
-                                          className="text-amber-700"
+                                          className="m-1 cursor-pointer rounded-md border border-amber-200 bg-amber-50 text-amber-900 data-[selected=true]:bg-amber-100"
                                         >
-                                          <Plus className="mr-2 h-4 w-4 flex-shrink-0" />
-                                          <span className="flex-1">
-                                            Ajouter «&nbsp;{medicationSearchQuery.trim()}&nbsp;»
-                                          </span>
+                                          <div className="mr-2 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-amber-100">
+                                            <Plus className="h-4 w-4 text-amber-700" />
+                                          </div>
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="font-medium truncate">
+                                              Ajouter «&nbsp;{medicationSearchQuery.trim()}&nbsp;»
+                                            </span>
+                                            <span className="text-[11px] text-amber-600">
+                                              Médicament personnalisé, imprimé sur l'ordonnance
+                                            </span>
+                                          </div>
                                         </CommandItem>
                                       </CommandGroup>
                                     )}

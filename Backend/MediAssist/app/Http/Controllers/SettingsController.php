@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\User;
+use App\Models\AppNotification;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -205,6 +206,15 @@ class SettingsController extends Controller
                 'role' => $request->role,
             ]);
 
+            AppNotification::record(
+                'account',
+                'Nouvel utilisateur',
+                "{$user->name} ({$user->role}) a été ajouté.",
+                'success',
+                null,
+                ['user_id' => $user->id],
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Utilisateur créé avec succès',
@@ -263,7 +273,15 @@ class SettingsController extends Controller
     {
         try {
             $user = User::findOrFail($id);
+            $deletedName = $user->name;
             $user->delete();
+
+            AppNotification::record(
+                'account',
+                'Utilisateur supprimé',
+                "Le compte de {$deletedName} a été supprimé.",
+                'warning',
+            );
 
             return response()->json([
                 'success' => true,
@@ -297,6 +315,15 @@ class SettingsController extends Controller
 
             $user->permissions = json_encode($request->permissions);
             $user->save();
+
+            AppNotification::record(
+                'account',
+                'Permissions modifiées',
+                "Les permissions de {$user->name} ont été mises à jour.",
+                'info',
+                null,
+                ['user_id' => $user->id],
+            );
 
             return response()->json([
                 'success' => true,

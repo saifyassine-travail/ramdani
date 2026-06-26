@@ -1268,6 +1268,34 @@ class ApiClient {
     return this.request(`/backup/${driveFileId}`, { method: "DELETE" })
   }
 
+  // ── Activity log & notifications (admin only) ──────────────────────────────
+  async getActivityLogs(params: {
+    q?: string
+    action?: string
+    from?: string
+    to?: string
+    page?: number
+  } = {}): Promise<ApiResponse<any>> {
+    const qs = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v))
+    })
+    const suffix = qs.toString() ? `?${qs.toString()}` : ""
+    return this.request(`/activity-logs${suffix}`, {}, true)
+  }
+
+  async getNotifications(): Promise<ApiResponse<any>> {
+    return this.request("/notifications", {}, true)
+  }
+
+  async markNotificationRead(id: number): Promise<ApiResponse<any>> {
+    return this.request(`/notifications/${id}/read`, { method: "POST" })
+  }
+
+  async markAllNotificationsRead(): Promise<ApiResponse<any>> {
+    return this.request("/notifications/read-all", { method: "POST" })
+  }
+
   /**
    * Download a full local copy of the database and let the user choose where to
    * save it. `format` selects a self-contained SQLite file (.db) or a ZIP of

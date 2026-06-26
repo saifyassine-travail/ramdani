@@ -10,12 +10,32 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope } from "lucide-react"
+import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope, History, Bell, Wallet, CalendarClock, Activity, Monitor, Shield } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import OrdonnanceLayoutEditor from "@/components/ordonnance-layout-editor"
+import ActivityLogPanel from "@/components/activity-log-panel"
+import { useAuth } from "@/hooks/use-auth"
 
 export default function SettingsPage() {
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === "admin"
+
+  // Shared style for the segmented tab buttons (brand-coloured active pill).
+  const tabTriggerClass =
+    "gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-gray-500 transition-all hover:text-gray-800 data-[state=active]:bg-[#007090] data-[state=active]:text-white data-[state=active]:shadow-md data-[state=active]:shadow-cyan-900/20"
+
+  // Role → French label + badge/avatar colours for the Users tab.
+  const ROLE_META: Record<string, { label: string; badge: string; avatar: string }> = {
+    admin: { label: "Administrateur", badge: "bg-purple-100 text-purple-700", avatar: "bg-gradient-to-br from-purple-500 to-purple-600" },
+    doctor: { label: "Médecin", badge: "bg-blue-100 text-blue-700", avatar: "bg-gradient-to-br from-blue-500 to-blue-600" },
+    nurse: { label: "Infirmière", badge: "bg-emerald-100 text-emerald-700", avatar: "bg-gradient-to-br from-emerald-500 to-emerald-600" },
+    receptionist: { label: "Réceptionniste", badge: "bg-amber-100 text-amber-700", avatar: "bg-gradient-to-br from-amber-500 to-amber-600" },
+  }
+  const roleMeta = (role?: string) =>
+    ROLE_META[role || ""] || { label: role || "—", badge: "bg-gray-100 text-gray-600", avatar: "bg-gradient-to-br from-gray-400 to-gray-500" }
+  const userInitials = (name?: string) =>
+    (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?"
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [settings, setSettings] = useState<any>(null)
@@ -396,44 +416,64 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <div className="flex flex-col items-center gap-3 text-gray-500">
+          <Loader2 className="w-8 h-8 animate-spin text-[#007090]" />
+          <p className="text-sm">Chargement des paramètres…</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Paramètres</h1>
-        <p className="text-gray-500 mt-2">Gérez vos préférences et utilisateurs</p>
+    <div className="p-6 md:p-8 max-w-[1400px] mx-auto">
+      {/* Header */}
+      <div className="mb-8 flex items-center gap-4">
+        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#007090] to-[#005570] text-white shadow-lg shadow-cyan-900/20">
+          <SettingsIcon className="h-7 w-7" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Paramètres</h1>
+          <p className="text-gray-500 mt-1">Gérez vos préférences, votre équipe et vos sauvegardes</p>
+        </div>
       </div>
 
       <Tabs defaultValue="preferences" className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-4">
-          <TabsTrigger value="preferences">
-            <SettingsIcon className="w-4 h-4 mr-2" />
-            Préférences
-          </TabsTrigger>
-          <TabsTrigger value="users">
-            <Users className="w-4 h-4 mr-2" />
-            Utilisateurs
-          </TabsTrigger>
-          <TabsTrigger value="ordonnance">
-            <FileText className="w-4 h-4 mr-2" />
-            Ordonnance
-          </TabsTrigger>
-          <TabsTrigger value="backup">
-            <Cloud className="w-4 h-4 mr-2" />
-            Sauvegarde & Sync
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-2 -mx-1 px-1">
+          <TabsList className="h-auto w-max inline-flex gap-1 rounded-xl border border-gray-100 bg-white p-1.5 shadow-sm">
+            <TabsTrigger value="preferences" className={tabTriggerClass}>
+              <SettingsIcon className="w-4 h-4" />
+              Préférences
+            </TabsTrigger>
+            <TabsTrigger value="users" className={tabTriggerClass}>
+              <Users className="w-4 h-4" />
+              Utilisateurs
+            </TabsTrigger>
+            <TabsTrigger value="ordonnance" className={tabTriggerClass}>
+              <FileText className="w-4 h-4" />
+              Ordonnance
+            </TabsTrigger>
+            <TabsTrigger value="backup" className={tabTriggerClass}>
+              <Cloud className="w-4 h-4" />
+              Sauvegarde & Sync
+            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="activity" className={tabTriggerClass}>
+                <History className="w-4 h-4" />
+                Journal
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
 
         {/* Preferences Tab */}
         <TabsContent value="preferences" className="space-y-6">
           {/* Case Description Configuration */}
           <Card>
             <CardHeader>
-              <CardTitle>Mesures Personnalisées</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-purple-600" />
+                Mesures Personnalisées
+              </CardTitle>
               <CardDescription>Ajoutez d'autres métriques à la consultation avec le code couleur (min/max)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -692,7 +732,10 @@ export default function SettingsPage() {
           {/* Default Prices */}
           <Card>
             <CardHeader>
-              <CardTitle>Prix par défaut</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Wallet className="h-5 w-5 text-emerald-600" />
+                Prix par défaut
+              </CardTitle>
               <CardDescription>Définissez les tarifs de base pour les actes de consultation et de contrôle</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -728,7 +771,10 @@ export default function SettingsPage() {
           {/* Control Appointment Defaults */}
           <Card>
             <CardHeader>
-              <CardTitle>Rendez-vous de contrôle</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarClock className="h-5 w-5 text-amber-600" />
+                Rendez-vous de contrôle
+              </CardTitle>
               <CardDescription>Nombre de jours proposé par défaut lors de l'ajout d'un contrôle</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -865,11 +911,14 @@ export default function SettingsPage() {
           {/* Notification Settings */}
           <Card>
             <CardHeader>
-              <CardTitle>Notifications</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-rose-600" />
+                Notifications
+              </CardTitle>
               <CardDescription>Gérez vos préférences de notification</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
                 <div>
                   <Label>Notifications par email</Label>
                   <p className="text-sm text-gray-500">Recevoir des emails pour les nouveaux rendez-vous</p>
@@ -880,7 +929,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
                 <div>
                   <Label>Rappels SMS aux patients</Label>
                   <p className="text-sm text-gray-500">Envoyer des rappels automatiques</p>
@@ -913,11 +962,14 @@ export default function SettingsPage() {
           {/* Display Settings */}
           <Card>
             <CardHeader>
-              <CardTitle>Affichage</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Monitor className="h-5 w-5 text-cyan-600" />
+                Affichage
+              </CardTitle>
               <CardDescription>Personnalisez l'interface</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
                 <div>
                   <Label>Afficher le champ DDR</Label>
                   <p className="text-sm text-gray-500">Afficher la Date des Dernières Règles dans les détails du rendez-vous</p>
@@ -928,7 +980,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
                 <div>
                   <Label>Suggestions automatiques (Description du cas)</Label>
                   <p className="text-sm text-gray-500">
@@ -995,8 +1047,13 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <div className="flex justify-end">
-            <Button onClick={handleSaveSettings} disabled={saving} className="bg-blue-600 hover:bg-blue-700">
+          <div className="sticky bottom-4 z-10 flex justify-end">
+            <Button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              size="lg"
+              className="bg-[#007090] hover:bg-[#005570] shadow-lg shadow-cyan-900/20"
+            >
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               Enregistrer les paramètres
             </Button>
@@ -1010,7 +1067,10 @@ export default function SettingsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Gestion des Utilisateurs</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-[#007090]" />
+                    Gestion des Utilisateurs
+                  </CardTitle>
                   <CardDescription>Ajoutez et gérez les infirmières et le personnel</CardDescription>
                 </div>
                 <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
@@ -1074,41 +1134,57 @@ export default function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {users && users.length > 0 ? (
                   users.map((user) => {
                     const userPermissions = user.permissions ? JSON.parse(user.permissions) : []
+                    const meta = roleMeta(user.role)
+                    const isAdminUser = user.role === "admin"
                     return (
                       <div
                         key={user.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                        className="group relative flex items-center justify-between gap-3 p-4 border border-gray-100 rounded-xl bg-white hover:border-[#007090]/30 hover:shadow-md cursor-pointer transition-all"
                         onClick={() => handleUserClick(user)}
+                        title="Modifier les permissions"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                            <Users className="w-5 h-5 text-blue-600" />
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`relative h-11 w-11 flex-shrink-0 rounded-full ${meta.avatar} flex items-center justify-center text-white font-semibold text-sm shadow-sm`}>
+                            {userInitials(user.name)}
                           </div>
-                          <div>
-                            <p className="font-semibold text-gray-800">{user.name}</p>
-                            <p className="text-sm text-gray-500">{user.email}</p>
-                            {userPermissions.length > 0 && (
-                              <div className="flex gap-1 mt-1 flex-wrap">
-                                {userPermissions.slice(0, 3).map((permission: string) => (
-                                  <span key={permission} className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                                    {permission}
-                                  </span>
-                                ))}
-                                {userPermissions.length > 3 && (
-                                  <span className="text-xs text-gray-500">+{userPermissions.length - 3}</span>
-                                )}
-                              </div>
-                            )}
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-800 truncate">{user.name}</p>
+                            <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${meta.badge}`}>
+                                {isAdminUser && <Shield className="w-3 h-3" />}
+                                {meta.label}
+                              </span>
+                              {isAdminUser ? (
+                                <span className="text-[11px] text-gray-400">Accès complet</span>
+                              ) : userPermissions.length > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                                  <Lock className="w-3 h-3" />
+                                  {userPermissions.length} accès
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-gray-400">Aucun accès</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                            {user.role}
-                          </span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleUserClick(user)
+                            }}
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-[#007090] hover:bg-cyan-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Permissions"
+                          >
+                            <Lock className="w-4 h-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1116,7 +1192,8 @@ export default function SettingsPage() {
                               e.stopPropagation()
                               handleDeleteUser(user.id)
                             }}
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            title="Supprimer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -1125,9 +1202,9 @@ export default function SettingsPage() {
                     )
                   })
                 ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>Aucun utilisateur trouvé</p>
+                  <div className="col-span-full text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                    <Users className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Aucun utilisateur trouvé</p>
                   </div>
                 )}
               </div>
@@ -1187,7 +1264,10 @@ export default function SettingsPage() {
         <TabsContent value="ordonnance" key={settings ? "loaded" : "loading"} className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Configuration de l'Ordonnance</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-600" />
+                Configuration de l'Ordonnance
+              </CardTitle>
               <CardDescription>
                 Personnalisez l'emplacement des éléments sur votre papier d'ordonnance.
               </CardDescription>
@@ -1402,6 +1482,13 @@ export default function SettingsPage() {
             </DialogContent>
           </Dialog>
         </TabsContent>
+
+        {/* Activity Log Tab (admin only) */}
+        {isAdmin && (
+          <TabsContent value="activity" className="space-y-6">
+            <ActivityLogPanel />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )

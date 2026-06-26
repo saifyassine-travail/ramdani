@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\Analysis;
 use App\Models\Appointment;
+use App\Models\AppNotification;
 use App\Models\CaseDescription;
 use App\Models\Medicament;
 use App\Models\Patient;
@@ -617,9 +618,24 @@ if (!empty($caseData)) {
             'credit' => 'required|numeric|min:0',
         ]);
 
-        $appointment = Appointment::findOrFail($validated['id_appointment']);
+        $appointment = Appointment::with('patient')->findOrFail($validated['id_appointment']);
         $appointment->credit = $validated['credit'];
         $appointment->save();
+
+        // Notify when the patient still owes money so the debt isn't forgotten.
+        if ((float) $validated['credit'] > 0) {
+            $patientName = $appointment->patient->name
+                ?? trim(($appointment->patient->first_name ?? '') . ' ' . ($appointment->patient->last_name ?? ''))
+                ?: 'Patient';
+            AppNotification::record(
+                'credit',
+                'Crédit impayé',
+                "{$patientName} doit {$validated['credit']} DH.",
+                'warning',
+                "/appointments/{$appointment->ID_RV}",
+                ['appointment_id' => $appointment->ID_RV, 'amount' => $validated['credit']],
+            );
+        }
 
         // Clear statistics cache
         \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
@@ -758,6 +774,15 @@ public function store(Request $request)
             $patient->notes = $validated['patient_notes'];
             $patient->save();
         }
+
+        AppNotification::record(
+            'appointment',
+            'Nouveau rendez-vous',
+            "{$patient->name} — " . $formattedDate->format('d/m/Y') . ' (' . $appointment->type . ').',
+            'info',
+            "/appointments/{$appointment->ID_RV}",
+            ['appointment_id' => $appointment->ID_RV],
+        );
 
         // Clear statistics cache
         \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');

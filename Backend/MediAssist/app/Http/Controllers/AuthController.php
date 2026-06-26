@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use App\Models\AppNotification;
+use App\Services\ActivityLogger;
 
 class AuthController extends Controller
 {
@@ -44,12 +46,24 @@ class AuthController extends Controller
         $user->tokens()->delete();
         $token = $user->createToken('auth-token')->plainTextToken;
 
+        ActivityLogger::log('auth.login', "Connexion de {$user->name}", $user, $user);
+        AppNotification::record(
+            'account',
+            'Connexion',
+            "{$user->name} ({$user->role}) s'est connecté.",
+            'info',
+            null,
+            ['user_id' => $user->id],
+        );
+
         return response()->json(['user' => $user, 'token' => $token]);
     }
 
     public function logout(Request $request)
     {
-        $request->user()->tokens()->delete();
+        $user = $request->user();
+        ActivityLogger::log('auth.logout', "Déconnexion de {$user->name}", $user, $user);
+        $user->tokens()->delete();
         return response()->json(['message' => 'Logged out']);
     }
 

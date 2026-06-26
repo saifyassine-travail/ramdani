@@ -140,6 +140,14 @@ Route::prefix('users')->middleware('auth:sanctum')->group(function () {
     Route::delete('/{id}', [App\Http\Controllers\SettingsController::class, 'deleteUser']);
 });
 
+// ACTIVITY LOG & NOTIFICATIONS (admin only — enforced inside the controller)
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/activity-logs', [App\Http\Controllers\ActivityController::class, 'logs']);
+    Route::get('/notifications', [App\Http\Controllers\ActivityController::class, 'notifications']);
+    Route::post('/notifications/read-all', [App\Http\Controllers\ActivityController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [App\Http\Controllers\ActivityController::class, 'markRead']);
+});
+
 // BACKUP & GOOGLE DRIVE SYNC
 Route::prefix('backup')->middleware('auth:sanctum')->group(function () {
     Route::post('/create', [App\Http\Controllers\BackupController::class, 'createBackup']);
