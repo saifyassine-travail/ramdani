@@ -17,6 +17,8 @@ import {
   X,
   Info,
   ZoomIn,
+  Copy,
+  FileText,
 } from "lucide-react"
 
 // ─────────────────────────────────────────────────────────────────
@@ -43,6 +45,16 @@ interface AnalysisResult {
   disclaimer: string
 }
 
+interface CTResult {
+  modality: string
+  num_organs: number
+  organs: string[]
+  overlay_image: string
+  slice: number
+  processing_time_ms: number
+  disclaimer: string
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
@@ -59,6 +71,35 @@ const SEVERITY_BAR: Record<string, string> = {
   élevé:  "bg-red-500",
   modéré: "bg-orange-400",
   faible: "bg-yellow-400",
+}
+
+// Turn the AI findings into a doctor-ready French report (for the patient file).
+function generateReport(result: AnalysisResult): string {
+  const date = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
+  const L: string[] = [
+    "COMPTE-RENDU D'ANALYSE RADIOLOGIQUE ASSISTÉE PAR IA",
+    `Date : ${date}`,
+    "Modalité : Radiographie thoracique",
+    "",
+    "RÉSULTATS :",
+  ]
+  if (result.findings.length === 0) {
+    L.push("  Aucune anomalie significative détectée par l'analyse automatique.")
+  } else {
+    result.findings.forEach((f, i) =>
+      L.push(`  ${i + 1}. ${f.pathologie} — probabilité ${f.pourcentage}, sévérité ${f.severite}.`),
+    )
+  }
+  L.push("", "CONCLUSION :")
+  if (result.findings.length === 0) {
+    L.push("  Examen sans particularité à l'analyse IA.")
+  } else {
+    const top = result.findings[0]
+    L.push(`  ${result.total_anomalies} anomalie(s) détectée(s). Élément prédominant : ${top.pathologie} (${top.pourcentage}).`)
+    L.push("  Corrélation clinique et avis d'un radiologue qualifié recommandés.")
+  }
+  L.push("", "⚠ " + result.disclaimer)
+  return L.join("\n")
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -118,21 +159,56 @@ export default function RadiologyPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [activeTab, setActiveTab] = useState<"original" | "heatmap" | "segmentation">("original")
+  const [mode, setMode] = useState<"xray" | "ct">("xray")
+  const [ctResult, setCtResult] = useState<CTResult | null>(null)
+  const [ctPreview, setCtPreview] = useState<string | null>(null)
+  const [ctPreviewLoading, setCtPreviewLoading] = useState(false)
 
   // ── File handling ──────────────────────────────────────────────
 
   const loadFile = useCallback((f: File) => {
+    setResult(null)
+    setCtResult(null)
+    if (mode === "ct") {
+      // CT = NIfTI volume (no in-browser preview). Accept by extension.
+      if (!/\.nii(\.gz)?$/i.test(f.name)) {
+        toast({ title: "Fichier invalide", description: "Pour le CT, envoyez un volume NIfTI (.nii ou .nii.gz).", variant: "destructive" })
+        return
+      }
+      setFile(f)
+      setPreview(null)
+      setCtPreview(null)
+      // Fast multi-slice montage so the volume is visible right away (no 1-2 min wait).
+      setCtPreviewLoading(true)
+      const fd = new FormData()
+      fd.append("file", f)
+      fetch(`${AI_SERVER}/preview-ct`, { method: "POST", body: fd })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d?.preview_image) setCtPreview(d.preview_image) })
+        .catch(() => {})
+        .finally(() => setCtPreviewLoading(false))
+      return
+    }
     if (!f.type.startsWith("image/")) {
       toast({ title: "Fichier invalide", description: "Veuillez sélectionner une image (JPEG, PNG).", variant: "destructive" })
       return
     }
     setFile(f)
-    setResult(null)
     setActiveTab("original")
     const reader = new FileReader()
     reader.onload = (e) => setPreview(e.target?.result as string)
     reader.readAsDataURL(f)
-  }, [toast])
+  }, [toast, mode])
+
+  const switchMode = (m: "xray" | "ct") => {
+    setMode(m)
+    setFile(null)
+    setPreview(null)
+    setResult(null)
+    setCtResult(null)
+    setCtPreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -150,6 +226,8 @@ export default function RadiologyPage() {
     setFile(null)
     setPreview(null)
     setResult(null)
+    setCtResult(null)
+    setCtPreview(null)
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -159,12 +237,14 @@ export default function RadiologyPage() {
     if (!file) return
     setLoading(true)
     setResult(null)
+    setCtResult(null)
 
     try {
       const formData = new FormData()
       formData.append("file", file)
 
-      const res = await fetch(`${AI_SERVER}/analyze`, {
+      const endpoint = mode === "ct" ? "/analyze-ct" : "/analyze"
+      const res = await fetch(`${AI_SERVER}${endpoint}`, {
         method: "POST",
         body: formData,
       })
@@ -174,18 +254,38 @@ export default function RadiologyPage() {
         throw new Error(err.detail || "Erreur serveur")
       }
 
-      const data: AnalysisResult = await res.json()
-      setResult(data)
-      setActiveTab(data.heatmap_image ? "heatmap" : "original")
+      const data = await res.json()
 
-      if (data.status === "normal") {
-        toast({ title: "Analyse terminée", description: "Aucune anomalie détectée." })
+      if (mode === "ct") {
+        // /analyze-ct returns a job id; poll until done (CPU CT takes minutes,
+        // so the upload never blocks — the doctor can keep working).
+        const jobId = data.job_id
+        let tries = 0
+        while (tries++ < 300) {                       // ~15 min safety cap
+          await new Promise((r) => setTimeout(r, 3000))
+          const jr = await fetch(`${AI_SERVER}/ct-job/${jobId}`)
+          if (!jr.ok) throw new Error("Tâche CT introuvable")
+          const job = await jr.json()
+          if (job.status === "done") {
+            setCtResult(job.result as CTResult)
+            toast({ title: "Analyse CT terminée", description: `${job.result.num_organs} organe(s) segmenté(s).` })
+            break
+          }
+          if (job.status === "error") throw new Error(job.error || "Échec de l'analyse CT")
+          // pending / running -> keep polling
+        }
       } else {
-        toast({
-          title: `${data.total_anomalies} anomalie(s) détectée(s)`,
-          description: "Voir les résultats ci-dessous.",
-          variant: "destructive",
-        })
+        setResult(data as AnalysisResult)
+        setActiveTab(data.heatmap_image ? "heatmap" : "original")
+        if (data.status === "normal") {
+          toast({ title: "Analyse terminée", description: "Aucune anomalie détectée." })
+        } else {
+          toast({
+            title: `${data.total_anomalies} anomalie(s) détectée(s)`,
+            description: "Voir les résultats ci-dessous.",
+            variant: "destructive",
+          })
+        }
       }
     } catch (err: any) {
       toast({
@@ -213,6 +313,9 @@ export default function RadiologyPage() {
     activeTab === "segmentation" ? result?.segmentation_image :
     preview
 
+  // X-ray shows once an image preview exists; CT shows once a NIfTI is selected.
+  const hasInput = mode === "ct" ? !!file : !!preview
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
 
@@ -229,8 +332,24 @@ export default function RadiologyPage() {
         </div>
         <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50 px-3 py-1">
           <ScanLine className="w-3 h-3 mr-1" />
-          DenseNet-121 · 18 pathologies
+          {mode === "ct" ? "TotalSegmentator · CT" : "DenseNet-121 · 18 pathologies"}
         </Badge>
+      </div>
+
+      {/* ── Modality toggle ── */}
+      <div className="inline-flex rounded-lg border bg-white p-1 shadow-sm">
+        {([["xray", "Radiographie", <ImageIcon key="x" className="w-4 h-4" />],
+           ["ct", "Scanner (CT)", <ScanLine key="c" className="w-4 h-4" />]] as const).map(([m, label, icon]) => (
+          <button
+            key={m}
+            onClick={() => switchMode(m)}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+              mode === m ? "bg-blue-600 text-white shadow" : "text-gray-600 hover:bg-gray-100"
+            }`}
+          >
+            {icon} {label}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -239,7 +358,7 @@ export default function RadiologyPage() {
         <div className="space-y-4">
 
           {/* Drop zone */}
-          {!preview ? (
+          {!hasInput ? (
             <div
               onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
               onDragLeave={() => setDragging(false)}
@@ -253,17 +372,58 @@ export default function RadiologyPage() {
               `}
             >
               <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-700 font-medium">Glissez une image ici</p>
+              <p className="text-gray-700 font-medium">
+                {mode === "ct" ? "Glissez un volume CT (NIfTI) ici" : "Glissez une image ici"}
+              </p>
               <p className="text-sm text-gray-400 mt-1">ou cliquez pour sélectionner</p>
-              <p className="text-xs text-gray-300 mt-3">JPEG · PNG · DICOM · Max 20 MB</p>
+              <p className="text-xs text-gray-300 mt-3">
+                {mode === "ct" ? "NIfTI · .nii · .nii.gz" : "JPEG · PNG · DICOM · Max 20 MB"}
+              </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={mode === "ct" ? ".nii,.nii.gz,application/gzip" : "image/*"}
                 className="hidden"
                 onChange={onFileChange}
               />
             </div>
+          ) : mode === "ct" ? (
+
+            /* CT volume + segmentation overlay */
+            <Card className="overflow-hidden shadow-sm">
+              <CardHeader className="py-3 px-4 bg-gray-50 border-b flex flex-row items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 flex items-center gap-2 truncate">
+                  <ScanLine className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span className="truncate">{file?.name || "Volume CT"}</span>
+                </span>
+                <button onClick={clearFile} className="text-gray-400 hover:text-gray-600 ml-2">
+                  <X className="w-4 h-4" />
+                </button>
+              </CardHeader>
+              <CardContent className="p-0 bg-black flex items-center justify-center min-h-[300px]">
+                {ctResult ? (
+                  <ImageViewer
+                    src={`data:image/png;base64,${ctResult.overlay_image}`}
+                    label={`Segmentation CT — coupe axiale ${ctResult.slice}`}
+                  />
+                ) : ctPreview ? (
+                  <ImageViewer
+                    src={`data:image/png;base64,${ctPreview}`}
+                    label="Aperçu du volume CT — cliquez « Analyser » pour segmenter"
+                  />
+                ) : ctPreviewLoading ? (
+                  <div className="text-center text-gray-400 py-16">
+                    <Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin text-blue-400" />
+                    <p className="text-sm">Chargement de l'aperçu…</p>
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-400 py-16">
+                    <ScanLine className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Volume prêt — cliquez sur « Analyser le scanner »</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           ) : (
 
             /* Image + tab strip */
@@ -317,16 +477,16 @@ export default function RadiologyPage() {
           )}
 
           {/* Analyze button */}
-          {preview && (
+          {hasInput && (
             <Button
               onClick={analyze}
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-base font-semibold"
             >
               {loading ? (
-                <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Analyse en cours…</>
+                <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> {mode === "ct" ? "Segmentation… (~1-2 min)" : "Analyse en cours…"}</>
               ) : (
-                <><ScanLine className="w-5 h-5 mr-2" /> Analyser l'image</>
+                <><ScanLine className="w-5 h-5 mr-2" /> {mode === "ct" ? "Analyser le scanner" : "Analyser l'image"}</>
               )}
             </Button>
           )}
@@ -359,8 +519,58 @@ export default function RadiologyPage() {
         {/* ── Right column: findings ── */}
         <div className="space-y-4">
 
+          {/* Loading (CT segmentation can take ~1-2 min on CPU) */}
+          {loading && (
+            <Card className="min-h-[300px] flex items-center justify-center bg-gray-50 border-dashed">
+              <CardContent className="text-center text-gray-500 py-12">
+                <Loader2 className="w-10 h-10 mx-auto mb-3 animate-spin text-blue-500" />
+                <p className="text-sm">
+                  {mode === "ct" ? "Segmentation du scanner en cours… (~1-2 min)" : "Analyse en cours…"}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* CT result */}
+          {ctResult && !loading && (
+            <>
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-green-800">{ctResult.num_organs} organe(s) segmenté(s)</p>
+                    <p className="text-xs text-green-700">Coupe axiale {ctResult.slice} · {ctResult.processing_time_ms} ms</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base text-gray-700">Organes détectés</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-1.5">
+                  {ctResult.organs.map((o) => (
+                    <span key={o} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full">
+                      {o}
+                    </span>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card className="border-yellow-200 bg-yellow-50">
+                <CardContent className="p-4 flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-yellow-800 leading-relaxed">
+                    <span className="font-semibold block mb-0.5">Avertissement médical</span>
+                    {ctResult.disclaimer}
+                  </p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+
           {/* No result yet */}
-          {!result && !loading && (
+          {!result && !ctResult && !loading && (
             <Card className="h-full flex items-center justify-center min-h-[300px] bg-gray-50 border-dashed">
               <CardContent className="text-center text-gray-400 py-12">
                 <ScanLine className="w-16 h-16 mx-auto mb-4 opacity-20" />
@@ -448,6 +658,36 @@ export default function RadiologyPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Structured French report */}
+              <Card>
+                <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                  <CardTitle className="text-base text-gray-700 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    Compte-rendu
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      const report = generateReport(result)
+                      navigator.clipboard?.writeText(report).then(
+                        () => toast({ title: "Copié", description: "Compte-rendu copié dans le presse-papiers." }),
+                        () => toast({ title: "Erreur", description: "Copie impossible.", variant: "destructive" }),
+                      )
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-1" />
+                    Copier
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans bg-gray-50 rounded-md p-3 border max-h-72 overflow-y-auto">
+                    {generateReport(result)}
+                  </pre>
+                </CardContent>
+              </Card>
 
               {/* Disclaimer */}
               <Card className="border-yellow-200 bg-yellow-50">

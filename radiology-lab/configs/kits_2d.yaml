@@ -1,0 +1,23 @@
+# TASK_KITS_2D — small 2D U-Net on KiTS23 axial slices (kidney). CPU-friendly.
+task: TASK_KITS_2D
+
+# Data sampling (22 cases downloaded -> 17 train / 5 val)
+train_patients: 17      # number of cases for training
+val_patients: 5         # number of cases for validation
+image_size: 128         # resize axial slices to 128x128
+kidney_labels: [1, 2, 3]   # whole kidney region (1=kidney,2=tumor,3=cyst)
+only_slices_with_kidney: true   # skip empty slices
+slice_stride: 3         # keep every 3rd kidney slice -> faster CPU training
+
+# Model (MONAI UNet, ~1M params)
+channels: [16, 32, 64, 128]
+strides: [2, 2, 2]
+
+# Training (keep tiny for CPU)
+epochs: 5
+batch_size: 4
+num_workers: 2
+lr: 0.001
+
+output_dir: outputs/kits_2d
+seed: 42

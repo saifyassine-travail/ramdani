@@ -1,0 +1,24 @@
+# Central dataset locations. (WSL2 paths — Windows C:\... is /mnt/c/... here.)
+#
+# Each value may also be overridden by an environment variable of the same
+# UPPERCASE name (e.g. export KITS23=/mnt/c/...). See data/paths.py.
+
+# Full-body CT (NIfTI), 117 organs — used by TASK_TOTALSEG_INFER (input volumes)
+TOTALSEG_DATASET: /mnt/c/Users/Saif/Desktop/ramdani/ramdani/TotalSegmentation_dataset
+
+# Kidney + tumor CT (NIfTI) — TASK_KITS_2D
+KITS23: /mnt/c/Users/Saif/Desktop/ramdani/ramdani/kits23-main
+
+# Official TotalSegmentator repo / tool checkout (optional; pip install is enough)
+TOTALSEG_REPO: /mnt/c/Users/Saif/Desktop/ramdani/ramdani/TotalSegmentator-master
+
+# Chest X-rays (DICOM + CSV) — TASK_RSNA_PNEUMONIA
+RSNA_PNEUMONIA: /mnt/c/Users/Saif/Desktop/ramdani/ramdani/rsna-pneumonia-detection-challenge
+
+# Lung nodule CT (DICOM + XML) — TASK_LIDC_NODULE_CLS
+# NOTE: only XML + .tcia manifest are present; download the DICOMs via NBIA first.
+LIDC_IDRI: /mnt/c/Users/Saif/Desktop/ramdani/ramdani/LIDC-IDRI
+
+# NIH ChestX-ray14 (PNG + Data_Entry_2017.csv) — TASK_NIH_CXR14 (Phase 3d)
+# Download from Kaggle (nih-chest-xrays/data); the ~4GB sample subset is enough to start.
+NIH_CXR14: /mnt/c/CHANGE_ME/nih-chest-xrays

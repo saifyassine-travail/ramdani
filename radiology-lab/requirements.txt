@@ -1,0 +1,31 @@
+# radiology-lab — CPU-only pins (Linux/WSL2 Ubuntu).
+#
+# IMPORTANT: install the CPU build of torch from the PyTorch CPU index, e.g.
+#   pip install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+# (`make setup` does this for you.)
+
+# --- Deep learning (CPU build pulled from the CPU index in `make setup`) ---
+torch==2.3.1
+torchvision==0.18.1
+
+# --- Medical imaging pipelines ---
+monai==1.3.2
+totalsegmentator==2.4.0
+nibabel==5.2.1
+SimpleITK==2.3.1
+pydicom==3.0.1        # TotalSegmentator's dicom2nifti needs >=3.0 (pydicom.pixels)
+pylidc==0.2.3         # NOTE: pylidc may need a shim on pydicom 3.x — handled in the LIDC task
+
+# --- Classic ML / data / plotting ---
+numpy==1.26.4          # <2.0 keeps pylidc / SimpleITK / older wheels happy
+scipy==1.13.1
+pandas==2.2.2
+scikit-learn==1.4.2
+matplotlib==3.8.4
+Pillow==10.3.0
+
+# --- Config / utils ---
+pyyaml==6.0.1
+tqdm==4.66.4
+setuptools==69.5.1     # Python 3.12 dropped stdlib distutils; MONAI 1.3.2 still imports it

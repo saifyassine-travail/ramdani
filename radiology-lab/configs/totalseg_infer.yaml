@@ -1,0 +1,24 @@
+# TASK_TOTALSEG_INFER — pretrained TotalSegmentator on one CT volume. No training.
+task: TASK_TOTALSEG_INFER
+
+# Which CT volume to segment.
+#   input_volume: explicit path to a .nii / .nii.gz CT, OR
+#   input_case:   a case folder name inside paths.TOTALSEG_DATASET (auto-finds the CT)
+# If both are empty, the script picks the first case it finds in TOTALSEG_DATASET.
+input_volume: ""
+input_case: ""
+
+# CPU-friendly options passed to the totalsegmentator CLI.
+fast: true            # 3mm low-res model — much faster on CPU
+# force_split chunks the volume to save RAM, but it breaks on small/thin volumes
+# (empty-slice broadcast error). s0000 is small, so leave it off; swap covers saving.
+force_split: false
+# [] = all 117 organs (whatever is in the scan's field of view will show up).
+# For a focused/lighter run, list specific organs e.g. ["liver","spleen",...].
+roi_subset: []
+
+# Axial slice for the PNG overlay. "auto" = the slice with the most segmented voxels.
+overlay_slice: auto
+
+output_dir: outputs/totalseg_infer
+seed: 42

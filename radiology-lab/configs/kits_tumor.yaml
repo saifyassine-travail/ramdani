@@ -1,0 +1,22 @@
+# TASK_KITS_2D (tumor variant) — 3-class: background / kidney / TUMOR.
+# Phase 3a: detect & segment kidney tumors, not just the whole kidney.
+task: TASK_KITS_2D_TUMOR
+
+train_patients: 17
+val_patients: 5
+image_size: 128
+kidney_labels: [1, 2, 3]      # keep slices that contain kidney region
+only_slices_with_kidney: true
+slice_stride: 2               # denser sampling — tumor slices are rarer
+num_classes: 3                # bg=0, kidney=1, tumor=2
+
+channels: [16, 32, 64, 128]
+strides: [2, 2, 2]
+
+epochs: 8                     # tumor is harder -> a few more epochs
+batch_size: 4
+num_workers: 2
+lr: 0.001
+
+output_dir: outputs/kits_tumor
+seed: 42

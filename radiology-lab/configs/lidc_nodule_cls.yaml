@@ -1,0 +1,22 @@
+# TASK_LIDC_NODULE_CLS — nodule vs non-nodule 2D patch classifier (LIDC-IDRI).
+task: TASK_LIDC_NODULE_CLS
+
+# Patch extraction
+patch_size: 64          # 64x64 patches
+patients: 60            # how many LIDC patients to mine patches from
+neg_per_pos: 1          # random non-nodule patches per nodule patch (class balance)
+min_malignancy_agreement: 1   # keep nodules marked by >=1 radiologist
+
+# Model: small CNN, 3 conv blocks
+dropout: 0.3
+
+# Training
+epochs: 10
+batch_size: 8
+num_workers: 2
+lr: 0.001
+val_split: 0.2          # stratified
+use_class_weights: true
+
+output_dir: outputs/lidc_nodule_cls
+seed: 42

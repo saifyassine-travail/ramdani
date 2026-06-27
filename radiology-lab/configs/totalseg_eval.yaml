@@ -1,0 +1,17 @@
+# TASK_TOTALSEG_EVAL — score the pretrained model against the shipped ground truth.
+task: TASK_TOTALSEG_EVAL
+
+# Which cases to evaluate.
+#   cases: explicit list e.g. ["s0000","s0001"]; if empty, take the first `subset`.
+cases: []
+subset: 3
+
+# Inference quality (same knobs as totalseg_infer).
+# Fast 3mm for the multi-case generalization check (safe on low-RAM CPU across
+# pelvis/abdomen/thorax/spine/whole-torso). Full-res ceiling already measured on s0000.
+fast: true
+force_split: false
+roi_subset: []        # [] = all 117 organs
+
+output_dir: outputs/totalseg_eval
+seed: 42

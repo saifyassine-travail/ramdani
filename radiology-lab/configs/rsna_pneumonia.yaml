@@ -1,0 +1,20 @@
+# TASK_RSNA_PNEUMONIA — ResNet18 (ImageNet) chest X-ray pneumonia classifier.
+task: TASK_RSNA_PNEUMONIA
+
+# Data
+image_size: 224
+subset: 2000            # balanced subset size (half positive, half negative)
+val_split: 0.2
+
+# Model: torchvision resnet18, pretrained, backbone frozen except last block
+freeze_backbone: true   # only layer4 + fc stay trainable
+
+# Training
+epochs: 5
+batch_size: 8
+num_workers: 2
+lr: 0.0003
+weight_decay: 0.0001
+
+output_dir: outputs/rsna_pneumonia
+seed: 42
