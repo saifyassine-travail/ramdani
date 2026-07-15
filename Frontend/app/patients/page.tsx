@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { usePatients } from "@/hooks/use-patients"
-import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart } from "lucide-react"
+import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart, ScanLine } from "lucide-react"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
 import { isMinor } from "@/lib/age"
@@ -626,6 +626,51 @@ function PatientForm({
 
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isScanning, setIsScanning] = useState(false)
+
+  // Upload a CIN photo to the extraction service and pre-fill the form.
+  const handleScanCIN = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = "" // reset so the same file can be picked again
+    if (!file) return
+
+    setIsScanning(true)
+    try {
+      const body = new FormData()
+      body.append("file", file)
+
+      const res = await fetch("/api/extract-cin", { method: "POST", body })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json?.detail || json?.error || "Échec de l'analyse de la carte.")
+      }
+
+      const data = json.data || {}
+      setFormData((prev) => ({
+        ...prev,
+        first_name: data.first_name || prev.first_name,
+        last_name: data.last_name || prev.last_name,
+        CIN: data.cin_number || prev.CIN,
+        birth_day: data.date_of_birth || prev.birth_day,
+      }))
+      setErrors({})
+      toast({
+        title: "Carte analysée",
+        description: "Les champs ont été pré-remplis. Merci de vérifier les informations.",
+      })
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Échec du scan",
+        description: err?.message || "Impossible d'analyser la carte.",
+      })
+    } finally {
+      setIsScanning(false)
+    }
+  }
+
   const patientIsMinor = isMinor(formData.birth_day)
 
   const validateForm = () => {
@@ -682,6 +727,44 @@ function PatientForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="flex flex-col gap-3 rounded-lg border border-dashed border-indigo-300 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <ScanLine className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+          <div>
+            <p className="text-sm font-medium text-gray-900">Scanner la carte d'identité (CIN)</p>
+            <p className="text-xs text-gray-500">
+              Remplit automatiquement le nom, la date de naissance et le CIN.
+            </p>
+          </div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/jpg"
+          className="hidden"
+          onChange={handleScanCIN}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isScanning}
+          className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+        >
+          {isScanning ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Analyse en cours...
+            </>
+          ) : (
+            <>
+              <ScanLine className="mr-2 h-4 w-4" />
+              Scanner la CIN
+            </>
+          )}
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label htmlFor="first_name">

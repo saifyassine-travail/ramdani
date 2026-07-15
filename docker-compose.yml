@@ -19,6 +19,20 @@ services:
   DB_PASSWORD: root
 
 
+  extraction:
+    build:
+      context: ./Backend/extraction-service
+    container_name: mediassist_extraction
+    restart: unless-stopped
+    environment:
+      # Set GEMINI_API_KEY in .env (get one at https://aistudio.google.com/app/apikey).
+      # If unset, the service still starts and returns a clear 502 when scanning.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: "*"
+    # No published port: reached internally by the frontend as http://extraction:8100
+
   frontend:
     build: ./frontend
     container_name: next_frontend
@@ -27,8 +41,11 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+      - extraction
     environment:
       NEXT_PUBLIC_API_URL: "http://nginx:80"
+      # Server-side URL the /api/extract-cin route handler forwards CIN uploads to.
+      EXTRACTION_SERVICE_URL: http://extraction:8100
 
   db:
     image: mysql:8
