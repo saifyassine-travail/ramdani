@@ -30,6 +30,7 @@ class Patient extends Model
         'archived',
         'DDR',
         'blood_type',
+        'photo_base64',
     ];
 
     public function Appointment(): \Illuminate\Database\Eloquent\Relations\HasMany

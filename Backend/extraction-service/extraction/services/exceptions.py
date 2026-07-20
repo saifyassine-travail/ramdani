@@ -2,18 +2,20 @@
 
 The view distinguishes these to pick the right HTTP status:
 
-* ``GeminiAPIError``   -> the vision API call itself failed        -> 502
-* ``ExtractionError``  -> the response could not be parsed/validated -> 422
-* ``FaceNotFoundError`` (an ``ExtractionError``) -> no face detected  -> 422
+* ``OCRError``          -> the OCR engine itself failed (missing binary,   -> 502
+                            corrupt/undecodable image)
+* ``ExtractionError``   -> no usable fields could be parsed from the OCR   -> 422
+                            text
+* ``FaceNotFoundError`` (an ``ExtractionError``) -> no face detected       -> 422
 """
 
 
 class ExtractionError(Exception):
-    """Raised when CIN data cannot be parsed or validated from the model output."""
+    """Raised when CIN data cannot be parsed or validated from the OCR output."""
 
 
-class GeminiAPIError(Exception):
-    """Raised when the Gemini API request itself fails (network, auth, quota)."""
+class OCRError(Exception):
+    """Raised when the OCR engine itself fails (binary missing, bad image, etc.)."""
 
 
 class FaceNotFoundError(ExtractionError):

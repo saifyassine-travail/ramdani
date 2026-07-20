@@ -240,6 +240,20 @@ export function useAppointments(selectedDate?: string) {
     }
   }, [])
 
+  // Appointments can be created from places that don't go through this hook
+  // (e.g. the "Planifier un autre RV" / "Nouveau RV" dialogs call apiClient
+  // directly). Their cacheKey may already hold a stale (possibly empty)
+  // result for that date, so wipe the whole cache and refetch what's on
+  // screen whenever any appointment is created.
+  useEffect(() => {
+    const handler = () => {
+      cacheRef.current.clear()
+      fetchAppointments(selectedDate, true)
+    }
+    window.addEventListener("appointmentCreated", handler)
+    return () => window.removeEventListener("appointmentCreated", handler)
+  }, [fetchAppointments, selectedDate])
+
   useEffect(() => {
     fetchAppointments(selectedDate)
 

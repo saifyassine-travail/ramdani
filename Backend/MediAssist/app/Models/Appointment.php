@@ -20,7 +20,8 @@ class Appointment extends Model
         'consultation_ended_at',
         'updated_at',
         'ID_patient',
-        'medical_acts'];
+        'medical_acts',
+        'notes'];
 
     protected $casts = [
         'medical_acts' => 'array',

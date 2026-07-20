@@ -12,7 +12,7 @@ class Certificate extends Model
     protected $table = 'certificats_medicaux';
     protected $primaryKey = 'ID_CM';
 
-    protected $fillable = ['start_date', 'end_date', 'ID_patient'];
+    protected $fillable = ['start_date', 'end_date', 'content', 'ID_patient'];
 
     public function patient()
     {

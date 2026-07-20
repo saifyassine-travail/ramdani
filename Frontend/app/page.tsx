@@ -14,6 +14,7 @@ import IconComponent from "@/components/icon-component"
 import { Button } from "@/components/ui/button"
 import QuickCaseModal from "@/components/quick-case-modal"
 import PlanControlModal from "@/components/plan-control-modal"
+import CompletedAppointmentModal from "@/components/completed-appointment-modal"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +44,9 @@ const STATUSES = ["scheduled", "waiting", "preparing", "consulting", "completed"
 const Dashboard = () => {
   const router = useRouter()
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
+  // Ref so event handlers always refetch the currently-viewed day (never today)
+  const selectedDateRef = useRef(selectedDate)
+  useEffect(() => { selectedDateRef.current = selectedDate }, [selectedDate])
   const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null)
   const [deletingAppointmentId, setDeletingAppointmentId] = useState<number | null>(null)
   const [confirmingAppointment, setConfirmingAppointment] = useState<{ id: number; source: string; target: string } | null>(null)
@@ -52,6 +56,8 @@ const Dashboard = () => {
   const [contextMenuApt, setContextMenuApt] = useState<Appointment | null>(null)
   // Add-control modal (right-click on "completed" / terminé)
   const [controlApt, setControlApt] = useState<Appointment | null>(null)
+  // Completed-appointment financial modal (right-click on "Terminé")
+  const [completedApt, setCompletedApt] = useState<Appointment | null>(null)
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // État local géré manuellement
@@ -334,7 +340,7 @@ const Dashboard = () => {
 
   // Listen for external updates
   useEffect(() => {
-    const handler = () => refetch()
+    const handler = () => refetch(selectedDateRef.current, true)
     window.addEventListener("appointmentCreated", handler)
     return () => window.removeEventListener("appointmentCreated", handler)
   }, [refetch])
@@ -358,7 +364,7 @@ const Dashboard = () => {
     const result = await toggleMutuelle(numId)
     if (result.success) {
       showNotification("Mutuelle mise à jour", "success")
-      refetch()
+      refetch(selectedDateRef.current, true)
     } else {
       showNotification(result.message || "Erreur", "error")
     }
@@ -370,7 +376,7 @@ const Dashboard = () => {
       setContextMenuApt(apt)
     } else if (status === "completed") {
       e.preventDefault()
-      setControlApt(apt)
+      setCompletedApt(apt)
     }
   }, [])
 
@@ -562,7 +568,20 @@ const Dashboard = () => {
         onSaved={() => showNotification("Fiche sauvegardée", "success")}
       />
 
-      {/* Plan control appointment (right-click on "Terminé") */}
+      {/* Completed appointment — edit payment / credit / mutuelle (right-click on "Terminé") */}
+      <CompletedAppointmentModal
+        open={!!completedApt}
+        onOpenChange={(open) => !open && setCompletedApt(null)}
+        appointment={completedApt}
+        patientName={formatName(completedApt?.patient?.first_name || "", completedApt?.patient?.last_name || "")}
+        onSaved={(message) => {
+          showNotification(message, message.toLowerCase().includes("erreur") ? "error" : "success")
+          refetch(selectedDateRef.current, true)
+        }}
+        onPlanAnother={() => setControlApt(completedApt)}
+      />
+
+      {/* Plan control appointment (from the completed-appointment modal) */}
       <PlanControlModal
         open={!!controlApt}
         onOpenChange={(open) => !open && setControlApt(null)}

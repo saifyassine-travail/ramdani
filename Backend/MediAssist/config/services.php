@@ -36,4 +36,9 @@ return [
         'redirect'      => env('GOOGLE_REDIRECT_URI', 'http://127.0.0.1:8000/auth/google/callback'),
     ],
 
+    // CIN OCR microservice (Backend/extraction-service)
+    'extraction' => [
+        'url' => env('EXTRACTION_SERVICE_URL', 'http://extraction:8100'),
+    ],
+
 ];

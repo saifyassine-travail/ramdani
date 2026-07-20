@@ -2,22 +2,24 @@ services:
 
   backend:
     build:
-      context: ./backend/mediassist
+      context: ./Backend/MediAssist
       dockerfile: Dockerfile
     container_name: laravel_app
     restart: unless-stopped
     volumes:
-      - ./backend/mediassist:/var/www
+      - ./Backend/MediAssist:/var/www
+      - /var/www/vendor
     depends_on:
       - db
     environment:
-  DB_CONNECTION: mysql
-  DB_HOST: db
-  DB_PORT: 3306
-  DB_DATABASE: mediassist
-  DB_USERNAME: root
-  DB_PASSWORD: root
-
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: mediassist
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      # Internal docker hostname for the CIN OCR proxy route (/api/extract-cin)
+      EXTRACTION_SERVICE_URL: http://extraction:8100
 
   extraction:
     build:
@@ -25,16 +27,17 @@ services:
     container_name: mediassist_extraction
     restart: unless-stopped
     environment:
-      # Set GEMINI_API_KEY in .env (get one at https://aistudio.google.com/app/apikey).
-      # If unset, the service still starts and returns a clear 502 when scanning.
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       DJANGO_DEBUG: "false"
       DJANGO_ALLOWED_HOSTS: "*"
     # No published port: reached internally by the frontend as http://extraction:8100
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./Frontend
+      args:
+        # Baked into the client bundle at build time (Next.js NEXT_PUBLIC_* rule) —
+        # must be reachable from the browser on the host, not an internal Docker hostname.
+        NEXT_PUBLIC_API_URL: "http://localhost:8000/api"
     container_name: next_frontend
     restart: unless-stopped
     ports:
@@ -43,21 +46,21 @@ services:
       - backend
       - extraction
     environment:
-      NEXT_PUBLIC_API_URL: "http://nginx:80"
       # Server-side URL the /api/extract-cin route handler forwards CIN uploads to.
       EXTRACTION_SERVICE_URL: http://extraction:8100
 
   db:
-    image: mysql:8
-    container_name: mysql_db
+    image: postgres:16
+    container_name: postgres_db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: mediassist
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mediassist
     ports:
-      - "3307:3306"
+      - "5433:5432"
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/var/lib/postgresql/data
 
   redis:
     image: redis:alpine
@@ -73,7 +76,7 @@ services:
     ports:
       - "8000:80"
     volumes:
-      - ./backend/mediassist:/var/www
+      - ./Backend/MediAssist:/var/www
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - backend

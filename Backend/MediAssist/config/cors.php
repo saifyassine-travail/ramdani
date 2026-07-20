@@ -11,6 +11,11 @@ return [
         // Local network addresses used in development
         'http://192.168.1.3:3000',
         'http://192.168.1.3:3001',
+        // Expo web dev server (browser preview of the Mobile/ app) — native
+        // Expo Go / device builds aren't subject to CORS, only this target is.
+        'http://localhost:8081',
+        'http://127.0.0.1:8081',
+        'http://192.168.1.159:8081',
     ],
 	'allowed_headers' => ['*'],
 	'exposed_headers' => ['*'],

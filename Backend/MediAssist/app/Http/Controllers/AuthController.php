@@ -35,16 +35,16 @@ class AuthController extends Controller
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required'],
+            'device_name' => ['sometimes', 'string', 'max:255'],
         ]);
 
-        if (!Auth::attempt($credentials)) {
+        if (!Auth::attempt(['email' => $credentials['email'], 'password' => $credentials['password']])) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
         $user = Auth::user();
-        // Revoke old tokens and issue a fresh one
-        $user->tokens()->delete();
-        $token = $user->createToken('auth-token')->plainTextToken;
+        // Issue a token scoped to this device, leaving other devices' tokens intact
+        $token = $user->createToken($request->input('device_name', 'auth-token'))->plainTextToken;
 
         ActivityLogger::log('auth.login', "Connexion de {$user->name}", $user, $user);
         AppNotification::record(
@@ -63,7 +63,7 @@ class AuthController extends Controller
     {
         $user = $request->user();
         ActivityLogger::log('auth.logout', "Déconnexion de {$user->name}", $user, $user);
-        $user->tokens()->delete();
+        $request->user()->currentAccessToken()->delete();
         return response()->json(['message' => 'Logged out']);
     }
 

@@ -2,8 +2,9 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { ScanLine, Loader2 } from "lucide-react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Label } from "./ui/label"
@@ -146,9 +147,54 @@ const MedicalHeader = () => {
     chronic_conditions: "",
     notes: "",
     blood_type: "",
+    photo_base64: "",
   })
 
   const patientIsMinor = isMinor(patientFormData.birth_day)
+
+  const patientFileInputRef = useRef<HTMLInputElement>(null)
+  const [isScanningPatientCin, setIsScanningPatientCin] = useState(false)
+
+  // Upload a CIN photo to the extraction service and pre-fill the quick-add form.
+  const handleScanPatientCIN = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = "" // reset so the same file can be picked again
+    if (!file) return
+
+    setIsScanningPatientCin(true)
+    try {
+      const body = new FormData()
+      body.append("file", file)
+
+      const res = await fetch("/api/extract-cin", { method: "POST", body })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json?.detail || json?.error || "Échec de l'analyse de la carte.")
+      }
+
+      const data = json.data || {}
+      setPatientFormData((prev) => ({
+        ...prev,
+        first_name: data.first_name || prev.first_name,
+        last_name: data.last_name || prev.last_name,
+        CIN: data.cin_number || prev.CIN,
+        birth_day: data.date_of_birth || prev.birth_day,
+        photo_base64: json.photo_base64 || prev.photo_base64,
+      }))
+      toast({
+        title: "Carte analysée",
+        description: "Les champs ont été pré-remplis. Merci de vérifier les informations.",
+      })
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Échec du scan",
+        description: err?.message || "Impossible d'analyser la carte.",
+      })
+    } finally {
+      setIsScanningPatientCin(false)
+    }
+  }
 
   const [appointmentFormData, setAppointmentFormData] = useState({
     patient_id: 0,
@@ -223,6 +269,7 @@ const MedicalHeader = () => {
           chronic_conditions: "",
           notes: "",
           blood_type: "",
+          photo_base64: "",
         })
       } else {
         const errorMessage = response.message || "Impossible d'ajouter le patient"
@@ -654,6 +701,43 @@ const MedicalHeader = () => {
                     </div>
                   )}
                   <form onSubmit={handleAddPatient} className="space-y-4">
+                    <div className="flex flex-col gap-3 rounded-lg border border-dashed border-indigo-300 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <ScanLine className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Scanner la carte d'identité (CIN)</p>
+                          <p className="text-xs text-gray-500">
+                            Remplit automatiquement le nom, la date de naissance et le CIN.
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        ref={patientFileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg"
+                        className="hidden"
+                        onChange={handleScanPatientCIN}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => patientFileInputRef.current?.click()}
+                        disabled={isScanningPatientCin}
+                        className="shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                      >
+                        {isScanningPatientCin ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Analyse en cours...
+                          </>
+                        ) : (
+                          <>
+                            <ScanLine className="mr-2 h-4 w-4" />
+                            Scanner la CIN
+                          </>
+                        )}
+                      </Button>
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="col-span-1">
                         <Label htmlFor="firstName" className="text-gray-700">
@@ -965,7 +1049,7 @@ const MedicalHeader = () => {
                   <div className="text-blue-600 text-xs font-medium">{user?.role || "Médecin"}</div>
                 </div>
                 <Avatar className="h-9 w-9 border-2 border-white shadow-sm ring-1 ring-gray-200">
-                  <AvatarImage src={user?.avatar || "/professional-doctor-avatar.png"} />
+                  <AvatarImage src={user?.avatar || "/placeholder-user.jpg"} />
                   <AvatarFallback className="bg-[#007090] text-white">
                     <User className="h-4 w-4" />
                   </AvatarFallback>

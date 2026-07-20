@@ -38,6 +38,7 @@ export interface Patient {
   notes?: string | null
   archived: number
   DDR?: string
+  photo_base64?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -477,7 +478,7 @@ class ApiClient {
   }
 
   // Certificate management endpoints
-  async getCertificates(patientId: number): Promise<
+  async getCertificates(patientId: number, skipCache = false): Promise<
     ApiResponse<
       Array<{
         id: number
@@ -489,7 +490,7 @@ class ApiClient {
       }>
     >
   > {
-    return this.request(`/certificates/patient/${patientId}`)
+    return this.request(`/certificates/patient/${patientId}`, {}, skipCache)
   }
 
   async getCertificate(certificateId: number): Promise<
@@ -580,6 +581,7 @@ class ApiClient {
     allergies?: string
     chronic_conditions?: string
     notes?: string
+    photo_base64?: string
   }): Promise<ApiResponse<Patient>> {
     console.log("[v0] createPatient - data being sent:", {
       first_name: patientData.first_name,
@@ -606,6 +608,7 @@ class ApiClient {
       allergies: patientData.allergies || null,
       chronic_conditions: patientData.chronic_conditions || null,
       notes: patientData.notes || null,
+      photo_base64: patientData.photo_base64 || null,
     }
 
     console.log("[v0] createPatient - full request body:", JSON.stringify(requestBody, null, 2))
@@ -638,6 +641,7 @@ class ApiClient {
       allergies?: string
       chronic_conditions?: string
       notes?: string
+      photo_base64?: string
     },
   ): Promise<ApiResponse<Patient>> {
     return this.request(`/patients/${id}`, {
@@ -1067,6 +1071,14 @@ class ApiClient {
     return this.request(`/patients/${patientId}/last-medicaments`)
   }
 
+  // All non-empty case descriptions of a patient (every appointment), dated —
+  // for the cumulative journal view.
+  async getPatientCaseHistory(patientId: number): Promise<
+    ApiResponse<Array<{ ID_RV: number; date: string; case_description: string }>>
+  > {
+    return this.request(`/patients/${patientId}/case-history`)
+  }
+
   async getAppointmentCountByDate(date: string): Promise<ApiResponse<{ date: string; count: number }>> {
     return this.request(`/appointments/count/${date}`, {}, true)
   }
@@ -1118,6 +1130,14 @@ class ApiClient {
 
   async uploadOrdonnanceBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
     return this.post('/settings/upload-background', formData);
+  }
+
+  async uploadFactureBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
+    return this.post('/settings/upload-facture-background', formData);
+  }
+
+  async uploadCertificateBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
+    return this.post('/settings/upload-certificate-background', formData);
   }
 
   async post<T>(endpoint: string, body: any): Promise<ApiResponse<T>> {

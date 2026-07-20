@@ -1,7 +1,8 @@
 """Tests for the CIN extraction endpoint.
 
-Both the Gemini call (``extract_cin``) and the OpenCV face crop (``crop_face``)
-are mocked, so these tests need no API key, no network, and no real image.
+Both the OCR call (``extract_cin``) and the OpenCV face crop (``crop_face``)
+are mocked, so these tests need no Tesseract install, no network, and no
+real image.
 """
 import base64
 from unittest.mock import patch

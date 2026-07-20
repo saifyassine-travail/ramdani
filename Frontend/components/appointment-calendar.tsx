@@ -76,14 +76,18 @@ export default function AppointmentCalendar({ activeDate, onDateSelect }: Calend
       days.push(
         <div
           key={day}
-          className={`relative p-2 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors duration-200 ${
-            isToday ? "bg-blue-500 hover:bg-blue-600" : isActiveDate ? "bg-gray-300 hover:bg-gray-400" : ""
+          className={`relative p-2 rounded-lg cursor-pointer transition-colors duration-200 ${
+            isActiveDate
+              ? "bg-blue-500 hover:bg-blue-600"
+              : isToday
+                ? "bg-blue-50 ring-1 ring-blue-400 hover:bg-blue-100"
+                : "hover:bg-gray-100"
           }`}
           onClick={() => onDateSelect?.(dateString)}
           title={count > 0 ? `${count} rendez-vous` : "Aucun rendez-vous"}
         >
           <div
-            className={`text-sm text-center ${isToday ? "text-white font-semibold" : isActiveDate ? "text-gray-800 font-semibold" : "text-gray-700"}`}
+            className={`text-sm text-center ${isActiveDate ? "text-white font-semibold" : isToday ? "text-blue-700 font-semibold" : "text-gray-700"}`}
           >
             {day}
           </div>

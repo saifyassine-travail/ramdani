@@ -10,10 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { apiClient } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope, History, Bell, Wallet, CalendarClock, Activity, Monitor, Shield } from "lucide-react"
+import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope, History, Bell, Wallet, CalendarClock, Activity, Monitor, Shield, Receipt, Building2, ScrollText } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import OrdonnanceLayoutEditor from "@/components/ordonnance-layout-editor"
+import FactureLayoutEditor from "@/components/facture-layout-editor"
+import CertificateLayoutEditor from "@/components/certificate-layout-editor"
 import ActivityLogPanel from "@/components/activity-log-panel"
+import { CERTIFICATE_VARIABLES, DEFAULT_CERTIFICATE_TEMPLATE } from "@/lib/certificate-template"
 import { useAuth } from "@/hooks/use-auth"
 
 export default function SettingsPage() {
@@ -144,14 +148,48 @@ export default function SettingsPage() {
           }
         }
 
+        // Parse facture_layout if it's a string
+        if (typeof parsedData.facture_layout === 'string') {
+          try {
+            parsedData.facture_layout = JSON.parse(parsedData.facture_layout)
+          } catch (e) {
+            parsedData.facture_layout = null
+          }
+        }
+
+        // Parse certificate_layout if it's a string
+        if (typeof parsedData.certificate_layout === 'string') {
+          try {
+            parsedData.certificate_layout = JSON.parse(parsedData.certificate_layout)
+          } catch (e) {
+            parsedData.certificate_layout = null
+          }
+        }
+
         // Fix background URL (ensure use of proxy link for CORS)
+        const backendBase = "http://127.0.0.1:8000"
         if (parsedData.ordonnance_background) {
-          const backendBase = "http://127.0.0.1:8000"
           if (parsedData.ordonnance_background.includes('/storage/ordonnances/')) {
             const filename = parsedData.ordonnance_background.split('/').pop()
             parsedData.ordonnance_background = `${backendBase}/api/settings/ordonnance-background/${filename}`
           } else if (!parsedData.ordonnance_background.startsWith('http')) {
             parsedData.ordonnance_background = `${backendBase}${parsedData.ordonnance_background}`
+          }
+        }
+        if (parsedData.facture_background) {
+          if (parsedData.facture_background.includes('/storage/factures/')) {
+            const filename = parsedData.facture_background.split('/').pop()
+            parsedData.facture_background = `${backendBase}/api/settings/facture-background/${filename}`
+          } else if (!parsedData.facture_background.startsWith('http')) {
+            parsedData.facture_background = `${backendBase}${parsedData.facture_background}`
+          }
+        }
+        if (parsedData.certificate_background) {
+          if (parsedData.certificate_background.includes('/storage/certificates/')) {
+            const filename = parsedData.certificate_background.split('/').pop()
+            parsedData.certificate_background = `${backendBase}/api/settings/certificate-background/${filename}`
+          } else if (!parsedData.certificate_background.startsWith('http')) {
+            parsedData.certificate_background = `${backendBase}${parsedData.certificate_background}`
           }
         }
 
@@ -448,9 +486,9 @@ export default function SettingsPage() {
               <Users className="w-4 h-4" />
               Utilisateurs
             </TabsTrigger>
-            <TabsTrigger value="ordonnance" className={tabTriggerClass}>
+            <TabsTrigger value="documents" className={tabTriggerClass}>
               <FileText className="w-4 h-4" />
-              Ordonnance
+              Documents
             </TabsTrigger>
             <TabsTrigger value="backup" className={tabTriggerClass}>
               <Cloud className="w-4 h-4" />
@@ -993,6 +1031,104 @@ export default function SettingsPage() {
                 />
               </div>
 
+              <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/60">
+                <Label className="block mb-1">Description du cas — mode d'affichage</Label>
+                <p className="text-sm text-gray-500 mb-4">
+                  Choisissez comment la description du cas se comporte pendant les consultations.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Standard */}
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, case_description_cumulative: false })}
+                    className={`text-left rounded-xl border-2 p-4 transition-all ${
+                      !settings?.case_description_cumulative
+                        ? "border-[#007090] bg-[#007090]/5 ring-2 ring-[#007090]/15"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                        <FileText className="w-4 h-4 text-gray-500" />
+                        Standard
+                      </span>
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                          !settings?.case_description_cumulative ? "border-[#007090]" : "border-gray-300"
+                        }`}
+                      >
+                        {!settings?.case_description_cumulative && (
+                          <span className="h-2 w-2 rounded-full bg-[#007090]" />
+                        )}
+                      </span>
+                    </div>
+                    <div className="relative h-[92px] rounded-lg border border-gray-200 bg-white p-2.5">
+                      {/* Old note discarded behind */}
+                      <div className="absolute right-3 top-3 h-[58px] w-[70%] -rotate-3 rounded bg-gray-100 border border-gray-200 opacity-70" />
+                      {/* Current note replaces it */}
+                      <div className="relative rounded bg-blue-50 border border-blue-200 p-2 space-y-1.5 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[8px] font-semibold text-blue-500">Visite actuelle</span>
+                          <RefreshCw className="w-3 h-3 text-blue-400" />
+                        </div>
+                        <div className="h-1.5 w-full rounded bg-blue-200" />
+                        <div className="h-1.5 w-2/3 rounded bg-blue-200" />
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-gray-500">
+                      Un seul champ. La description remplace la précédente à chaque visite.
+                    </p>
+                  </button>
+
+                  {/* Cumulatif */}
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, case_description_cumulative: true })}
+                    className={`text-left rounded-xl border-2 p-4 transition-all ${
+                      settings?.case_description_cumulative
+                        ? "border-[#007090] bg-[#007090]/5 ring-2 ring-[#007090]/15"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                        <ScrollText className="w-4 h-4 text-indigo-500" />
+                        Journal cumulatif
+                      </span>
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                          settings?.case_description_cumulative ? "border-[#007090]" : "border-gray-300"
+                        }`}
+                      >
+                        {settings?.case_description_cumulative && (
+                          <span className="h-2 w-2 rounded-full bg-[#007090]" />
+                        )}
+                      </span>
+                    </div>
+                    <div className="h-[92px] overflow-hidden rounded-lg border border-gray-200 bg-white p-2.5 space-y-1.5">
+                      {[
+                        { d: "15/05", w: "w-full", isNew: false },
+                        { d: "30/05", w: "w-5/6", isNew: false },
+                        { d: "20/07", w: "w-3/4", isNew: true },
+                      ].map((row) => (
+                        <div key={row.d} className="flex items-center gap-1.5">
+                          <span className="w-8 shrink-0 text-[8px] font-semibold text-indigo-500">{row.d}</span>
+                          <div className={`h-2 rounded border border-indigo-100 bg-indigo-50 ${row.w}`} />
+                          {row.isNew && (
+                            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-green-100">
+                              <Plus className="h-2.5 w-2.5 text-green-600" />
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-gray-500">
+                      Journal daté : chaque visite ajoute une entrée sous sa date, tout l'historique reste visible.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Langue</Label>
@@ -1260,8 +1396,84 @@ export default function SettingsPage() {
           </Dialog>
         </TabsContent>
 
-        {/* Ordonnance Tab */}
-        <TabsContent value="ordonnance" key={settings ? "loaded" : "loading"} className="space-y-6">
+        {/* Documents Tab — all personalized document settings in one place */}
+        <TabsContent value="documents" key={settings ? "docs-loaded" : "docs-loading"} className="space-y-6">
+          {/* Practice / Cabinet Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-teal-600" />
+                Informations du cabinet
+              </CardTitle>
+              <CardDescription>
+                Utilisées dans l'en-tête des documents et dans le certificat médical (nom, ville, coordonnées).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs">Nom du cabinet / médecin</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.practice_name || ""}
+                  onChange={(e) => setSettings({ ...settings, practice_name: e.target.value })}
+                  placeholder="Dr. ..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Spécialité</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.specialization || ""}
+                  onChange={(e) => setSettings({ ...settings, specialization: e.target.value })}
+                  placeholder="Ex: Gynécologie"
+                />
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <Label className="text-xs">Adresse</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.address || ""}
+                  onChange={(e) => setSettings({ ...settings, address: e.target.value })}
+                  placeholder="Adresse du cabinet"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Ville</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.practice_city || ""}
+                  onChange={(e) => setSettings({ ...settings, practice_city: e.target.value })}
+                  placeholder="Ex: Oujda"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Téléphone</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.phone || ""}
+                  onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
+                  placeholder="Téléphone"
+                />
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <Label className="text-xs">Email</Label>
+                <Input
+                  className="h-9"
+                  value={settings?.practice_email || ""}
+                  onChange={(e) => setSettings({ ...settings, practice_email: e.target.value })}
+                  placeholder="email@cabinet.ma"
+                />
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSaveSettings} disabled={saving}>
+                  <Save className="w-3 h-3 mr-1" />
+                  Enregistrer
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Ordonnance */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1298,6 +1510,125 @@ export default function SettingsPage() {
                   }
                 }}
               />
+            </CardContent>
+          </Card>
+
+          {/* Facture */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-indigo-600" />
+                Configuration de la Facture
+              </CardTitle>
+              <CardDescription>
+                Personnalisez l'emplacement des éléments sur votre papier de facture. Le tableau des actes affichera
+                les actes médicaux du rendez-vous.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FactureLayoutEditor
+                initialBackground={settings?.facture_background}
+                initialLayout={settings?.facture_layout}
+                onSave={async (background, layout) => {
+                  setSaving(true)
+                  try {
+                    const newSettings = {
+                      ...settings,
+                      facture_background: background,
+                      facture_layout: layout
+                    }
+                    const response = await apiClient.updateUserSettings(sanitizeSettings(newSettings))
+                    if (response.success) {
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Configuration de la facture enregistrée" })
+                    } else {
+                      toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
+                    }
+                  } catch (error: any) {
+                    toast({ title: "Erreur", description: error?.message || "Échec de l'enregistrement", variant: "destructive" })
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Certificate Template */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ScrollText className="h-5 w-5 text-indigo-600" />
+                Certificat médical
+              </CardTitle>
+              <CardDescription>
+                Modèle utilisé lors de la création d'un certificat. Utilisez les variables ci-dessous ; elles seront
+                remplacées automatiquement.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {CERTIFICATE_VARIABLES.map((v) => (
+                  <span key={v.token} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[11px] text-indigo-700 border border-indigo-100">
+                    <code className="font-mono font-semibold">{v.token}</code>
+                    <span className="text-indigo-400">— {v.label}</span>
+                  </span>
+                ))}
+              </div>
+              <Textarea
+                rows={10}
+                className="font-mono text-sm"
+                value={settings?.certificate_template ?? ""}
+                placeholder={DEFAULT_CERTIFICATE_TEMPLATE}
+                onChange={(e) => setSettings({ ...settings, certificate_template: e.target.value })}
+              />
+              <div className="flex justify-between">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-gray-500"
+                  onClick={() => setSettings({ ...settings, certificate_template: DEFAULT_CERTIFICATE_TEMPLATE })}
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Réinitialiser le modèle par défaut
+                </Button>
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSaveSettings} disabled={saving}>
+                  <Save className="w-3 h-3 mr-1" />
+                  Enregistrer
+                </Button>
+              </div>
+
+              <div className="pt-4 mt-2 border-t">
+                <p className="text-sm font-medium text-gray-700 mb-1">Mise en page du certificat</p>
+                <p className="text-xs text-gray-500 mb-4">
+                  Positionnez le titre, le contenu et la signature sur votre papier à en-tête (comme l'ordonnance et la facture).
+                </p>
+                <CertificateLayoutEditor
+                  initialBackground={settings?.certificate_background}
+                  initialLayout={settings?.certificate_layout}
+                  onSave={async (background, layout) => {
+                    setSaving(true)
+                    try {
+                      const newSettings = {
+                        ...settings,
+                        certificate_background: background,
+                        certificate_layout: layout,
+                      }
+                      const response = await apiClient.updateUserSettings(sanitizeSettings(newSettings))
+                      if (response.success) {
+                        await fetchSettings()
+                        toast({ title: "Succès", description: "Mise en page du certificat enregistrée" })
+                      } else {
+                        toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
+                      }
+                    } catch (error: any) {
+                      toast({ title: "Erreur", description: error?.message || "Échec de l'enregistrement", variant: "destructive" })
+                    } finally {
+                      setSaving(false)
+                    }
+                  }}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

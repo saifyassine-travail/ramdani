@@ -40,10 +40,12 @@ import {
   Stethoscope,
   Search,
   Star,
+  Receipt,
 } from "lucide-react"
 import { cn, formatName } from "../../../lib/utils"
 import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
 import OrdonnancePrintPreview from "../../../components/ordonnance-print-preview"
+import FacturePrintPreview from "../../../components/facture-print-preview"
 import { formatGlobalDate } from "../../../lib/format-date"
 
 interface MedicationForm {
@@ -213,6 +215,7 @@ export default function AppointmentDetailsPage() {
 
   // Settings Configuration for visibility
   const [showPrintPreview, setShowPrintPreview] = useState(false)
+  const [showFacturePreview, setShowFacturePreview] = useState(false)
   const [caseConfig, setCaseConfig] = useState({
     show_weight: true,
     show_height: true,
@@ -222,11 +225,20 @@ export default function AppointmentDetailsPage() {
     show_glycemia: true,
     show_ddr: true,
     case_autosuggest: true,
+    case_description_cumulative: false,
     default_consultation_price: 250,
     default_control_price: 0,
     custom_measures: [] as any[],
     medical_acts: null as Array<{ name: string; price: number }> | null,
   })
+
+  // In cumulative mode, all of the patient's past dated case descriptions.
+  const [caseHistory, setCaseHistory] = useState<Array<{ ID_RV: number; date: string; case_description: string }>>([])
+  // History from OTHER appointments (the current one is edited in the field below).
+  const priorCaseHistory = useMemo(
+    () => caseHistory.filter((e) => e.ID_RV !== Number(appointmentId)),
+    [caseHistory, appointmentId],
+  )
 
   // History source for the case-description inline auto-suggest
   const [pastCaseDescriptions, setPastCaseDescriptions] = useState<string[]>([])
@@ -259,6 +271,7 @@ export default function AppointmentDetailsPage() {
             show_glycemia: settingsData.show_glycemia ?? true,
             show_ddr: settingsData.show_ddr ?? true,
             case_autosuggest: settingsData.case_autosuggest ?? true,
+            case_description_cumulative: settingsData.case_description_cumulative ?? false,
             default_consultation_price: settingsData.default_consultation_price ?? 250,
             default_control_price: settingsData.default_control_price ?? 0,
             custom_measures: parsedMeasures,
@@ -272,7 +285,24 @@ export default function AppointmentDetailsPage() {
             ordonnance_background: settingsData.ordonnance_background || null,
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
-              : settingsData.ordonnance_layout || null
+              : settingsData.ordonnance_layout || null,
+            facture_background: (() => {
+              const bg = settingsData.facture_background
+              if (!bg) return null
+              const backendBase = "http://127.0.0.1:8000"
+              if (bg.includes('/storage/factures/')) {
+                return `${backendBase}/api/settings/facture-background/${bg.split('/').pop()}`
+              }
+              return bg.startsWith('http') ? bg : `${backendBase}${bg}`
+            })(),
+            facture_layout: typeof settingsData.facture_layout === 'string'
+              ? JSON.parse(settingsData.facture_layout)
+              : settingsData.facture_layout || null,
+            practice_name: settingsData.practice_name || null,
+            specialization: settingsData.specialization || null,
+            address: settingsData.address || null,
+            phone: settingsData.phone || null,
+            practice_city: settingsData.practice_city || null,
           })
         }
       } catch (error) {
@@ -291,6 +321,23 @@ export default function AppointmentDetailsPage() {
       })
       .catch(() => {})
   }, [])
+
+  // Cumulative mode: load every past case description of this patient so the
+  // full dated history is shown above the day's entry.
+  useEffect(() => {
+    if (!caseConfig.case_description_cumulative) return
+    const patientId = (appointment as any)?.patient?.ID_patient ?? (appointment as any)?.ID_patient
+    if (!patientId) return
+    let active = true
+    apiClient
+      .getPatientCaseHistory(Number(patientId))
+      .then((res: any) => {
+        const list = res?.data?.data ?? res?.data ?? []
+        if (active && Array.isArray(list)) setCaseHistory(list)
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [caseConfig.case_description_cumulative, appointment])
 
   // History first, common phrases as fallback
   const caseSuggestions = useMemo(
@@ -1321,6 +1368,17 @@ export default function AppointmentDetailsPage() {
               </div>
             </PopoverContent>
           </Popover>
+
+          <Button
+            variant="outline"
+            className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 gap-2 ml-2"
+            onClick={() => setShowFacturePreview(true)}
+            disabled={selectedActs.length === 0 && !appointment?.payement}
+            title={selectedActs.length === 0 && !appointment?.payement ? "Sélectionnez des actes ou appliquez un prix d'abord" : "Imprimer la facture"}
+          >
+            <Receipt className="h-4 w-4" />
+            Facture
+          </Button>
         </div>
 
         <div className="flex items-center space-x-4 mt-4 md:mt-0">
@@ -1353,6 +1411,24 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 space-y-4">
+                  {caseConfig.case_description_cumulative && priorCaseHistory.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-blue-700 mb-1">
+                        Historique des descriptions ({priorCaseHistory.length})
+                      </label>
+                      <div className="max-h-[220px] overflow-y-auto rounded-md border border-blue-200 bg-white/70 divide-y divide-blue-100">
+                        {priorCaseHistory.map((entry) => (
+                          <div key={entry.ID_RV} className="p-3">
+                            <p className="text-[11px] font-semibold text-blue-500 mb-1">{entry.date}</p>
+                            <p className="whitespace-pre-wrap text-sm text-blue-800">{entry.case_description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {caseConfig.case_description_cumulative && (
+                    <label className="block text-xs font-medium text-blue-700">Description du jour</label>
+                  )}
                   <AutocompleteTextarea
                     value={caseDescription}
                     onChange={setCaseDescription}
@@ -2124,6 +2200,37 @@ export default function AppointmentDetailsPage() {
           year: "numeric",
         })}
         medicationsHTML={medications.map(getMedicationHTML).join("")}
+      />
+
+      <FacturePrintPreview
+        open={showFacturePreview}
+        onOpenChange={setShowFacturePreview}
+        layout={(caseConfig as any).facture_layout || null}
+        background={(caseConfig as any).facture_background || null}
+        patientName={
+          appointment?.patient?.last_name && appointment?.patient?.first_name
+            ? formatName(appointment.patient.first_name, appointment.patient.last_name)
+            : (appointment?.patient as any)?.name || "Patient"
+        }
+        dateStr={new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+        acts={selectedActs.map((name) => ({
+          name,
+          price: medicalActs.find((a) => a.name === name)?.price ?? 0,
+        }))}
+        total={appointment?.payement ?? totalActsPrice}
+        credit={(appointment as any)?.credit ?? 0}
+        mutuelle={!!appointment?.mutuelle}
+        header={{
+          practiceName: (caseConfig as any).practice_name,
+          specialization: (caseConfig as any).specialization,
+          address: (caseConfig as any).address,
+          phone: (caseConfig as any).phone,
+          city: (caseConfig as any).practice_city,
+        }}
       />
     </div>
   )

@@ -62,6 +62,15 @@ export function useCalendar() {
     fetchMonthlyCounts(currentDate)
   }, [currentDate, fetchMonthlyCounts])
 
+  // Refresh the dot counts as soon as an appointment is created anywhere in
+  // the app (new-appointment dialog, "Planifier un autre RV", etc.) so the
+  // calendar reflects it without navigating away or reloading.
+  useEffect(() => {
+    const handler = () => fetchMonthlyCounts(currentDate)
+    window.addEventListener("appointmentCreated", handler)
+    return () => window.removeEventListener("appointmentCreated", handler)
+  }, [currentDate, fetchMonthlyCounts])
+
   return {
     currentDate,
     appointmentCounts,

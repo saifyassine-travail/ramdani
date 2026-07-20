@@ -622,6 +622,7 @@ function PatientForm({
 
     notes: initialData?.notes || "",
     blood_type: initialData?.blood_type || "",
+    photo_base64: initialData?.photo_base64 || "",
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -654,6 +655,7 @@ function PatientForm({
         last_name: data.last_name || prev.last_name,
         CIN: data.cin_number || prev.CIN,
         birth_day: data.date_of_birth || prev.birth_day,
+        photo_base64: json.photo_base64 || prev.photo_base64,
       }))
       setErrors({})
       toast({

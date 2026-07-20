@@ -58,6 +58,7 @@ Route::prefix('patients')->group(function () {
     Route::put('/{id}', [PatientController::class, 'update']);     // PUT full update
     Route::patch('/{id}/archive', [PatientController::class, 'archive']); // PATCH archive/unarchive
     Route::get('/{id}/last-medicaments', [AppointmentController::class, 'getLastMedicamentsByPatient']);
+    Route::get('/{patientId}/case-history', [AppointmentController::class, 'getCaseHistoryByPatient']);
 
     // Patient Documents
     Route::prefix('{patientId}/documents')->group(function () {
@@ -68,6 +69,9 @@ Route::prefix('patients')->group(function () {
     });
 
 });
+
+// CIN card OCR (proxies to the internal extraction microservice, single host for mobile clients)
+Route::post('/extract-cin', [App\Http\Controllers\CinExtractionController::class, 'extract']);
 
 // MEDICAMENTS
 Route::prefix('medicaments')->controller(MedicamentController::class)->group(function () {
@@ -129,6 +133,10 @@ Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::put('/', [App\Http\Controllers\SettingsController::class, 'updateUserSettings']);
     Route::post('/upload-background', [App\Http\Controllers\SettingsController::class, 'uploadOrdonnanceBackground']);
     Route::get('/ordonnance-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveOrdonnanceBackground']);
+    Route::post('/upload-facture-background', [App\Http\Controllers\SettingsController::class, 'uploadFactureBackground']);
+    Route::get('/facture-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveFactureBackground']);
+    Route::post('/upload-certificate-background', [App\Http\Controllers\SettingsController::class, 'uploadCertificateBackground']);
+    Route::get('/certificate-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveCertificateBackground']);
 });
 
 // USER MANAGEMENT (Admin only)

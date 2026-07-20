@@ -25,14 +25,18 @@ export default function PlanControlModal({
   onResult,
 }: PlanControlModalProps) {
   const [days, setDays] = useState<number>(defaultDays)
+  const [type, setType] = useState<"Consultation" | "Control">("Control")
   const [creating, setCreating] = useState(false)
   const [checking, setChecking] = useState(false)
   const [dayCount, setDayCount] = useState<number | null>(null)
+
+  const typeLabel = type === "Control" ? "Contrôle" : "Consultation"
 
   // Reset state each time the modal opens, loading the configured default day count
   useEffect(() => {
     if (!open) return
     setDayCount(null)
+    setType("Control")
     let active = true
     apiClient
       .getUserSettings()
@@ -96,17 +100,19 @@ export default function PlanControlModal({
     try {
       const res = await apiClient.createAppointment({
         patient_id: patientId,
-        type: "Control",
+        type,
         appointment_date: isoDate,
       })
       if (res.success) {
-        onResult?.(true, (res.data as any)?.message || `Contrôle programmé pour le ${dateLabel}`)
+        onResult?.(true, (res.data as any)?.message || `${typeLabel} programmé${type === "Consultation" ? "e" : ""} pour le ${dateLabel}`)
         onOpenChange(false)
+        // Let the dashboard's calendar widget (and any other listeners) refresh instantly.
+        window.dispatchEvent(new Event("appointmentCreated"))
       } else {
-        onResult?.(false, res.message || "Erreur lors de la création du contrôle")
+        onResult?.(false, res.message || `Erreur lors de la création du rendez-vous`)
       }
     } catch (err) {
-      onResult?.(false, "Erreur réseau lors de la création du contrôle")
+      onResult?.(false, "Erreur réseau lors de la création du rendez-vous")
     } finally {
       setCreating(false)
     }
@@ -118,15 +124,43 @@ export default function PlanControlModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-blue-700">
             <CalendarClock className="h-5 w-5" />
-            Planifier un Contrôle
+            Planifier un rendez-vous
           </DialogTitle>
         </DialogHeader>
 
         <p className="-mt-1 text-sm text-gray-500">
-          Contrôle pour <span className="font-semibold text-gray-700">{patientName || "ce patient"}</span>
+          Pour <span className="font-semibold text-gray-700">{patientName || "ce patient"}</span>
         </p>
 
         <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700">Type de rendez-vous</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setType("Consultation")}
+                className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all ${
+                  type === "Consultation"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                Consultation
+              </button>
+              <button
+                type="button"
+                onClick={() => setType("Control")}
+                className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all ${
+                  type === "Control"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                Contrôle
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-gray-700">Nombre de jours</label>
             <Input

@@ -14,11 +14,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp } from 'lucide-react'
+import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp, Receipt } from 'lucide-react'
 import { apiClient, type PatientDocument } from "@/lib/api"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
 import { isMinor } from "@/lib/age"
+import { useAuth } from "@/hooks/use-auth"
+import FacturePrintPreview from "@/components/facture-print-preview"
+import CertificatePrintPreview from "@/components/certificate-print-preview"
+import { renderCertificateTemplate } from "@/lib/certificate-template"
 
 interface PatientDetails {
   ID_patient: number
@@ -36,6 +40,7 @@ interface PatientDetails {
   chronic_conditions?: string
   notes?: string
   blood_type?: string
+  photo_base64?: string | null
   archived: boolean
   lastAppointment?: {
     appointment_date: string
@@ -51,6 +56,8 @@ interface PatientDetails {
     type?: string
     payement?: number
     mutuelle?: boolean
+    medical_acts?: string[]
+    credit?: number
   }>
   certificates?: Array<{
     ID_CM: number
@@ -66,6 +73,16 @@ export default function PatientDetailsPage() {
   const params = useParams()
   const patientId = Number.parseInt(params.id as string)
   const { toast } = useToast()
+  const { user } = useAuth()
+
+  // Lazily-loaded settings (facture layout/background, medical act prices,
+  // certificate template, practice identity) — shared by the facture and
+  // certificate print flows. Fetched once on first use.
+  const [docSettings, setDocSettings] = useState<any | null>(null)
+  const [factureAppointment, setFactureAppointment] = useState<any | null>(null)
+  const [factureOpen, setFactureOpen] = useState(false)
+  const [certificatePreviewOpen, setCertificatePreviewOpen] = useState(false)
+  const [certificateBody, setCertificateBody] = useState("")
 
   const [patient, setPatient] = useState<PatientDetails | null>(null)
   const [loading, setLoading] = useState(true)
@@ -181,6 +198,7 @@ export default function PatientDetailsPage() {
             chronic_conditions: patientData.chronic_conditions,
             notes: patientData.notes,
             blood_type: patientData.blood_type,
+            photo_base64: patientData.photo_base64,
             archived: Boolean(patientData.archived),
             lastAppointment: lastAppointment,
             nextAppointment: nextAppointment,
@@ -321,13 +339,19 @@ export default function PatientDetailsPage() {
             return { ...prev, certificates: updatedCerts }
           })
 
-          // Also fetch the complete list to ensure consistency
-          const certificatesResponse = await apiClient.getCertificates(patientId)
+          // Also fetch the complete list to ensure consistency. getCertificates
+          // returns { success, certificates: [...] }, so unwrap to the array.
+          // skipCache=true — otherwise the 30s response cache would return the
+          // list from before this certificate existed.
+          const certificatesResponse = await apiClient.getCertificates(patientId, true)
           console.log("[v0] Fetched certificates after creation:", certificatesResponse)
           if (certificatesResponse.success && certificatesResponse.data) {
+            const certs = Array.isArray(certificatesResponse.data)
+              ? certificatesResponse.data
+              : ((certificatesResponse.data as any).certificates || [])
             setPatient((prev: any) => ({
               ...prev,
-              certificates: certificatesResponse.data,
+              certificates: certs,
             }))
           }
 
@@ -607,6 +631,71 @@ export default function PatientDetailsPage() {
     [patient, toast],
   )
 
+  // Fallback act list + prices, matching the appointments page defaults, so a
+  // facture can resolve prices even when settings have no custom list.
+  const DEFAULT_ACT_PRICES: Record<string, number> = {
+    "Consultation": 250,
+    "Contrôle": 0,
+  }
+
+  // Fetch + normalize settings once, caching in docSettings. Parses
+  // facture_layout / medical_acts and proxy-rewrites facture_background.
+  const ensureDocSettings = useCallback(async () => {
+    if (docSettings) return docSettings
+    const res = await apiClient.getUserSettings()
+    const raw = (res as any).data?.data ?? (res as any).data ?? {}
+    const parsed: any = { ...raw }
+
+    if (typeof parsed.facture_layout === "string") {
+      try { parsed.facture_layout = JSON.parse(parsed.facture_layout) } catch { parsed.facture_layout = null }
+    }
+    if (typeof parsed.certificate_layout === "string") {
+      try { parsed.certificate_layout = JSON.parse(parsed.certificate_layout) } catch { parsed.certificate_layout = null }
+    }
+    if (typeof parsed.medical_acts === "string") {
+      try { parsed.medical_acts = JSON.parse(parsed.medical_acts) } catch { parsed.medical_acts = [] }
+    }
+    if (!Array.isArray(parsed.medical_acts)) parsed.medical_acts = []
+
+    const backendBase = "http://127.0.0.1:8000"
+    if (parsed.facture_background) {
+      if (parsed.facture_background.includes("/storage/factures/")) {
+        parsed.facture_background = `${backendBase}/api/settings/facture-background/${parsed.facture_background.split("/").pop()}`
+      } else if (!parsed.facture_background.startsWith("http")) {
+        parsed.facture_background = `${backendBase}${parsed.facture_background}`
+      }
+    }
+    if (parsed.certificate_background) {
+      if (parsed.certificate_background.includes("/storage/certificates/")) {
+        parsed.certificate_background = `${backendBase}/api/settings/certificate-background/${parsed.certificate_background.split("/").pop()}`
+      } else if (!parsed.certificate_background.startsWith("http")) {
+        parsed.certificate_background = `${backendBase}${parsed.certificate_background}`
+      }
+    }
+
+    setDocSettings(parsed)
+    return parsed
+  }, [docSettings])
+
+  // Resolve act names → {name, price} using the settings list then defaults.
+  const resolveActPrices = (actNames: string[], settingsActs: any[]): { name: string; price: number }[] => {
+    return (actNames || []).map((name) => {
+      const fromSettings = (settingsActs || []).find((a) => a.name === name)
+      const price = fromSettings ? Number(fromSettings.price) : (DEFAULT_ACT_PRICES[name] ?? 0)
+      return { name, price }
+    })
+  }
+
+  const handleOpenFacture = useCallback(async (appointment: any) => {
+    try {
+      await ensureDocSettings()
+      setFactureAppointment(appointment)
+      setFactureOpen(true)
+    } catch {
+      toast({ title: "Erreur", description: "Impossible de charger les paramètres de facture", variant: "destructive" })
+    }
+  }, [ensureDocSettings, toast])
+
   const handlePrintCertificate = useCallback(
     async (certificateId: number) => {
       try {
@@ -656,92 +745,34 @@ export default function PatientDetailsPage() {
             const restDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
             console.log("[v0] Calculated rest days:", restDays)
 
-            const printWindow = window.open("", "_blank")
-            if (printWindow) {
-              const startDateFormatted = startDate.toLocaleDateString("fr-FR")
-              const endDateFormatted = endDate.toLocaleDateString("fr-FR")
-              const today = new Date().toLocaleDateString("fr-FR", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+            const startDateFormatted = startDate.toLocaleDateString("fr-FR")
+            const endDateFormatted = endDate.toLocaleDateString("fr-FR")
+            const today = new Date().toLocaleDateString("fr-FR", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
 
-              const content = `
-                <!DOCTYPE html>
-                <html>
-                  <head>
-                    <meta charset="UTF-8">
-                    <title>Certificat Médical</title>
-                    <style>
-                      * {
-                        margin: 0;
-                        padding: 0;
-                        box-sizing: border-box;
-                      }
+            // Load settings (doctor identity, custom template, layout, background).
+            const settings = await ensureDocSettings().catch(() => ({} as any))
+            const docteur = settings?.practice_name || user?.name || "Docteur"
+            const ville = settings?.practice_city || "Oujda"
 
-                      body {
-                        font-family: 'Times New Roman', serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        min-height: 100vh;
-                        padding: 40px 20px;
-                        background: white;
-                      }
+            // Prefer the certificate's own saved content; otherwise render the
+            // settings template (falls back to the default template inside).
+            const bodyText = (certificate.content || "").trim()
+              ? certificate.content.trim()
+              : renderCertificateTemplate(settings?.certificate_template, {
+                  patient: patientName,
+                  cin: patient?.CIN || patient?.guardian_cin || "[Numéro CIN]",
+                  jours: String(restDays),
+                  date_debut: startDateFormatted,
+                  date_fin: endDateFormatted,
+                  docteur,
+                  ville,
+                  date: today,
+                })
 
-                      .certificate-content {
-                        width: 100%;
-                        max-width: 700px;
-                        line-height: 1.8;
-                        text-align: justify;
-                        font-size: 14px;
-                        color: #333;
-                      }
-
-                      .signature-space {
-                        margin-top: 60px;
-                        padding-top: 30px;
-                        text-align: center;
-                      }
-
-                      @media print {
-                        body {
-                          padding: 0;
-                        }
-                      }
-                    </style>
-                  </head>
-                  <body>
-                    <div class="certificate-content">
-                      <p>CERTIFICAT MÉDICAL</p>
-                      <p>Je soussignée, Docteur Ouafae ELMEHRAOUI certifie avoir vu et examiné en consultation aujourd'hui:</p>
-                      <p><strong>${patientName}</strong></p>
-                      <p>portant le CIN: <strong>${patient?.CIN || '[Numéro CIN]'}</strong></p>
-                      <p>nécessite un repos de <strong>${restDays} jours</strong></p>
-                      <p>et atteste que son état de santé nécessite un arrêt de travail de <strong>${restDays} jours</strong> à compter de ce jour.</p>
-                      <p>Certificat délivré en main propre à l'intéressé(e) pour servir et valoir ce que de droit.</p>
-                      <p>A Oujda le <strong>${today}</strong></p>
-                      
-                      <div class="signature-space">
-                        <p>Signature et Cachet du Médecin</p>
-                      </div>
-                    </div>
-                  </body>
-                </html>
-              `
-              printWindow.document.write(content)
-              printWindow.document.close()
-
-              // Wait for content to render before printing
-              printWindow.addEventListener("load", () => {
-                setTimeout(() => {
-                  printWindow.print()
-                }, 300)
-              })
-            } else {
-              toast({
-                title: "Erreur",
-                description: "Impossible d'ouvrir la fenêtre d'impression",
-                variant: "destructive",
-              })
-            }
-            console.log("[v0] Certificate fetched successfully for printing")
+            // Open the layout-based preview (positions + background from settings).
+            setCertificateBody(bodyText)
+            setCertificatePreviewOpen(true)
+            console.log("[v0] Certificate ready for preview")
           } catch (error) {
             console.error("[v0] Date parsing error:", error, { startDateStr, endDateStr })
             alert("Erreur: Impossible de parser les dates du certificat")
@@ -764,7 +795,7 @@ export default function PatientDetailsPage() {
         })
       }
     },
-    [toast, patient],
+    [toast, patient, ensureDocSettings, user],
   )
 
   const handleAddControl = useCallback(async () => {
@@ -1098,9 +1129,11 @@ export default function PatientDetailsPage() {
                 >
                   <AvatarImage
                     src={
-                      patient.gender === "Female"
-                        ? "/placeholder.svg?height=64&width=64&query=female-avatar"
-                        : "/placeholder.svg?height=64&width=64&query=male-avatar"
+                      patient.photo_base64
+                        ? `data:image/jpeg;base64,${patient.photo_base64}`
+                        : patient.gender === "Female"
+                          ? "/placeholder.svg?height=64&width=64&query=female-avatar"
+                          : "/placeholder.svg?height=64&width=64&query=male-avatar"
                     }
                   />
                   <AvatarFallback
@@ -1341,6 +1374,9 @@ export default function PatientDetailsPage() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Reste
                       </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Facture
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -1412,6 +1448,25 @@ export default function PatientDetailsPage() {
                             <span className="text-sm text-gray-500">DH</span>
                           </div>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
+                            title={
+                              (!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement
+                                ? "Aucun acte ou montant pour ce rendez-vous"
+                                : "Imprimer la facture"
+                            }
+                            disabled={(!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenFacture(appointment)
+                            }}
+                          >
+                            <Receipt className="h-4 w-4" />
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1444,7 +1499,7 @@ export default function PatientDetailsPage() {
                 <span>→</span>
               </Button>
               <Button
-                onClick={() => setIsCertificateModalOpen(true)}
+                onClick={() => { ensureDocSettings().catch(() => {}); setIsCertificateModalOpen(true) }}
                 className="w-full flex items-center justify-between bg-yellow-50 text-yellow-600 hover:bg-yellow-100 border-0"
               >
                 <span className="flex items-center gap-2">
@@ -1681,6 +1736,25 @@ export default function PatientDetailsPage() {
           <CertificateForm
             onSubmit={handleAddCertificate}
             onCancel={() => setIsCertificateModalOpen(false)}
+            buildContent={(jours, start, end) => {
+              const patientName = patient?.first_name && patient?.last_name
+                ? formatName(patient.first_name, patient.last_name)
+                : "Patient"
+              const fmt = (d: string) => {
+                const date = new Date(d)
+                return isNaN(date.getTime()) ? d : date.toLocaleDateString("fr-FR")
+              }
+              return renderCertificateTemplate(docSettings?.certificate_template, {
+                patient: patientName,
+                cin: patient?.CIN || patient?.guardian_cin || "[Numéro CIN]",
+                jours: String(jours),
+                date_debut: fmt(start),
+                date_fin: fmt(end),
+                docteur: docSettings?.practice_name || user?.name || "Docteur",
+                ville: docSettings?.practice_city || "Oujda",
+                date: new Date().toLocaleDateString("fr-FR", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
+              })
+            }}
           />
         </DialogContent>
       </Dialog>
@@ -1694,6 +1768,36 @@ export default function PatientDetailsPage() {
         onResult={handleControlResult}
       />
 
+      {/* Facture print preview (from a history row) */}
+      <FacturePrintPreview
+        open={factureOpen}
+        onOpenChange={setFactureOpen}
+        layout={docSettings?.facture_layout || null}
+        background={docSettings?.facture_background || null}
+        patientName={patient ? formatName(patient.first_name, patient.last_name) : "Patient"}
+        dateStr={factureAppointment ? formatDate(factureAppointment.appointment_date) : ""}
+        acts={resolveActPrices(factureAppointment?.medical_acts || [], docSettings?.medical_acts || [])}
+        total={factureAppointment?.payement ?? 0}
+        credit={factureAppointment?.credit ?? 0}
+        mutuelle={!!factureAppointment?.mutuelle}
+        header={{
+          practiceName: docSettings?.practice_name,
+          specialization: docSettings?.specialization,
+          address: docSettings?.address,
+          phone: docSettings?.phone,
+          city: docSettings?.practice_city,
+        }}
+      />
+
+      {/* Certificate print preview (layout + background from settings) */}
+      <CertificatePrintPreview
+        open={certificatePreviewOpen}
+        onOpenChange={setCertificatePreviewOpen}
+        layout={docSettings?.certificate_layout || null}
+        background={docSettings?.certificate_background || null}
+        body={certificateBody}
+      />
+
       {/* Avatar Zoom Modal */}
       {
         isAvatarZoomed && (
@@ -1704,9 +1808,11 @@ export default function PatientDetailsPage() {
             <Avatar className="w-32 h-32 md:w-48 md:h-48 border-4 border-white shadow-2xl">
               <AvatarImage
                 src={
-                  patient.gender === "Female"
-                    ? "/placeholder.svg?height=192&width=192&query=female-avatar"
-                    : "/placeholder.svg?height=192&width=192&query=male-avatar"
+                  patient.photo_base64
+                    ? `data:image/jpeg;base64,${patient.photo_base64}`
+                    : patient.gender === "Female"
+                      ? "/placeholder.svg?height=192&width=192&query=female-avatar"
+                      : "/placeholder.svg?height=192&width=192&query=male-avatar"
                 }
               />
               <AvatarFallback
@@ -1949,22 +2055,29 @@ function PatientForm({
 function CertificateForm({
   onSubmit,
   onCancel,
+  buildContent,
 }: {
   onSubmit: (data: any) => void
   onCancel: () => void
+  // Renders the settings template for the given rest-day count + dates.
+  buildContent: (jours: number, start: string, end: string) => string
 }) {
-  const [formData, setFormData] = useState({
-    start_date: new Date().toISOString().split("T")[0],
-    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-    content: "Je soussigné(e), Dr. [Nom du médecin], certifie que...",
-  })
-
   const calculateDays = (start: string, end: string) => {
     const startDate = new Date(start)
     const endDate = new Date(end)
     const timeDiff = endDate.getTime() - startDate.getTime()
     return Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
   }
+
+  const initialStart = new Date().toISOString().split("T")[0]
+  const initialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+
+  const [formData, setFormData] = useState({
+    start_date: initialStart,
+    end_date: initialEnd,
+    content: buildContent(calculateDays(initialStart, initialEnd), initialStart, initialEnd),
+  })
+  const [contentTouched, setContentTouched] = useState(false)
 
   const daysCount = calculateDays(formData.start_date, formData.end_date)
 
@@ -1981,8 +2094,20 @@ function CertificateForm({
     onSubmit(formData)
   }
 
+  const regenerate = (start: string, end: string) => {
+    setFormData((prev) => ({ ...prev, content: buildContent(calculateDays(start, end), start, end) }))
+    setContentTouched(false)
+  }
+
   const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value }
+      // Keep the body in sync with the dates until the doctor edits it manually.
+      if ((field === "start_date" || field === "end_date") && !contentTouched) {
+        next.content = buildContent(calculateDays(next.start_date, next.end_date), next.start_date, next.end_date)
+      }
+      return next
+    })
   }
 
   return (
@@ -2018,11 +2143,25 @@ function CertificateForm({
       </div>
 
       <div>
-        <Label htmlFor="content">Contenu du Certificat</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="content">Contenu du Certificat</Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-gray-500"
+            onClick={() => regenerate(formData.start_date, formData.end_date)}
+          >
+            Régénérer depuis le modèle
+          </Button>
+        </div>
         <Textarea
           id="content"
           value={formData.content}
-          onChange={(e) => handleChange("content", e.target.value)}
+          onChange={(e) => {
+            setContentTouched(true)
+            handleChange("content", e.target.value)
+          }}
           rows={8}
           required
           placeholder="Je soussigné(e), Dr. [Nom du médecin], certifie que..."

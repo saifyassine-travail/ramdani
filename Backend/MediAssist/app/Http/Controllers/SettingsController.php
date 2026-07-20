@@ -96,7 +96,9 @@ class SettingsController extends Controller
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
                 'ordonnance_background', 'ordonnance_layout', 'show_ddr', 'case_autosuggest',
-                'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts'
+                'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts',
+                'facture_background', 'facture_layout', 'certificate_template', 'practice_city',
+                'case_description_cumulative', 'certificate_background', 'certificate_layout'
             ];
 
             $data = [];
@@ -110,7 +112,7 @@ class SettingsController extends Controller
             \Log::info('Filtered data before json encode', $data);
 
             // Handle arrays to JSON for DB query builder
-            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts'] as $jsonField) {
+            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts', 'facture_layout', 'certificate_layout'] as $jsonField) {
                 if (isset($data[$jsonField])) {
                     if (is_array($data[$jsonField]) || is_object($data[$jsonField])) {
                         $data[$jsonField] = json_encode($data[$jsonField]);
@@ -125,7 +127,7 @@ class SettingsController extends Controller
             }
 
             // Cast booleans
-            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email', 'show_ddr', 'case_autosuggest'] as $boolField) {
+            foreach (['email_notifications', 'sms_reminders', 'allow_same_day_appointments', 'two_factor_enabled', 'daily_summary_email', 'show_ddr', 'case_autosuggest', 'case_description_cumulative'] as $boolField) {
                 if (isset($data[$boolField])) {
                     $data[$boolField] = $data[$boolField] ? 1 : 0;
                 }
@@ -378,6 +380,114 @@ class SettingsController extends Controller
     public function serveOrdonnanceBackground($filename)
     {
         $path = storage_path('app/public/ordonnances/' . $filename);
+
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        $file = file_get_contents($path);
+        $type = mime_content_type($path);
+
+        return response($file)
+            ->header('Content-Type', $type)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Origin, Content-Type, Accept, Authorization');
+    }
+
+    // Upload Facture Background
+    public function uploadFactureBackground(Request $request)
+    {
+        try {
+            $userId = auth()->id() ?? $request->user_id;
+            if (!$userId) {
+                return response()->json(['success' => false, 'message' => 'Non authentifié'], 401);
+            }
+
+            if (!$request->hasFile('background')) {
+                return response()->json(['success' => false, 'message' => 'Aucun fichier reçu'], 400);
+            }
+
+            $file = $request->file('background');
+            $filename = 'facture_bg_' . $userId . '_' . time() . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('factures', $filename, 'public');
+
+            // Save to settings
+            $url = "/storage/factures/{$filename}";
+            DB::table('user_settings')->updateOrInsert(
+                ['user_id' => $userId],
+                ['facture_background' => $url, 'updated_at' => now()]
+            );
+
+            // Return the PROXY URL instead of direct storage link to avoid CORS
+            return response()->json([
+                'success' => true,
+                'url' => url('/api/settings/facture-background/' . $filename)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Serve facture background image with CORS headers
+     */
+    public function serveFactureBackground($filename)
+    {
+        $path = storage_path('app/public/factures/' . $filename);
+
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        $file = file_get_contents($path);
+        $type = mime_content_type($path);
+
+        return response($file)
+            ->header('Content-Type', $type)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Origin, Content-Type, Accept, Authorization');
+    }
+
+    // Upload Certificate Background
+    public function uploadCertificateBackground(Request $request)
+    {
+        try {
+            $userId = auth()->id() ?? $request->user_id;
+            if (!$userId) {
+                return response()->json(['success' => false, 'message' => 'Non authentifié'], 401);
+            }
+
+            if (!$request->hasFile('background')) {
+                return response()->json(['success' => false, 'message' => 'Aucun fichier reçu'], 400);
+            }
+
+            $file = $request->file('background');
+            $filename = 'certificate_bg_' . $userId . '_' . time() . '.' . $file->getClientOriginalExtension();
+            $path = $file->storeAs('certificates', $filename, 'public');
+
+            $url = "/storage/certificates/{$filename}";
+            DB::table('user_settings')->updateOrInsert(
+                ['user_id' => $userId],
+                ['certificate_background' => $url, 'updated_at' => now()]
+            );
+
+            return response()->json([
+                'success' => true,
+                'url' => url('/api/settings/certificate-background/' . $filename)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Serve certificate background image with CORS headers
+     */
+    public function serveCertificateBackground($filename)
+    {
+        $path = storage_path('app/public/certificates/' . $filename);
 
         if (!file_exists($path)) {
             abort(404);

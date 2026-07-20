@@ -73,6 +73,7 @@ class PatientController extends Controller
         'chronic_conditions' => 'nullable|string',
         'notes' => 'nullable|string',
         'blood_type' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
+        'photo_base64' => 'nullable|string',
     ]);
 
     // Normalize values for DB
@@ -121,6 +122,7 @@ class PatientController extends Controller
             'chronic_conditions' => 'nullable|string',
             'notes' => 'nullable|string',
             'blood_type' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
+            'photo_base64' => 'nullable|string',
         ]);
 
         $validated['gender'] = ucfirst(strtolower($validated['gender']));

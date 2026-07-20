@@ -686,7 +686,7 @@ if (!empty($caseData)) {
             'mutuelle' => strtoupper($patient->mutuelle ?? '') === 'ONE',
             'payement' => $payment,
             'credit' => $credit,
-            'notes' => $validated['notes'],
+            'notes' => $validated['notes'] ?? null,
         ]);
 
         // Clear statistics cache
@@ -1055,6 +1055,42 @@ public function countAppointmentsByDate($date)
             'message' => 'Erreur lors du calcul du nombre de rendez-vous',
             'error' => $e->getMessage(),
         ], 500);
+    }
+}
+
+/**
+ * GET /api/patients/{patientId}/case-history
+ * All non-empty case descriptions of the patient, across every appointment,
+ * each with its appointment date — used for the cumulative journal view.
+ */
+public function getCaseHistoryByPatient($patientId)
+{
+    try {
+        if (!is_numeric($patientId)) {
+            return response()->json(['success' => false, 'message' => 'Invalid patient ID'], 400);
+        }
+
+        $entries = Appointment::where('ID_patient', $patientId)
+            ->whereHas('caseDescription', function ($q) {
+                $q->whereNotNull('case_description')->where('case_description', '!=', '');
+            })
+            ->with('caseDescription')
+            ->orderBy('appointment_date', 'desc')
+            ->get()
+            ->map(function ($appt) {
+                return [
+                    'ID_RV' => $appt->ID_RV,
+                    'date' => Carbon::parse($appt->appointment_date)->format('d/m/Y'),
+                    'case_description' => trim((string) optional($appt->caseDescription)->case_description),
+                ];
+            })
+            ->filter(fn ($e) => $e['case_description'] !== '')
+            ->values();
+
+        return response()->json(['success' => true, 'data' => $entries]);
+    } catch (\Exception $e) {
+        Log::error("getCaseHistoryByPatient error: " . $e->getMessage());
+        return response()->json(['success' => false, 'message' => 'Server error', 'error' => $e->getMessage()], 500);
     }
 }
 

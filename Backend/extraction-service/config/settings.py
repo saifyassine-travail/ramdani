@@ -2,7 +2,7 @@
 Minimal Django settings for the CIN extraction microservice.
 
 This is a stateless service: it accepts an uploaded CIN image, extracts
-structured fields via the Gemini vision API, and returns a cropped face.
+structured fields via local OCR (Tesseract), and returns a cropped face.
 It has no models and does not require a database at runtime (a sqlite
 config is provided only so `manage.py test` can bootstrap a test DB).
 """
@@ -86,7 +86,3 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
 }
-
-# --- Gemini vision configuration --------------------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")

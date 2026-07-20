@@ -67,11 +67,11 @@ class PatientDocumentController extends Controller
         }
     }
 
-    public function download($documentId)
+    public function download($patientId, $documentId)
     {
         try {
             $document = PatientDocument::findOrFail($documentId);
-            
+
             if (!Storage::exists($document->file_path)) {
                 return response()->json([
                     'success' => false,
@@ -89,11 +89,11 @@ class PatientDocumentController extends Controller
         }
     }
 
-    public function destroy($documentId)
+    public function destroy($patientId, $documentId)
     {
         try {
             $document = PatientDocument::findOrFail($documentId);
-            
+
             // Delete file from storage
             if (Storage::exists($document->file_path)) {
                 Storage::delete($document->file_path);
