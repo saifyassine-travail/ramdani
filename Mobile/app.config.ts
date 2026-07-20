@@ -1,0 +1,51 @@
+import type { ExpoConfig } from "expo/config";
+
+const config: ExpoConfig = {
+  name: "MediAssist",
+  slug: "mediassist-mobile",
+  version: "1.0.0",
+  orientation: "portrait",
+  icon: "./assets/images/icon.png",
+  scheme: "mediassist",
+  userInterfaceStyle: "automatic",
+  newArchEnabled: true,
+  ios: {
+    supportsTablet: true,
+  },
+  android: {
+    adaptiveIcon: {
+      foregroundImage: "./assets/images/adaptive-icon.png",
+      backgroundColor: "#ffffff",
+    },
+  },
+  web: {
+    bundler: "metro",
+    output: "static",
+    favicon: "./assets/images/favicon.png",
+  },
+  plugins: [
+    "expo-router",
+    "expo-asset",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/images/splash-icon.png",
+        imageWidth: 200,
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+      },
+    ],
+    "expo-secure-store",
+    [
+      "expo-image-picker",
+      {
+        cameraPermission: "MediAssist utilise l'appareil photo pour scanner les cartes CIN des patients.",
+      },
+    ],
+  ],
+  experiments: {
+    typedRoutes: true,
+  },
+};
+
+export default config;
