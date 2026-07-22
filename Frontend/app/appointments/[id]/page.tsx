@@ -391,6 +391,10 @@ export default function AppointmentDetailsPage() {
 
   const [selectedActs, setSelectedActs] = useState<string[]>([])
   const [totalActsPrice, setTotalActsPrice] = useState(0)
+  // Editable paid amount (kept as a string for the input). May be LESS than the
+  // acts total to record a partial payment.
+  const [payment, setPayment] = useState<string>("")
+  const [savingPayment, setSavingPayment] = useState(false)
 
   useEffect(() => {
     // If appointment type is "Contrôle", ensure "Consultation" is not selected 
@@ -410,6 +414,29 @@ export default function AppointmentDetailsPage() {
     setTotalActsPrice(total)
   }, [selectedActs, appointment?.type])
 
+  // Persist the selected acts + the paid amount. Replaces the old "Appliquer"
+  // button: it's called immediately when an act is toggled and when the doctor
+  // finishes editing the payment field, so no explicit apply step is needed.
+  const persistActsAndPayment = useCallback(
+    async (acts: string[], paymentValue: number) => {
+      try {
+        setSavingPayment(true)
+        await apiClient.updatePrice(Number(appointmentId), paymentValue, acts)
+        // Keep the local appointment in sync so the facture reflects the amount.
+        setAppointment((prev) => (prev ? { ...prev, payement: paymentValue } : prev))
+      } catch (e) {
+        toast({
+          title: "Erreur",
+          description: "Impossible d'enregistrer le paiement",
+          variant: "destructive",
+        })
+      } finally {
+        setSavingPayment(false)
+      }
+    },
+    [appointmentId, toast],
+  )
+
   const handleActToggle = (actName: string) => {
     if (appointment?.type === "Contrôle" && actName === "Consultation") {
       toast({
@@ -420,30 +447,25 @@ export default function AppointmentDetailsPage() {
       return
     }
 
-    setSelectedActs((prev) =>
-      prev.includes(actName) ? prev.filter((a) => a !== actName) : [...prev, actName]
-    )
+    const newActs = selectedActs.includes(actName)
+      ? selectedActs.filter((a) => a !== actName)
+      : [...selectedActs, actName]
+    const newTotal = newActs.reduce((sum, name) => {
+      const act = medicalActs.find((a) => a.name === name)
+      return sum + (act ? act.price : 0)
+    }, 0)
+
+    setSelectedActs(newActs)
+    // Default the paid amount to the new acts total; the doctor can still lower it.
+    setPayment(String(newTotal))
+    persistActsAndPayment(newActs, newTotal)
   }
 
-  const handleUpdatePrice = async () => {
-    try {
-      setSaving(true)
-      const response = await apiClient.updatePrice(Number(appointmentId), totalActsPrice, selectedActs)
-      if (response.success) {
-        toast({
-          title: "Prix mis à jour",
-          description: `Le prix de la consultation a été mis à jour à ${totalActsPrice} DH`,
-        })
-      }
-    } catch (e) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de mettre à jour le prix",
-        variant: "destructive"
-      })
-    } finally {
-      setSaving(false)
-    }
+  // Save the (possibly partial) paid amount when the doctor leaves the field.
+  const handlePaymentBlur = () => {
+    const value = payment.trim() === "" ? 0 : Number(payment)
+    if (isNaN(value) || value < 0) return
+    persistActsAndPayment(selectedActs, value)
   }
 
   const handlePrintOrdonnance = () => {
@@ -822,6 +844,8 @@ export default function AppointmentDetailsPage() {
         if (appt.medical_acts && Array.isArray(appt.medical_acts)) {
           setSelectedActs(appt.medical_acts)
         }
+        // Show the previously recorded paid amount (may be a partial payment).
+        setPayment(appt?.payement != null ? String(appt.payement) : "")
         setAvailableMedicaments(available_medicaments || [])
         setAvailableAnalyses(available_analyses || [])
 
@@ -1292,8 +1316,8 @@ export default function AppointmentDetailsPage() {
           <p className="mt-1 text-sm text-gray-500">Détails du Rendez-vous</p>
         </div>
 
-        {/* Medical Acts Checklist Section */}
-        <div className="mt-4 md:mt-0 md:ml-auto mr-6">
+        {/* Medical Acts + Payment Section */}
+        <div className="mt-4 md:mt-0 md:ml-auto mr-6 flex items-center gap-2">
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="border-pink-200 text-pink-700 hover:bg-pink-50 hover:text-pink-800 gap-2">
@@ -1340,25 +1364,30 @@ export default function AppointmentDetailsPage() {
                   </div>
                 ))}
               </div>
-              <div className="p-3 border-t bg-gray-50 flex justify-end">
-                <Button
-                  size="sm"
-                  onClick={handleUpdatePrice}
-                  className="bg-pink-600 hover:bg-pink-700 text-white w-full"
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Enregistrement...
-                    </>
-                  ) : (
-                    `Appliquer (${totalActsPrice} DH)`
-                  )}
-                </Button>
+              <div className="p-3 border-t bg-gray-50 flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-600">Total des actes</span>
+                <span className="text-sm font-bold text-pink-700">{totalActsPrice} DH</span>
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Editable paid amount — can be LESS than the acts total (partial payment).
+              Saves automatically on blur; no "Appliquer" button needed. */}
+          <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+            <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Payé</span>
+            <Input
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={payment}
+              onChange={(e) => setPayment(e.target.value)}
+              onBlur={handlePaymentBlur}
+              placeholder="0"
+              className="h-7 w-20 text-right border-emerald-200 bg-white text-emerald-800 font-semibold focus-visible:ring-emerald-500"
+            />
+            <span className="text-xs text-emerald-600">DH</span>
+            {savingPayment && <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />}
+          </div>
 
           <Button
             variant="outline"

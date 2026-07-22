@@ -39,7 +39,9 @@ class StatisticsController extends Controller
                     : "DATE(appointment_date)";
 
                 $dailyData = Appointment::whereBetween('appointment_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
-                    ->selectRaw("{$dailyDateExpr} as date, COUNT(*) as count, SUM(payement) as revenue")
+                    // Revenue counts ONLY completed ('Terminé') appointments — an unfinished
+                    // appointment hasn't produced money yet. Count still spans all statuses.
+                    ->selectRaw("{$dailyDateExpr} as date, COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue")
                     ->groupBy('appointment_date')
                     ->orderBy('appointment_date', 'ASC')
                     ->get()
@@ -69,8 +71,8 @@ class StatisticsController extends Controller
                 // Monthly (Last 12 Months) - Single Query
                 $dbDriver = config('database.default');
                 $monthlySelect = $dbDriver === 'pgsql'
-                    ? 'EXTRACT(YEAR FROM appointment_date) as year, EXTRACT(MONTH FROM appointment_date) as month, COUNT(*) as count, SUM(payement) as revenue'
-                    : 'YEAR(appointment_date) as year, MONTH(appointment_date) as month, COUNT(*) as count, SUM(payement) as revenue';
+                    ? "EXTRACT(YEAR FROM appointment_date) as year, EXTRACT(MONTH FROM appointment_date) as month, COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue"
+                    : "YEAR(appointment_date) as year, MONTH(appointment_date) as month, COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue";
 
                 $monthlyData = Appointment::selectRaw($monthlySelect)
                     ->where('appointment_date', '>=', Carbon::now()->subMonths(11)->startOfMonth())
@@ -254,7 +256,7 @@ class StatisticsController extends Controller
                     
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $m)
-                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue, SUM(credit) as credit')
+                        ->selectRaw("COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
                         ->first();
 
                     $labels[] = $monthLabel;
@@ -275,7 +277,7 @@ class StatisticsController extends Controller
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $month)
                         ->whereDay('appointment_date', $d)
-                        ->selectRaw('COUNT(*) as count, SUM(payement) as revenue, SUM(credit) as credit')
+                        ->selectRaw("COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
                         ->first();
 
                     $labels[] = $dayLabel;
