@@ -128,15 +128,21 @@ Route::prefix('certificates')->group(function () {
 });
 
 // SETTINGS
+// Document-background images are served publicly (no auth): they load as <img>
+// sources in prescriptions/invoices/certificates, and a browser image request can't
+// carry the bearer token. The serve handlers stream a single file by name and set
+// CORS headers (needed for PDF export). Uploads and settings stay authenticated.
+Route::prefix('settings')->group(function () {
+    Route::get('/ordonnance-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveOrdonnanceBackground']);
+    Route::get('/facture-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveFactureBackground']);
+    Route::get('/certificate-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveCertificateBackground']);
+});
 Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [App\Http\Controllers\SettingsController::class, 'getUserSettings']);
     Route::put('/', [App\Http\Controllers\SettingsController::class, 'updateUserSettings']);
     Route::post('/upload-background', [App\Http\Controllers\SettingsController::class, 'uploadOrdonnanceBackground']);
-    Route::get('/ordonnance-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveOrdonnanceBackground']);
     Route::post('/upload-facture-background', [App\Http\Controllers\SettingsController::class, 'uploadFactureBackground']);
-    Route::get('/facture-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveFactureBackground']);
     Route::post('/upload-certificate-background', [App\Http\Controllers\SettingsController::class, 'uploadCertificateBackground']);
-    Route::get('/certificate-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveCertificateBackground']);
 });
 
 // USER MANAGEMENT (Admin only)

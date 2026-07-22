@@ -27,7 +27,7 @@ import {
   Check,
 } from "lucide-react"
 import { cn } from "../../../../lib/utils"
-import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../../lib/api"
+import { apiClient, resolveDocumentBackgroundUrl, type Appointment, type Medicament, type Analysis } from "../../../../lib/api"
 import OrdonnancePrintPreview from "../../../../components/ordonnance-print-preview"
 
 interface MedicationForm {
@@ -203,7 +203,7 @@ export default function AppointmentDetailsPage() {
         if (response.success) {
           const settingsData = response.data.data ? response.data.data : response.data;
           setOrdonnanceConfig({
-            background: settingsData.ordonnance_background || null,
+            background: resolveDocumentBackgroundUrl(settingsData.ordonnance_background),
             layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
               : settingsData.ordonnance_layout || null

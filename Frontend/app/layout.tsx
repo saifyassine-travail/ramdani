@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   title: "MediAssist - Gestion Médicale",
   description: "Système de gestion médicale",
   generator: "v0.app",
+  icons: { icon: "/placeholder-logo.svg" },
 }
 
 export default function RootLayout({

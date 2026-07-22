@@ -178,12 +178,12 @@ class PatientController extends Controller
         $patients = Patient::query()
             ->where('archived', $showArchived)
             ->where(function ($query) use ($term) {
-                $query->where('first_name', 'LIKE', "%{$term}%")
-                    ->orWhere('last_name', 'LIKE', "%{$term}%")
-                    ->orWhere('CIN', 'LIKE', "%{$term}%")
-                    ->orWhere('phone_num', 'LIKE', "%{$term}%")
-                    ->orWhere('email', 'LIKE', "%{$term}%")
-                    ->orWhere('notes', 'LIKE', "%{$term}%");
+                $query->where('first_name', 'ILIKE', "%{$term}%")
+                    ->orWhere('last_name', 'ILIKE', "%{$term}%")
+                    ->orWhere('CIN', 'ILIKE', "%{$term}%")
+                    ->orWhere('phone_num', 'ILIKE', "%{$term}%")
+                    ->orWhere('email', 'ILIKE', "%{$term}%")
+                    ->orWhere('notes', 'ILIKE', "%{$term}%");
             })
             ->with(['lastAppointment', 'nextAppointment'])
             ->select([
@@ -203,7 +203,6 @@ class PatientController extends Controller
                 'notes',
             ])
             ->orderBy('first_name')
-            ->limit(15)
             ->get()
             ->map(function ($patient) {
                 return [
@@ -245,12 +244,11 @@ class PatientController extends Controller
             return response()->json([]);
         }
 
-        $patients = Patient::where('first_name', 'LIKE', "%{$term}%")
-            ->orWhere('last_name', 'LIKE', "%{$term}%")
-            ->orWhere('CIN', 'LIKE', "%{$term}%")
+        $patients = Patient::where('first_name', 'ILIKE', "%{$term}%")
+            ->orWhere('last_name', 'ILIKE', "%{$term}%")
+            ->orWhere('CIN', 'ILIKE', "%{$term}%")
             ->where('archived', false)
             ->select('ID_patient as id', 'name')
-            ->limit(10)
             ->get();
 
         return response()->json($patients);

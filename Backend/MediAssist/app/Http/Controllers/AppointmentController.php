@@ -538,8 +538,9 @@ if (!empty($caseData)) {
             // Only the columns the prescription UI actually needs — avoids shipping
             // ~5000 rows × all columns (incl. long composition/description text) per open.
             $availableMedicaments = Medicament::where('archived', false)
-                ->orderBy('name')
-                ->get(['ID_Medicament', 'name', 'type', 'type_category', 'is_favorite']);
+                ->selectRaw('DISTINCT ON (LOWER(name)) "ID_Medicament", name, type, type_category, is_favorite')
+                ->orderByRaw('LOWER(name)')
+                ->get();
             $availableAnalyses = Analysis::all();
 
             return response()->json([

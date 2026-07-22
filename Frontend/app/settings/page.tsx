@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { apiClient } from "@/lib/api"
+import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2, Users, Settings as SettingsIcon, Save, Plus, Trash2, Edit, Cloud, Download, Lock, RefreshCw, AlertCircle, CheckCircle2, FileText, Stethoscope, History, Bell, Wallet, CalendarClock, Activity, Monitor, Shield, Receipt, Building2, ScrollText } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog"
@@ -166,32 +166,11 @@ export default function SettingsPage() {
           }
         }
 
-        // Fix background URL (ensure use of proxy link for CORS)
-        const backendBase = "http://127.0.0.1:8000"
-        if (parsedData.ordonnance_background) {
-          if (parsedData.ordonnance_background.includes('/storage/ordonnances/')) {
-            const filename = parsedData.ordonnance_background.split('/').pop()
-            parsedData.ordonnance_background = `${backendBase}/api/settings/ordonnance-background/${filename}`
-          } else if (!parsedData.ordonnance_background.startsWith('http')) {
-            parsedData.ordonnance_background = `${backendBase}${parsedData.ordonnance_background}`
-          }
-        }
-        if (parsedData.facture_background) {
-          if (parsedData.facture_background.includes('/storage/factures/')) {
-            const filename = parsedData.facture_background.split('/').pop()
-            parsedData.facture_background = `${backendBase}/api/settings/facture-background/${filename}`
-          } else if (!parsedData.facture_background.startsWith('http')) {
-            parsedData.facture_background = `${backendBase}${parsedData.facture_background}`
-          }
-        }
-        if (parsedData.certificate_background) {
-          if (parsedData.certificate_background.includes('/storage/certificates/')) {
-            const filename = parsedData.certificate_background.split('/').pop()
-            parsedData.certificate_background = `${backendBase}/api/settings/certificate-background/${filename}`
-          } else if (!parsedData.certificate_background.startsWith('http')) {
-            parsedData.certificate_background = `${backendBase}${parsedData.certificate_background}`
-          }
-        }
+        // Resolve background image URLs to the configured backend host so they load
+        // on every device (not just the server machine). See resolveDocumentBackgroundUrl.
+        parsedData.ordonnance_background = resolveDocumentBackgroundUrl(parsedData.ordonnance_background)
+        parsedData.facture_background = resolveDocumentBackgroundUrl(parsedData.facture_background)
+        parsedData.certificate_background = resolveDocumentBackgroundUrl(parsedData.certificate_background)
 
         localStorage.setItem("app_settings", JSON.stringify(parsedData))
         setSettings(parsedData)

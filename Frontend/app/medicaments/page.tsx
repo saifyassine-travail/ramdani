@@ -30,9 +30,13 @@ export default function MedicamentsPage() {
   const [formData, setFormData] = useState({
     name: "",
     price: "",
-    description: "",
+    prix_hospitalier: "",
     dosage: "",
     composition: "",
+    type: "",
+    type_category: "",
+    laboratory: "",
+    statut: "",
   })
 
   const {
@@ -99,20 +103,29 @@ export default function MedicamentsPage() {
     setSearchQuery(query)
   }, [])
 
+  const emptyForm = {
+    name: "", price: "", prix_hospitalier: "", dosage: "", composition: "",
+    type: "", type_category: "", laboratory: "", statut: "",
+  }
+
   const handleAddMedicament = useCallback(() => {
     setEditingMedicament(null)
-    setFormData({ name: "", price: "", description: "", dosage: "", composition: "" })
+    setFormData(emptyForm)
     setIsModalOpen(true)
   }, [])
 
   const handleEditMedicament = useCallback((medicament: Medicament) => {
     setEditingMedicament(medicament)
     setFormData({
-      name: medicament.name,
+      name: medicament.name || "",
       price: medicament.price != null ? medicament.price.toString() : "",
-      description: medicament.description || "",
+      prix_hospitalier: medicament.prix_hospitalier != null ? medicament.prix_hospitalier.toString() : "",
       dosage: medicament.dosage || "",
       composition: medicament.composition || "",
+      type: medicament.type || "",
+      type_category: medicament.type_category || "",
+      laboratory: medicament.laboratory || "",
+      statut: medicament.statut || "",
     })
     setIsModalOpen(true)
   }, [])
@@ -123,12 +136,17 @@ export default function MedicamentsPage() {
       setSubmitting(true)
 
       try {
+        const parseOptionalNumber = (v: string) => v.trim() !== "" ? Number.parseFloat(v) : null
         const medicamentData = {
           name: formData.name,
-          price: Number.parseFloat(formData.price),
-          description: formData.description,
-          dosage: formData.dosage,
-          composition: formData.composition,
+          price: parseOptionalNumber(formData.price),
+          prix_hospitalier: parseOptionalNumber(formData.prix_hospitalier),
+          dosage: formData.dosage || undefined,
+          composition: formData.composition || undefined,
+          type: formData.type || undefined,
+          type_category: formData.type_category || undefined,
+          laboratory: formData.laboratory || undefined,
+          statut: formData.statut || undefined,
         }
 
         let result
@@ -140,7 +158,7 @@ export default function MedicamentsPage() {
 
         if (result.success) {
           setIsModalOpen(false)
-          setFormData({ name: "", price: "", description: "", dosage: "", composition: "" })
+          setFormData(emptyForm)
         } else {
           console.error("Failed to save medicament:", result.message)
         }
@@ -406,13 +424,14 @@ export default function MedicamentsPage() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingMedicament ? "Modifier un Médicament" : "Ajouter un Médicament"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Name */}
             <div>
-              <Label htmlFor="name">Nom*</Label>
+              <Label htmlFor="name">Nom *</Label>
               <Input
                 id="name"
                 value={formData.name}
@@ -421,28 +440,80 @@ export default function MedicamentsPage() {
                 required
               />
             </div>
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                placeholder="Description du médicament"
-                rows={3}
-              />
+
+            {/* Prix PPV + Prix hospitalier */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="price">Prix PPV (DH)</Label>
+                <Input
+                  id="price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.price}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, price: e.target.value }))}
+                  placeholder="—"
+                />
+              </div>
+              <div>
+                <Label htmlFor="prix_hospitalier">Prix hospitalier (DH)</Label>
+                <Input
+                  id="prix_hospitalier"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.prix_hospitalier}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, prix_hospitalier: e.target.value }))}
+                  placeholder="—"
+                />
+              </div>
             </div>
-            <div>
-              <Label htmlFor="price">Prix*</Label>
-              <Input
-                id="price"
-                type="number"
-                step="0.01"
-                value={formData.price}
-                onChange={(e) => setFormData((prev) => ({ ...prev, price: e.target.value }))}
-                placeholder="Prix en dirhams"
-                required
-              />
+
+            {/* Forme + Catégorie */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="type">Forme</Label>
+                <Input
+                  id="type"
+                  value={formData.type}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, type: e.target.value }))}
+                  placeholder="Ex: Comprimé, Sirop"
+                />
+              </div>
+              <div>
+                <Label htmlFor="type_category">Catégorie</Label>
+                <Input
+                  id="type_category"
+                  value={formData.type_category}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, type_category: e.target.value }))}
+                  placeholder="Ex: Anti-inflammatoire"
+                />
+              </div>
             </div>
+
+            {/* Laboratoire + Statut */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="laboratory">Laboratoire</Label>
+                <Input
+                  id="laboratory"
+                  value={formData.laboratory}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, laboratory: e.target.value }))}
+                  placeholder="Ex: Pfizer, Sanofi"
+                />
+              </div>
+              <div>
+                <Label htmlFor="statut">Statut</Label>
+                <Input
+                  id="statut"
+                  value={formData.statut}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, statut: e.target.value }))}
+                  placeholder="Ex: Commercialisé"
+                />
+              </div>
+            </div>
+
+            {/* Dosage */}
             <div>
               <Label htmlFor="dosage">Dosage</Label>
               <Input
@@ -452,6 +523,8 @@ export default function MedicamentsPage() {
                 placeholder="Ex: 500mg, 10mg/ml"
               />
             </div>
+
+            {/* Composition */}
             <div>
               <Label htmlFor="composition">Composition</Label>
               <Textarea
@@ -462,7 +535,8 @@ export default function MedicamentsPage() {
                 rows={2}
               />
             </div>
-            <div className="flex justify-end space-x-3 pt-4">
+
+            <div className="flex justify-end space-x-3 pt-2">
               <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)} disabled={submitting}>
                 Annuler
               </Button>

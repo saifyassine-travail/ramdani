@@ -72,3 +72,4 @@ venv/
 **/.next/
 **/.git
 **/.gitignore
+Frontend/nextjs.log

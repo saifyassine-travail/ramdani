@@ -119,10 +119,12 @@ class DatabaseExportService
         $stream  = fopen('php://temp', 'r+');
 
         fwrite($stream, "\xEF\xBB\xBF"); // BOM so Excel reads UTF-8 correctly
-        fputcsv($stream, $columns, ',', '"', '\\');
+        // Semicolon delimiter: French/European Excel uses ';' as its list
+        // separator, so double-clicking opens the columns correctly with no import step.
+        fputcsv($stream, $columns, ';', '"', '\\');
 
         foreach (DB::table($table)->cursor() as $row) {
-            fputcsv($stream, $this->rowValues((array) $row, $columns), ',', '"', '\\');
+            fputcsv($stream, $this->rowValues((array) $row, $columns), ';', '"', '\\');
         }
 
         rewind($stream);

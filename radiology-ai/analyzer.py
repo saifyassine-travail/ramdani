@@ -184,8 +184,15 @@ class RadiologyAnalyzer:
         print(f"[Analyzer] Device: {self.device}")
 
         # ── TorchXRayVision ──────────────────────────────────────────────
+        # PyTorch 2.6+ defaults weights_only=True. torchxrayvision's internal
+        # torch.load call uses the old pickle format — patch it temporarily.
         print("[Analyzer] Loading TorchXRayVision DenseNet-121…")
-        self.xrv_model = xrv.models.DenseNet(weights="densenet121-res224-all")
+        _orig_load = torch.load
+        torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, "weights_only": False})
+        try:
+            self.xrv_model = xrv.models.DenseNet(weights="densenet121-res224-all")
+        finally:
+            torch.load = _orig_load
         self.xrv_model.to(self.device).eval()
         self.gradcam = GradCAM(self.xrv_model)
         print("[Analyzer] TorchXRayVision ready.")

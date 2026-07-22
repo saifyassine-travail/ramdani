@@ -27,21 +27,8 @@ class MedicamentController extends Controller
                   ->orWhere('type', 'ILIKE', "%{$term}%")
                   ->orWhere('type_category', 'ILIKE', "%{$term}%");
         })
-        ->select([
-            'ID_Medicament as id',
-            'name',
-            'price',
-            'prix_hospitalier',
-            'dosage',
-            'composition',
-            'Classe_thérapeutique',
-            'Code_ATCv',
-            'type',
-            'type_category',
-            'laboratory',
-            'statut',
-        ])
-        ->orderBy('name')
+        ->selectRaw('DISTINCT ON (LOWER(name)) "ID_Medicament" as id, name, price, prix_hospitalier, dosage, composition, "Classe_thérapeutique", "Code_ATCv", type, type_category, laboratory, statut')
+        ->orderByRaw('LOWER(name)')
         ->limit(15)
         ->get();
 
@@ -94,11 +81,17 @@ class MedicamentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'required|string',
-            'price' => 'required|numeric',
-            'dosage' => 'nullable|string|max:255',
-            'composition' => 'nullable|string',
+            'name'                  => 'required|string|max:255',
+            'price'                 => 'nullable|numeric',
+            'prix_hospitalier'      => 'nullable|numeric',
+            'dosage'                => 'nullable|string|max:255',
+            'composition'           => 'nullable|string',
+            'type'                  => 'nullable|string|max:255',
+            'type_category'         => 'nullable|string|max:255',
+            'laboratory'            => 'nullable|string|max:255',
+            'statut'                => 'nullable|string|max:255',
+            'Classe_thérapeutique'  => 'nullable|string',
+            'Code_ATCv'             => 'nullable|string|max:255',
         ]);
 
         $validated['archived'] = 0;
@@ -116,11 +109,17 @@ class MedicamentController extends Controller
     public function update(Request $request, $id)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'price' => 'required|numeric',
-            'dosage' => 'nullable|string|max:255',
-            'composition' => 'nullable|string',
+            'name'                  => 'required|string|max:255',
+            'price'                 => 'nullable|numeric',
+            'prix_hospitalier'      => 'nullable|numeric',
+            'dosage'                => 'nullable|string|max:255',
+            'composition'           => 'nullable|string',
+            'type'                  => 'nullable|string|max:255',
+            'type_category'         => 'nullable|string|max:255',
+            'laboratory'            => 'nullable|string|max:255',
+            'statut'                => 'nullable|string|max:255',
+            'Classe_thérapeutique'  => 'nullable|string',
+            'Code_ATCv'             => 'nullable|string|max:255',
         ]);
 
         $medicament = Medicament::findOrFail($id);

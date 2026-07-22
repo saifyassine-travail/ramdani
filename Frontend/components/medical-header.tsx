@@ -1049,7 +1049,7 @@ const MedicalHeader = () => {
                   <div className="text-blue-600 text-xs font-medium">{user?.role || "Médecin"}</div>
                 </div>
                 <Avatar className="h-9 w-9 border-2 border-white shadow-sm ring-1 ring-gray-200">
-                  <AvatarImage src={user?.avatar || "/placeholder-user.jpg"} />
+                  <AvatarImage src={user?.avatar || undefined} />
                   <AvatarFallback className="bg-[#007090] text-white">
                     <User className="h-4 w-4" />
                   </AvatarFallback>

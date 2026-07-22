@@ -13,7 +13,7 @@ PYTHON := $(VENV)/bin/python
 SUBSET ?=
 SUBSET_FLAG := $(if $(SUBSET),--subset $(SUBSET),)
 
-.PHONY: help setup totalseg-infer totalseg-eval train-kits train-lidc train-rsna clean
+.PHONY: help setup ramdisk totalseg-infer totalseg-eval train-kits train-lidc train-rsna clean
 
 help:
 	@echo "Targets:"
@@ -28,9 +28,12 @@ help:
 setup:
 	$(PY) -m venv $(VENV)
 	$(PIP) install --upgrade pip
-	$(PIP) install torch==2.3.1 torchvision==0.18.1 --index-url https://download.pytorch.org/whl/cpu
+	$(PIP) install "torch==2.12.1+cpu" "torchvision==0.27.1+cpu" --index-url https://download.pytorch.org/whl/cpu
 	$(PIP) install -r requirements.txt
 	@echo "Done. Now edit configs/paths.yaml with your dataset paths."
+
+ramdisk:
+	bash setup-ramdisk.sh --copy
 
 totalseg-infer:
 	$(PYTHON) -m infer.totalseg_infer --config configs/totalseg_infer.yaml

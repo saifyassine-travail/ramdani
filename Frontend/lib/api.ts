@@ -2,6 +2,45 @@ import { getAuthToken } from "@/lib/auth-api"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.1.3:8000/api"
 
+// Backend origin (API base without the trailing "/api"). Document background
+// images live outside the JSON API, under the backend's serve route, so we build
+// their URLs from the SAME host the API uses. That host is reachable from every
+// device the app already works on; a hardcoded 127.0.0.1 only resolves on the
+// server machine, so backgrounds were blank on every other device.
+export const BACKEND_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, "")
+
+// Map a stored document-background value to an absolute, PUBLIC serve-route URL
+// that an <img> can load (no auth) on any device, with CORS headers for PDF export.
+// The DB stores "/storage/<folder>/<file>"; older code sometimes rewrote it to the
+// serve route or prefixed a hardcoded host. We normalise all of these forms.
+export function resolveDocumentBackgroundUrl(value?: string | null): string | null {
+  if (!value) return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  // Reduce to a path, dropping any (possibly wrong) host.
+  let path = trimmed
+  if (/^https?:\/\//i.test(trimmed)) {
+    try { path = new URL(trimmed).pathname } catch { path = trimmed }
+  }
+  if (!path.startsWith("/")) path = `/${path}`
+
+  // Already the serve route: just prefix the correct host.
+  if (/\/api\/settings\/(ordonnance|facture|certificate)-background\//.test(path)) {
+    return `${BACKEND_ORIGIN}${path}`
+  }
+
+  // Public storage path: map the folder to its serve-route type.
+  const m = path.match(/\/storage\/(ordonnances|factures|certificates)\/(.+)$/)
+  if (m) {
+    const type = m[1] === "ordonnances" ? "ordonnance" : m[1] === "factures" ? "facture" : "certificate"
+    return `${BACKEND_ORIGIN}/api/settings/${type}-background/${m[2]}`
+  }
+
+  // Fallback: whatever path we have, on the correct host.
+  return `${BACKEND_ORIGIN}${path}`
+}
+
 
 const requestCache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_DURATION = 30000 // 30 seconds
@@ -179,11 +218,21 @@ class ApiClient {
       })
 
       if (!response.ok) {
-        const textResponse = await response.text()
-        return {
-          success: false,
-          message: `HTTP ${response.status}: ${response.statusText}`,
-          error: textResponse,
+        try {
+          const errorData = await response.json()
+          return {
+            success: false,
+            message: errorData.message || `HTTP ${response.status}: ${response.statusText}`,
+            errors: errorData.errors,
+            error: JSON.stringify(errorData),
+          }
+        } catch {
+          const textResponse = await response.text()
+          return {
+            success: false,
+            message: `HTTP ${response.status}: ${response.statusText}`,
+            error: textResponse,
+          }
         }
       }
       const data = await response.json()
@@ -744,16 +793,20 @@ class ApiClient {
 
   async createMedicament(medicamentData: {
     name: string
-    description?: string
-    price: number
+    price?: number | null
+    prix_hospitalier?: number | null
     dosage?: string
     composition?: string
+    type?: string
+    type_category?: string
+    laboratory?: string
+    statut?: string
+    Classe_thérapeutique?: string
+    Code_ATCv?: string
   }): Promise<ApiResponse<Medicament>> {
     return this.request("/medicaments", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(medicamentData),
     })
   }
@@ -762,17 +815,21 @@ class ApiClient {
     id: number,
     medicamentData: {
       name: string
-      description?: string
-      price: number
+      price?: number | null
+      prix_hospitalier?: number | null
       dosage?: string
       composition?: string
+      type?: string
+      type_category?: string
+      laboratory?: string
+      statut?: string
+      Classe_thérapeutique?: string
+      Code_ATCv?: string
     },
   ): Promise<ApiResponse<Medicament>> {
     return this.request(`/medicaments/${id}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(medicamentData),
     })
   }
@@ -1125,7 +1182,7 @@ class ApiClient {
 
   // User management endpoints (Admin only)
   async getUsers(): Promise<ApiResponse<any>> {
-    return this.request("/users")
+    return this.request("/users", {}, true) // always skip cache — small admin list
   }
 
   async uploadOrdonnanceBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
@@ -1258,10 +1315,11 @@ class ApiClient {
 
   // ── Google Drive / Backup ──────────────────────────────────────────────────
   getGoogleOAuthUrl(userId: number): string {
-    // Pass the current frontend origin so the OAuth callback returns the browser
-    // to the same origin it started from (localhost vs 127.0.0.1 differ).
     const origin = typeof window !== "undefined" ? window.location.origin : ""
-    return `http://127.0.0.1:8000/auth/google?user_id=${userId}&origin=${encodeURIComponent(origin)}`
+    // Route through Next.js (/auth/* rewrite → 127.0.0.1:8000) so auth never
+    // depends on the 192.168.1.3:8000 portproxy.
+    const base = typeof window !== "undefined" ? window.location.origin : "http://192.168.1.3:3000"
+    return `${base}/auth/google?user_id=${userId}&origin=${encodeURIComponent(origin)}`
   }
 
   async listBackups(): Promise<ApiResponse<any>> {

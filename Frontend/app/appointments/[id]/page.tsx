@@ -43,7 +43,7 @@ import {
   Receipt,
 } from "lucide-react"
 import { cn, formatName } from "../../../lib/utils"
-import { apiClient, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
+import { apiClient, resolveDocumentBackgroundUrl, type Appointment, type Medicament, type Analysis } from "../../../lib/api"
 import OrdonnancePrintPreview from "../../../components/ordonnance-print-preview"
 import FacturePrintPreview from "../../../components/facture-print-preview"
 import { formatGlobalDate } from "../../../lib/format-date"
@@ -282,19 +282,11 @@ export default function AppointmentDetailsPage() {
                 return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
               } catch { return null }
             })(),
-            ordonnance_background: settingsData.ordonnance_background || null,
+            ordonnance_background: resolveDocumentBackgroundUrl(settingsData.ordonnance_background),
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
               : settingsData.ordonnance_layout || null,
-            facture_background: (() => {
-              const bg = settingsData.facture_background
-              if (!bg) return null
-              const backendBase = "http://127.0.0.1:8000"
-              if (bg.includes('/storage/factures/')) {
-                return `${backendBase}/api/settings/facture-background/${bg.split('/').pop()}`
-              }
-              return bg.startsWith('http') ? bg : `${backendBase}${bg}`
-            })(),
+            facture_background: resolveDocumentBackgroundUrl(settingsData.facture_background),
             facture_layout: typeof settingsData.facture_layout === 'string'
               ? JSON.parse(settingsData.facture_layout)
               : settingsData.facture_layout || null,
@@ -640,9 +632,8 @@ export default function AppointmentDetailsPage() {
   }
 
   const filteredMedicaments = useMemo(() => {
-    // Deduplicate availableMedicaments by ID_Medicament
     const uniqueMedicaments = Array.from(
-      new Map(availableMedicaments.map((m) => [m.ID_Medicament, m])).values()
+      new Map(availableMedicaments.map((m) => [m.name.toLowerCase(), m])).values()
     )
 
     let list = uniqueMedicaments

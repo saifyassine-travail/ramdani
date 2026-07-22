@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Save, Upload, Type, Heading, PenLine, ChevronUp, ChevronDown, Maximize2, Loader2 } from "lucide-react"
-import { apiClient } from "@/lib/api"
+import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 
 interface LayoutElement {
@@ -177,8 +177,7 @@ export default function CertificateLayoutEditor({ initialBackground, initialLayo
         try {
             const response = await apiClient.uploadCertificateBackground(formData)
             if (response.success && response.data?.url) {
-                const backendBase = "http://127.0.0.1:8000"
-                const fullUrl = response.data.url.startsWith('http') ? response.data.url : `${backendBase}${response.data.url}`
+                const fullUrl = resolveDocumentBackgroundUrl(response.data.url)
                 setBackground(fullUrl)
                 toast({ title: "Succès", description: "Image envoyée au serveur" })
             }

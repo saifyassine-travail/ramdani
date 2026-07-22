@@ -95,6 +95,7 @@ class BackupController extends Controller
         $allowed = [
             'http://localhost:3000', 'http://127.0.0.1:3000',
             'http://localhost:3001', 'http://127.0.0.1:3001',
+            'http://192.168.1.3:3000',
         ];
 
         if ($origin && in_array($origin, $allowed, true)) {

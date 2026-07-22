@@ -379,7 +379,9 @@ class SettingsController extends Controller
      */
     public function serveOrdonnanceBackground($filename)
     {
-        $path = storage_path('app/public/ordonnances/' . $filename);
+        // basename() strips any path segment: this route is public, so never let a
+        // crafted filename escape the ordonnances directory.
+        $path = storage_path('app/public/ordonnances/' . basename($filename));
 
         if (!file_exists($path)) {
             abort(404);
@@ -434,7 +436,7 @@ class SettingsController extends Controller
      */
     public function serveFactureBackground($filename)
     {
-        $path = storage_path('app/public/factures/' . $filename);
+        $path = storage_path('app/public/factures/' . basename($filename));
 
         if (!file_exists($path)) {
             abort(404);
@@ -487,7 +489,7 @@ class SettingsController extends Controller
      */
     public function serveCertificateBackground($filename)
     {
-        $path = storage_path('app/public/certificates/' . $filename);
+        $path = storage_path('app/public/certificates/' . basename($filename));
 
         if (!file_exists($path)) {
             abort(404);

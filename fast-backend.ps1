@@ -27,9 +27,9 @@ if (-not (Test-Path $backendWin)) {
     exit 1
 }
 
-# With WSL2 mirrored networking, WSL reaches the Windows PostgreSQL via
-# 127.0.0.1 (the source .env ships DB_HOST=localhost, which we normalize here).
-$dbHost = "127.0.0.1"
+# This machine uses WSL2 NAT networking — WSL reaches Windows PostgreSQL via the
+# default-route gateway IP, not 127.0.0.1 (which only works in mirrored mode).
+$dbHost = (wsl -d Ubuntu -- bash -c "ip route show default | grep -oP '(?<=via )\S+'").Trim()
 
 Write-Host "Syncing backend code -> WSL (~/mediassist)..." -ForegroundColor Cyan
 wsl -d Ubuntu -- bash -c "rsync -a --delete --exclude vendor --exclude node_modules --exclude .git --exclude rr --exclude 'storage/logs/*' '$src/' ~/mediassist/ && sed -i 's/^DB_HOST=.*/DB_HOST=$dbHost/' ~/mediassist/.env"

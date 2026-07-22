@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp, Receipt } from 'lucide-react'
-import { apiClient, type PatientDocument } from "@/lib/api"
+import { apiClient, resolveDocumentBackgroundUrl, type PatientDocument } from "@/lib/api"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
 import { isMinor } from "@/lib/age"
@@ -657,21 +657,8 @@ export default function PatientDetailsPage() {
     }
     if (!Array.isArray(parsed.medical_acts)) parsed.medical_acts = []
 
-    const backendBase = "http://127.0.0.1:8000"
-    if (parsed.facture_background) {
-      if (parsed.facture_background.includes("/storage/factures/")) {
-        parsed.facture_background = `${backendBase}/api/settings/facture-background/${parsed.facture_background.split("/").pop()}`
-      } else if (!parsed.facture_background.startsWith("http")) {
-        parsed.facture_background = `${backendBase}${parsed.facture_background}`
-      }
-    }
-    if (parsed.certificate_background) {
-      if (parsed.certificate_background.includes("/storage/certificates/")) {
-        parsed.certificate_background = `${backendBase}/api/settings/certificate-background/${parsed.certificate_background.split("/").pop()}`
-      } else if (!parsed.certificate_background.startsWith("http")) {
-        parsed.certificate_background = `${backendBase}${parsed.certificate_background}`
-      }
-    }
+    parsed.facture_background = resolveDocumentBackgroundUrl(parsed.facture_background)
+    parsed.certificate_background = resolveDocumentBackgroundUrl(parsed.certificate_background)
 
     setDocSettings(parsed)
     return parsed
@@ -852,7 +839,7 @@ export default function PatientDetailsPage() {
 
       // Load ordonnance settings — same as appointments page
       const settingsData = (settingsResponse as any).data?.data ?? (settingsResponse as any).data ?? {}
-      const background: string | null = settingsData.ordonnance_background || null
+      const background: string | null = resolveDocumentBackgroundUrl(settingsData.ordonnance_background)
       const layout: any = typeof settingsData.ordonnance_layout === "string"
         ? JSON.parse(settingsData.ordonnance_layout)
         : settingsData.ordonnance_layout || null
