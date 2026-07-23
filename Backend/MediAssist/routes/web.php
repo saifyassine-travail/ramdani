@@ -14,8 +14,6 @@ Route::prefix('appointments')->group(function () {
     Route::put('/{id}/details', [AppointmentController::class, 'editAppointmentDetails']);
     Route::get('/{id}/last-info', [AppointmentController::class, 'getLastAppointmentInfo']);
     Route::post('/update-price', [AppointmentController::class, 'updatePrice']);
-    Route::get('/{id}/ordonnance', [AppointmentController::class, 'generateOrdonnance']);
-    Route::get('/{id}/analysis-pdf', [AppointmentController::class, 'generateAnalysis']);
     Route::get('/{id}/edit-data', [AppointmentController::class, 'showEditData']);
     Route::get('/search-medicaments', [AppointmentController::class, 'searchMedicaments']);
     Route::get('/search-analyses', [AppointmentController::class, 'searchAnalyses']);

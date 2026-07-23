@@ -15,7 +15,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Barryvdh\DomPDF\Facade\PDF;
 
 class AppointmentController extends Controller
 {
@@ -486,45 +485,6 @@ if (!empty($caseData)) {
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * GET /api/appointments/{id}/ordonnance
-     * Returns PDF download of ordonnance (prescription).
-     */
-    public function generateOrdonnance($id)
-    {
-        $appointment = Appointment::with(['patient', 'medicaments'])->findOrFail($id);
-
-        if ($appointment->medicaments->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Aucun médicament associé',
-            ], 404);
-        }
-
-        $pdf = PDF::loadView('ordonnance', compact('appointment'));
-        // Return PDF as a download
-        return $pdf->download('ordonnance_' . $appointment->ID_RV . '.pdf');
-    }
-
-    /**
-     * GET /api/appointments/{id}/analysis-pdf
-     * Returns PDF download of analyses.
-     */
-    public function generateAnalysis($id)
-    {
-        $appointment = Appointment::with(['patient', 'analyses'])->findOrFail($id);
-
-        if ($appointment->analyses->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Aucune analyse associée',
-            ], 404);
-        }
-
-        $pdf = PDF::loadView('analyse', compact('appointment'));
-        return $pdf->download('analyse_' . $appointment->ID_RV . '.pdf');
     }
 
     /**

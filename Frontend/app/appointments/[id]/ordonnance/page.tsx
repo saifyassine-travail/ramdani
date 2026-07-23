@@ -407,17 +407,11 @@ export default function AppointmentDetailsPage() {
         setLoading(true)
         setError(null)
 
-        console.log("[v0] Fetching appointment data for ID:", appointmentId)
-
         // Fetch appointment edit data
         const response = await apiClient.getEditData(Number(appointmentId))
 
-        console.log("[v0] getEditData response:", response)
-        console.log("[v0] Full response.data structure:", JSON.stringify(response.data, null, 2))
-        console.log("[v0] response.data keys:", Object.keys(response.data || {}))
-
         if (!response.success || !response.data) {
-          throw new Error(response.message || "Failed to load appointment data")
+          throw new Error(response.message || "Impossible de charger les données du rendez-vous")
         }
 
         let appt = response.data.appointment || response.data.data?.appointment || response.data
@@ -432,14 +426,7 @@ export default function AppointmentDetailsPage() {
           response.data.availableAnalyses ||
           []
 
-        console.log("[v0] Extracted appointment:", appt)
-        console.log("[v0] Extracted medicaments:", available_medicaments)
-        console.log("[v0] Extracted analyses:", available_analyses)
-
         if (!appt || !appt.ID_RV) {
-          console.log(
-            "[v0] Appointment not found in expected structure, checking if response.data is the appointment itself",
-          )
           if (response.data.ID_RV) {
             appt = response.data
           }
@@ -493,14 +480,7 @@ export default function AppointmentDetailsPage() {
 
         // Fetch last appointment info
         try {
-          console.log("[v0] Fetching last appointment info for ID:", appointmentId)
           const lastResponse = await apiClient.getLastAppointmentInfo(Number(appointmentId))
-          console.log("[v0] Last appointment response:", lastResponse)
-          console.log("[v0] Last appointment response.data:", lastResponse.data)
-          console.log(
-            "[v0] Last appointment response.data keys:",
-            lastResponse.data ? Object.keys(lastResponse.data) : "null",
-          )
 
           if (lastResponse.success && lastResponse.data) {
             const rawData = lastResponse.data as any
@@ -544,7 +524,6 @@ export default function AppointmentDetailsPage() {
               analyses: analyses,
             }
 
-            console.log("[v0] Processed last appointment data:", lastAppointmentData)
             setLastAppointment(lastAppointmentData)
           }
         } catch (err) {
@@ -552,7 +531,7 @@ export default function AppointmentDetailsPage() {
         }
       } catch (err) {
         console.error("[v0] Error fetching appointment data:", err)
-        setError(err instanceof Error ? err.message : "Failed to load appointment data")
+        setError(err instanceof Error ? err.message : "Impossible de charger les données du rendez-vous")
       } finally {
         setLoading(false)
       }
@@ -682,16 +661,12 @@ export default function AppointmentDetailsPage() {
         analyses: analysesData,
       }
 
-      console.log("[v0] Submitting appointment details:", JSON.stringify(requestData, null, 2))
-
       // Call API to update appointment details
       const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
 
-      console.log("[v0] Update response:", response)
-
       if (!response.success) {
         console.error("[v0] Error response:", JSON.stringify(response, null, 2))
-        throw new Error(response.message || "Failed to save appointment details")
+        throw new Error(response.message || "Impossible d'enregistrer les détails du rendez-vous")
       }
 
       toast({
@@ -701,7 +676,7 @@ export default function AppointmentDetailsPage() {
       router.push("/medecin")
     } catch (err) {
       console.error("[v0] Error saving appointment:", err)
-      setError(err instanceof Error ? err.message : "Failed to save appointment details")
+      setError(err instanceof Error ? err.message : "Impossible d'enregistrer les détails du rendez-vous")
     } finally {
       setSaving(false)
     }

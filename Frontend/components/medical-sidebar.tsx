@@ -15,6 +15,7 @@ import {
   LogOut,
   Menu,
   ScanLine,
+  Package,
 } from "lucide-react"
 
 // Custom Logo Component (Kept as requested, it's the specific branding)
@@ -82,6 +83,13 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       show: user.role === "admin" || hasPermission("medicaments"),
     },
     {
+      id: "stock",
+      label: "Stock",
+      icon: <Package size={20} />,
+      href: "/stock",
+      show: user.role === "admin" || hasPermission("stock"),
+    },
+    {
       id: "analyses",
       label: "Analyses",
       icon: <FlaskConical size={20} />,
@@ -93,7 +101,7 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       label: "Radiologie IA",
       icon: <ScanLine size={20} />,
       href: "/radiology",
-      show: user.role === "admin" || hasPermission("radiology"),
+      show: false, // hidden for this delivery — re-enable per-client if needed
     },
     {
       id: "statistics",

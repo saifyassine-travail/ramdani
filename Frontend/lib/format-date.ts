@@ -16,7 +16,7 @@ export function getGlobalDateFormat(): string {
             }
         }
     } catch (e) {
-        console.warn("Failed to parse app settings from local storage")
+        // ignore malformed local storage settings, fall back to default below
     }
     return "dd/MM/yyyy"
 }
@@ -32,7 +32,7 @@ export function getGlobalLocale() {
             if (settings.language === "ar") return ar
         }
     } catch (e) {
-        console.warn("Failed to parse app settings from local storage")
+        // ignore malformed local storage settings, fall back to default below
     }
     return fr
 }

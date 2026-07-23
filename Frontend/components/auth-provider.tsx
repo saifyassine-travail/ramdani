@@ -8,12 +8,6 @@ export interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>
-  register: (
-    name: string,
-    email: string,
-    password: string,
-    passwordConfirmation: string,
-  ) => Promise<{ success: boolean; message?: string }>
   logout: () => Promise<void>
   checkAuth: () => Promise<void>
 }
@@ -45,7 +39,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else if (response.message?.includes("Unauthenticated") || response.message === "Not authenticated") {
           // Explicit failure from server means the cookie is invalid or missing.
           // Clear everything.
-          console.log("[v0] Server auth check failed (Unauthenticated). Clearing session.")
           setUser(null)
           localStorage.removeItem("user")
           setIsLoading(false)
@@ -66,7 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const user = JSON.parse(storedUser)
         setUser(user)
-        console.log("[v0] Restored user from localStorage (Network potentially unavailable)")
       } catch (error) {
         console.error("[v0] Failed to restore user from localStorage:", error)
         setUser(null)
@@ -81,17 +73,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const response = await authApiClient.login(email, password)
-    if (response.success && response.user) {
-      setUser(response.user)
-      // Store user in localStorage
-      localStorage.setItem("user", JSON.stringify(response.user))
-      return { success: true }
-    }
-    return { success: false, message: response.message }
-  }
-
-  const register = async (name: string, email: string, password: string, passwordConfirmation: string) => {
-    const response = await authApiClient.register(name, email, password, passwordConfirmation)
     if (response.success && response.user) {
       setUser(response.user)
       // Store user in localStorage
@@ -121,7 +102,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         login,
-        register,
         logout,
         checkAuth,
       }}

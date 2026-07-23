@@ -38,15 +38,15 @@ export function useAnalyses(showArchived = false) {
             setTotalPages(meta.last_page)
             setPerPage(meta.per_page)
           } else {
-            setError("Invalid data format received")
+            setError("Format de réponse invalide")
             setAnalyses([])
           }
         } else {
-          setError("Failed to fetch analyses - unexpected response format")
+          setError("Impossible de charger les analyses")
           setAnalyses([])
         }
       } catch (err) {
-        setError("Network error occurred")
+        setError("Erreur réseau")
         console.error(err)
         setAnalyses([])
       } finally {
@@ -80,7 +80,7 @@ export function useAnalyses(showArchived = false) {
             } else if (typeof response.data === "object" && response.data !== null) {
               searchResults = [response.data]
             } else {
-              setError("Search returned unexpected data format")
+              setError("Format de réponse de recherche invalide")
               setAnalyses([])
               return
             }
@@ -99,11 +99,11 @@ export function useAnalyses(showArchived = false) {
           setCurrentPage(1)
           setTotalPages(1)
         } else {
-          setError("Search request failed")
+          setError("La recherche a échoué")
           setAnalyses([])
         }
       } catch (err) {
-        setError(`Search error: ${err.message || "Network error occurred"}`)
+        setError("Erreur réseau lors de la recherche")
         setAnalyses([])
       } finally {
         setLoading(false)
@@ -120,10 +120,10 @@ export function useAnalyses(showArchived = false) {
         fetchAnalyses() // Refresh the list
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to create analysis" }
+        return { success: false, message: response.message || "Impossible de créer l'analyse" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
@@ -135,10 +135,10 @@ export function useAnalyses(showArchived = false) {
         fetchAnalyses() // Refresh the list
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to update analysis" }
+        return { success: false, message: response.message || "Impossible de mettre à jour l'analyse" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
@@ -160,7 +160,7 @@ export function useAnalyses(showArchived = false) {
           Number(a.ID_Analyse) === Number(analysisId) ? { ...a, is_favorite: !a.is_favorite } : a
         )
       )
-      return { success: false, message: response.message || "Failed to update favorite" }
+      return { success: false, message: response.message || "Impossible de mettre à jour le favori" }
     } catch {
       // Revert on error
       setAnalyses((prev) =>
@@ -168,14 +168,14 @@ export function useAnalyses(showArchived = false) {
           Number(a.ID_Analyse) === Number(analysisId) ? { ...a, is_favorite: !a.is_favorite } : a
         )
       )
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
   const toggleArchiveStatus = async (analysisId: number) => {
     try {
       const analysis = analyses.find((a) => a.ID_Analyse === analysisId || a.id === analysisId)
-      if (!analysis) return { success: false, message: "Analysis not found" }
+      if (!analysis) return { success: false, message: "Analyse introuvable" }
 
       let response
       if (analysis.archived) {
@@ -188,10 +188,10 @@ export function useAnalyses(showArchived = false) {
         await fetchAnalyses(1)
         return { success: true, message: response.data?.message }
       } else {
-        return { success: false, message: response.message || "Failed to update analysis status" }
+        return { success: false, message: response.message || "Impossible de modifier le statut de l'analyse" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 

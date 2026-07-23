@@ -18,28 +18,18 @@ export function useCalendar() {
 
       const response = await apiClient.getMonthlyCounts(yearMonth)
 
-      console.log("[v0] Calendar API response:", response)
-      console.log("[v0] Calendar response data:", response.data)
-
       if (response.success && response.data) {
         // Ensure response.data is a Record<string, number>
         const counts = response.data as Record<string, number>
-        console.log("[v0] Setting appointment counts:", counts)
         setAppointmentCounts(counts)
       } else {
-        const errorMsg = response.message || "Failed to fetch monthly counts"
-        console.error("[v0] Calendar fetch error:", errorMsg)
-        console.error("[v0] Calendar fetch error details:", response)
-        // expose full response for debugging in browser console
-        setError(errorMsg)
+        console.error("Calendar fetch error:", response)
+        setError(response.message || "Impossible de charger les rendez-vous du mois")
         setAppointmentCounts({})
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "An error occurred"
-      console.error("[v0] Calendar hook error:", errorMsg)
-      console.error("[v0] Calendar hook caught:", err)
-      // store full error string for UI
-      setError(errorMsg)
+      console.error("Calendar hook error:", err)
+      setError(err instanceof Error ? err.message : "Une erreur est survenue")
       setAppointmentCounts({})
     } finally {
       setLoading(false)

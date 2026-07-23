@@ -63,7 +63,6 @@ class RealtimeSyncManager {
 
   // Broadcast an event to all listeners
   private broadcastEvent(event: SyncEvent): void {
-    console.log("[v0] Broadcasting sync event:", event)
     this.listeners.forEach((listener) => {
       try {
         listener(event)

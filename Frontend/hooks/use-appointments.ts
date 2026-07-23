@@ -92,13 +92,12 @@ export function useAppointments(selectedDate?: string) {
         setAppointments(grouped)
         setLoading(false)
       } else {
-        const errorMsg = response.message || "Failed to fetch appointments"
-        setError(`${errorMsg}${response.error ? ` (${response.error})` : ""}`)
+        setError(response.message || "Impossible de charger les rendez-vous")
         setLoading(false)
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred"
-      setError(`Connection failed: ${errorMessage}. Please check if the Laravel backend is running.`)
+      console.error("Fetch appointments failed:", err)
+      setError("Connexion au serveur impossible. Vérifiez que le serveur est démarré.")
       setLoading(false)
     }
   }, [])
@@ -146,19 +145,19 @@ export function useAppointments(selectedDate?: string) {
 
         if (!response.success) {
           // Revert on error by refetching
-          throw new Error(response.message || "Failed to update status")
+          throw new Error(response.message || "Impossible de mettre à jour le statut")
         }
 
         return { success: true, message: "Statut mis à jour avec succès" }
       } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : "An error occurred"
-        console.log("[v0] Status update error:", errorMessage)
+        console.error("Update appointment status failed:", err)
+        const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue"
 
         // Revert the UI change by refetching the appointments
         await fetchAppointments(selectedDate)
 
-        if (errorMessage.includes("fetch") || errorMessage.includes("network") || errorMessage.includes("Connection")) {
-          setError(errorMessage)
+        if (err instanceof TypeError) {
+          setError("Connexion au serveur impossible. Vérifiez que le serveur est démarré.")
         }
         return { success: false, message: errorMessage }
       }
@@ -198,13 +197,14 @@ export function useAppointments(selectedDate?: string) {
 
       try {
         const response = await apiClient.toggleMutuelle(appointmentId)
-        if (!response.success) throw new Error(response.message || "Failed to toggle mutuelle")
+        if (!response.success) throw new Error(response.message || "Impossible de modifier la mutuelle")
         // Align with the server's authoritative value
         setMutuelleValue(appointmentId, Boolean(response.data?.mutuelle))
         return { success: true }
       } catch (err) {
+        console.error("Toggle mutuelle failed:", err)
         setMutuelleValue(appointmentId, previous) // revert
-        const errorMessage = err instanceof Error ? err.message : "An error occurred"
+        const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue"
         setError(errorMessage)
         return { success: false, message: errorMessage }
       }
@@ -231,11 +231,11 @@ export function useAppointments(selectedDate?: string) {
 
         return { success: true, message: "Rendez-vous supprimé avec succès" }
       } else {
-        return { success: false, message: response.message || "Failed to delete appointment" }
+        return { success: false, message: response.message || "Impossible de supprimer le rendez-vous" }
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An error occurred"
-      console.error("[v0] Delete error:", errorMessage)
+      const errorMessage = err instanceof Error ? err.message : "Une erreur est survenue"
+      console.error("Delete appointment failed:", err)
       return { success: false, message: errorMessage }
     }
   }, [])

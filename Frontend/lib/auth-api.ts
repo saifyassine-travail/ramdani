@@ -45,10 +45,22 @@ class AuthApiClient {
     return token ? { Authorization: `Bearer ${token}` } : {}
   }
 
-  async register(name: string, email: string, password: string, passwordConfirmation: string): Promise<AuthResponse> {
+  async getSetupStatus(): Promise<{ needsSetup: boolean }> {
     try {
-      console.log("[v0] Attempting registration with email:", email)
-      const response = await fetch(`${this.baseURL}/register`, {
+      const response = await fetch(`${this.baseURL}/setup/status`, {
+        headers: { Accept: "application/json" },
+      })
+      if (!response.ok) return { needsSetup: false }
+      const data = await response.json()
+      return { needsSetup: Boolean(data.needsSetup) }
+    } catch {
+      return { needsSetup: false }
+    }
+  }
+
+  async createAdmin(name: string, email: string, password: string, passwordConfirmation: string): Promise<AuthResponse> {
+    try {
+      const response = await fetch(`${this.baseURL}/setup/create-admin`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -63,13 +75,11 @@ class AuthApiClient {
       })
 
       const data = await response.json()
-      console.log("[v0] Register response status:", response.status)
-      console.log("[v0] Register response data:", data)
 
       if (!response.ok) {
         return {
           success: false,
-          message: data.message || "Registration failed",
+          message: data.message || "Impossible de créer le compte administrateur.",
           error: data.error,
           errors: data.errors,
         }
@@ -84,10 +94,10 @@ class AuthApiClient {
         user: data.user,
       }
     } catch (error) {
-      console.error("[v0] Register error:", error)
+      console.error("Create admin error:", error)
       return {
         success: false,
-        message: "Network error occurred",
+        message: "Erreur réseau. Veuillez réessayer.",
         error: error instanceof Error ? error.message : "Unknown error",
       }
     }
@@ -95,7 +105,6 @@ class AuthApiClient {
 
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      console.log("[v0] Attempting login with email:", email)
       const response = await fetch(`${this.baseURL}/login`, {
         method: "POST",
         headers: {
@@ -105,12 +114,9 @@ class AuthApiClient {
         body: JSON.stringify({ email, password }),
       })
 
-      console.log("[v0] Login response status:", response.status)
       const data = await response.json()
-      console.log("[v0] Login response data:", data)
 
       if (!response.ok) {
-        console.error("[v0] Login failed with status:", response.status, "Error:", data)
         return {
           success: false,
           message: data.message || "Login failed",
@@ -130,7 +136,7 @@ class AuthApiClient {
       console.error("[v0] Login network error:", error)
       return {
         success: false,
-        message: "Network error occurred",
+        message: "Erreur réseau. Veuillez réessayer.",
         error: error instanceof Error ? error.message : "Unknown error",
       }
     }
@@ -159,7 +165,7 @@ class AuthApiClient {
       clearAuthToken()
       return {
         success: false,
-        message: "Network error occurred",
+        message: "Erreur réseau. Veuillez réessayer.",
         error: error instanceof Error ? error.message : "Unknown error",
       }
     }
@@ -197,7 +203,7 @@ class AuthApiClient {
     } catch (error) {
       return {
         success: false,
-        message: "Network error occurred",
+        message: "Erreur réseau. Veuillez réessayer.",
         error: error instanceof Error ? error.message : "Unknown error",
       }
     }

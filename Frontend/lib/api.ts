@@ -142,6 +142,23 @@ export interface Medicament {
   }
 }
 
+export interface StockItem {
+  ID_Stock: number
+  id?: number
+  name: string
+  quantity: number
+  threshold?: number | null
+  unit?: string | null
+  supplier?: string | null
+  purchase_price?: number | null
+  expiration_date?: string | null
+  archived: boolean | number
+  is_low_stock?: boolean
+  is_expiring_soon?: boolean
+  created_at?: string
+  updated_at?: string
+}
+
 export interface Analysis {
   ID_Analyse: number
   type_analyse: string
@@ -246,12 +263,14 @@ class ApiClient {
         data: data as T,
       }
     } catch (error) {
-      let errorMessage = "Network error occurred"
+      let errorMessage = "Erreur réseau. Veuillez réessayer."
       if (error instanceof TypeError && error.message.includes("fetch")) {
-        errorMessage = "Cannot connect to server. Check if Laravel backend is running."
+        errorMessage = "Impossible de contacter le serveur. Vérifiez votre connexion."
       } else if (error instanceof SyntaxError) {
-        errorMessage = "Server returned invalid JSON response"
+        errorMessage = "Réponse du serveur invalide."
       }
+
+      console.error("[api] request failed:", error)
 
       return {
         success: false,
@@ -304,7 +323,6 @@ class ApiClient {
       }
     }>
   > {
-    console.log("[v0] API updateAppointmentStatus called with:", { appointmentId, status })
     return this.request("/appointments/update-status", {
       method: "POST",
       headers: {
@@ -356,11 +374,6 @@ class ApiClient {
       }>
     },
   ): Promise<ApiResponse<void>> {
-    console.log("[v0] updateAppointmentDetails called with:", {
-      appointmentId,
-      details: JSON.stringify(details, null, 2),
-    })
-
     return this.request(`/appointments/${appointmentId}/details`, {
       method: "PUT",
       headers: {
@@ -465,7 +478,6 @@ class ApiClient {
     if (showArchived) params.append("archived", "true")
 
     const endpoint = `/medicaments/search?${params.toString()}`
-    console.log("[v0] Calling searchMedicaments endpoint:", endpoint)
 
     const response = await this.request<{ success: boolean; data: Medicament[] }>(endpoint)
 
@@ -492,7 +504,6 @@ class ApiClient {
     if (showArchived) params.append("archived", "true")
 
     const endpoint = `/analyses/search?${params.toString()}`
-    console.log("[v0] Calling searchAnalyses endpoint:", endpoint)
 
     const response = await this.request<{ success: boolean; data: Analysis[] }>(endpoint)
 
@@ -510,15 +521,6 @@ class ApiClient {
       error: response.error,
       data: [] // Return empty array on error/empty to match expected type or handle gracefully
     } as ApiResponse<Analysis[]>
-  }
-
-  // PDF generation endpoints
-  generateOrdonnancePDF(appointmentId: number): string {
-    return `${this.baseURL}/appointments/${appointmentId}/ordonnance`
-  }
-
-  generateAnalysisPDF(appointmentId: number): string {
-    return `${this.baseURL}/appointments/${appointmentId}/analysis-pdf`
   }
 
   generateCertificatePDF(certificateId: number): string {
@@ -632,15 +634,6 @@ class ApiClient {
     notes?: string
     photo_base64?: string
   }): Promise<ApiResponse<Patient>> {
-    console.log("[v0] createPatient - data being sent:", {
-      first_name: patientData.first_name,
-      last_name: patientData.last_name,
-      birth_day: patientData.birth_day,
-      gender: patientData.gender,
-      CIN: patientData.CIN,
-      phone_num: patientData.phone_num,
-    })
-
     const requestBody = {
       first_name: patientData.first_name,
       last_name: patientData.last_name,
@@ -660,8 +653,6 @@ class ApiClient {
       photo_base64: patientData.photo_base64 || null,
     }
 
-    console.log("[v0] createPatient - full request body:", JSON.stringify(requestBody, null, 2))
-
     const response = this.request<Patient>("/patients", {
       method: "POST",
       headers: {
@@ -670,7 +661,6 @@ class ApiClient {
       body: JSON.stringify(requestBody),
     })
 
-    console.log("[v0] createPatient - response promise created")
     return response
   }
 
@@ -751,10 +741,8 @@ class ApiClient {
     if (showArchived) params.append("archived", "true")
 
     const endpoint = `/patients/search?${params.toString()}`
-    console.log("[v0] Calling searchPatientsDetailed endpoint:", endpoint)
 
     const response = await this.request<any>(endpoint)
-    console.log("[v0] searchPatientsDetailed raw response:", response)
 
     return response as any
   }
@@ -871,6 +859,129 @@ class ApiClient {
     }, true)
   }
 
+  // Stock management endpoints
+  async getStock(showArchived = false, page = 1, perPage = 50): Promise<ApiResponse<StockItem[]>> {
+    const params = new URLSearchParams()
+    if (showArchived) params.append("archived", "true")
+    params.append("page", String(page))
+    params.append("per_page", String(perPage))
+
+    const endpoint = `/stock?${params.toString()}`
+
+    const cacheKey = `${this.baseURL}${endpoint}`
+    requestCache.delete(cacheKey)
+
+    const response = await this.request<{ success: boolean; data: StockItem[]; meta?: ApiResponse<StockItem[]>["meta"] }>(endpoint)
+
+    if (response.success && response.data) {
+      const extractedData = response.data.data || response.data
+      return {
+        success: true,
+        data: extractedData as StockItem[],
+        meta: response.data.meta,
+      }
+    }
+
+    return {
+      success: response.success,
+      message: response.message,
+      error: response.error,
+      data: []
+    } as ApiResponse<StockItem[]>
+  }
+
+  async searchStock(query: string, showArchived = false): Promise<ApiResponse<StockItem[]>> {
+    const params = new URLSearchParams()
+    params.append("term", query)
+    if (showArchived) params.append("archived", "true")
+
+    const endpoint = `/stock/search?${params.toString()}`
+
+    const response = await this.request<{ success: boolean; data: StockItem[] }>(endpoint)
+
+    if (response.success && response.data) {
+      return {
+        success: true,
+        data: (response.data.data || response.data) as StockItem[],
+        message: response.message
+      }
+    }
+
+    return {
+      success: response.success,
+      message: response.message,
+      error: response.error,
+      data: []
+    } as ApiResponse<StockItem[]>
+  }
+
+  async createStockItem(stockData: {
+    name: string
+    quantity: number
+    threshold?: number | null
+    unit?: string
+    supplier?: string
+    purchase_price?: number | null
+    expiration_date?: string | null
+  }): Promise<ApiResponse<StockItem>> {
+    return this.request("/stock", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(stockData),
+    })
+  }
+
+  async updateStockItem(
+    id: number,
+    stockData: {
+      name: string
+      quantity: number
+      threshold?: number | null
+      unit?: string
+      supplier?: string
+      purchase_price?: number | null
+      expiration_date?: string | null
+    },
+  ): Promise<ApiResponse<StockItem>> {
+    return this.request(`/stock/${id}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(stockData),
+    })
+  }
+
+  async archiveStockItem(id: number): Promise<ApiResponse<StockItem>> {
+    return this.request(`/stock/${id}/archive`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+  }
+
+  async restoreStockItem(id: number): Promise<ApiResponse<StockItem>> {
+    return this.request(`/stock/${id}/restore`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+  }
+
+  async adjustStockQuantity(id: number, delta: number): Promise<ApiResponse<StockItem>> {
+    return this.request(`/stock/${id}/adjust-quantity`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ delta }),
+    }, true)
+  }
+
   // Analysis management endpoints
   async getAnalyses(showArchived = false, page = 1): Promise<ApiResponse<any>> {
     const params = new URLSearchParams()
@@ -878,14 +989,11 @@ class ApiClient {
     if (page > 1) params.append("page", page.toString())
 
     const endpoint = `/analyses?${params.toString()}`
-    console.log("[v0] Calling getAnalyses endpoint:", endpoint)
 
     const cacheKey = `${this.baseURL}${endpoint}`
     requestCache.delete(cacheKey)
 
     const response = await this.request<any>(endpoint)
-
-    console.log("[v0] getAnalyses raw response:", JSON.stringify(response, null, 2))
 
     if (response.success && response.data) {
       // Check for Laravel pagination structure
@@ -907,7 +1015,6 @@ class ApiClient {
       }
 
       const extractedData = response.data.data || response.data
-      console.log("[v0] getAnalyses extracted data:", extractedData)
       return {
         success: true,
         data: extractedData,
@@ -1030,13 +1137,10 @@ class ApiClient {
     }>
   > {
     const response = await this.request("/medecin/dashboard", {}, skipCache) // cache controlled by param
-    console.log("[v0] getMedecinDashboard raw response:", JSON.stringify(response, null, 2))
 
     // Laravel might return data directly or wrapped in a data property
     if (response.success && response.data) {
       const rawData = response.data as any
-      console.log("[v0] Raw data keys:", Object.keys(rawData))
-      console.log("[v0] Raw data:", JSON.stringify(rawData, null, 2))
 
       // Return the data as-is, let the component handle the structure
       return response as any
@@ -1281,7 +1385,7 @@ class ApiClient {
 
       const data = await response.json()
       if (!response.ok) {
-        throw new Error(data.message || "Failed to upload document")
+        throw new Error(data.message || "Impossible de télécharger le document")
       }
 
       // Extract the document from the data field if it's there

@@ -163,10 +163,9 @@ class SettingsController extends Controller
     public function getUsers(Request $request)
     {
         try {
-            // TODO: Add admin check
-            // if ($request->user()->role !== 'admin') {
-            //     return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
-            // }
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Accès réservé aux administrateurs.'], 403);
+            }
 
             $users = User::select('id', 'name', 'email', 'role', 'permissions', 'created_at')
                 ->get();
@@ -187,6 +186,10 @@ class SettingsController extends Controller
     public function createUser(Request $request)
     {
         try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Accès réservé aux administrateurs.'], 403);
+            }
+
             $validator = Validator::make($request->all(), [
                 'name' => 'required|string|max:255',
                 'email' => 'required|string|email|max:255|unique:users',
@@ -234,6 +237,10 @@ class SettingsController extends Controller
     public function updateUser(Request $request, $id)
     {
         try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Accès réservé aux administrateurs.'], 403);
+            }
+
             $user = User::findOrFail($id);
 
             $validator = Validator::make($request->all(), [
@@ -271,9 +278,13 @@ class SettingsController extends Controller
     }
 
     // Delete user (Admin only)
-    public function deleteUser($id)
+    public function deleteUser(Request $request, $id)
     {
         try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Accès réservé aux administrateurs.'], 403);
+            }
+
             $user = User::findOrFail($id);
             $deletedName = $user->name;
             $user->delete();
@@ -301,6 +312,10 @@ class SettingsController extends Controller
     public function updateUserPermissions(Request $request, $id)
     {
         try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Accès réservé aux administrateurs.'], 403);
+            }
+
             $user = User::findOrFail($id);
 
             $validator = Validator::make($request->all(), [

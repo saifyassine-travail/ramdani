@@ -21,8 +21,6 @@ export function useCalendarSync() {
 
   // Handle incoming sync events
   const handleSyncEvent = useCallback((event: SyncEvent) => {
-    console.log("[v0] Received sync event:", event)
-
     setSyncState((prev) => {
       const newState = { ...prev, lastSyncEvent: event }
 

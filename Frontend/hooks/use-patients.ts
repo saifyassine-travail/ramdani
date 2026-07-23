@@ -90,15 +90,15 @@ export function usePatients(showArchived = false) {
             setTotalPages(paginationInfo.last_page)
             setPerPage(paginationInfo.per_page)
           } else {
-            setError("Invalid data format received")
+            setError("Format de réponse invalide")
             setPatients([])
           }
         } else {
-          setError("Failed to fetch patients - unexpected response format")
+          setError("Impossible de charger les patients")
           setPatients([])
         }
       } catch (err) {
-        setError("Network error occurred")
+        setError("Erreur réseau")
         setPatients([])
       } finally {
         setLoading(false)
@@ -134,7 +134,7 @@ export function usePatients(showArchived = false) {
               // Single object response - convert to array
               searchResults = [response.data]
             } else {
-              setError("Search returned unexpected data format")
+              setError("Format de réponse de recherche invalide")
               setPatients([])
               return
             }
@@ -188,11 +188,11 @@ export function usePatients(showArchived = false) {
           setCurrentPage(1)
           setTotalPages(1)
         } else {
-          setError("Search request failed")
+          setError("La recherche a échoué")
           setPatients([])
         }
       } catch (err) {
-        setError(`Search error: ${err.message || "Network error occurred"}`)
+        setError("Erreur réseau lors de la recherche")
         setPatients([])
       }
     },
@@ -210,10 +210,10 @@ export function usePatients(showArchived = false) {
         fetchPatients() // Refresh the list
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to create patient" }
+        return { success: false, message: response.message || "Impossible de créer le patient" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
@@ -228,16 +228,16 @@ export function usePatients(showArchived = false) {
         fetchPatients() // Refresh the list
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to update patient" }
+        return { success: false, message: response.message || "Impossible de mettre à jour le patient" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
   const toggleArchiveStatus = async (patientId: number) => {
     const patient = patients.find((p) => p.ID_patient === patientId || (p as any).id === patientId)
-    if (!patient) return { success: false, message: "Patient not found" }
+    if (!patient) return { success: false, message: "Patient introuvable" }
 
     // Optimistically drop the patient from the current view: archiving removes it
     // from the active list, restoring removes it from the archived list. This makes
@@ -258,11 +258,11 @@ export function usePatients(showArchived = false) {
       // Revert on failure
       setPatients(previousPatients)
       setTotal(previousTotal)
-      return { success: false, message: response.message || "Failed to update patient status" }
+      return { success: false, message: response.message || "Impossible de modifier le statut du patient" }
     } catch (err) {
       setPatients(previousPatients)
       setTotal(previousTotal)
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 

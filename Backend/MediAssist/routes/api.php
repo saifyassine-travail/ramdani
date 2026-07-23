@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\PatientController;
 use App\Http\Controllers\MedicamentController;
+use App\Http\Controllers\StockController;
+use App\Http\Controllers\MessageController;
+use App\Http\Controllers\SetupController;
 use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\MedecinController;
 use App\Http\Controllers\AuthController;
@@ -26,8 +29,6 @@ Route::middleware('api')->group(function () {
         Route::get('/{id}/last-info', [AppointmentController::class, 'getLastAppointmentInfo']);
         Route::post('/update-price', [AppointmentController::class, 'updatePrice']);
         Route::post('/update-credit', [AppointmentController::class, 'updateCredit']);
-        Route::get('/{id}/ordonnance', [AppointmentController::class, 'generateOrdonnance']);
-        Route::get('/{id}/analysis-pdf', [AppointmentController::class, 'generateAnalysis']);
         Route::get('/{id}/edit-data', [AppointmentController::class, 'showEditData']);
         Route::get('/search-medicaments', [AppointmentController::class, 'searchMedicaments']);
         Route::get('/search-analyses', [AppointmentController::class, 'searchAnalyses']);
@@ -85,6 +86,31 @@ Route::prefix('medicaments')->controller(MedicamentController::class)->group(fun
 });
 
 
+// STOCK
+Route::prefix('stock')->controller(StockController::class)->group(function () {
+    Route::get('/search', 'search');          // put search FIRST
+    Route::get('/', 'index');
+    Route::post('/', 'store');
+    Route::put('{id}', 'update');             // keep this AFTER search
+    Route::patch('{id}/archive', 'archive');
+    Route::patch('{id}/restore', 'restore');
+    Route::patch('{id}/adjust-quantity', 'adjustQuantity');
+});
+
+
+// MESSAGES (chat between users)
+Route::prefix('messages')->middleware('auth:sanctum')->group(function () {
+    Route::get('/users', [MessageController::class, 'users']);
+    Route::get('/conversations', [MessageController::class, 'conversations']);
+    Route::get('/unread-count', [MessageController::class, 'unreadCount']);
+    Route::delete('/conversation/{partnerId}', [MessageController::class, 'destroyConversation']);
+    Route::get('/{userId}', [MessageController::class, 'index']);
+    Route::post('/{userId}', [MessageController::class, 'store']);
+    Route::delete('/{messageId}', [MessageController::class, 'destroy']);
+    Route::patch('/{userId}/read', [MessageController::class, 'markRead']);
+});
+
+
 // ANALYSES
 Route::prefix('analyses')->controller(AnalysisController::class)->group(function () {
     Route::get('/search', 'search');       // GET /api/analyses/search?term=... (before {id})
@@ -112,7 +138,9 @@ Route::prefix('medecin')->group(function () {
 });
 
 
-Route::post('/register', [AuthController::class, 'register']);
+Route::get('/setup/status', [SetupController::class, 'status']);
+Route::post('/setup/create-admin', [SetupController::class, 'createAdmin']);
+
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');

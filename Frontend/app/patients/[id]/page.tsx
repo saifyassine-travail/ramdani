@@ -150,10 +150,8 @@ export default function PatientDetailsPage() {
       try {
         setLoading(true)
         setError(null)
-        console.log("[v0] Fetching patient details for ID:", patientId)
 
         const response = await apiClient.getPatient(patientId)
-        console.log("[v0] Patient details response:", response)
 
         if (response.success && response.data) {
           // Handle both direct patient data and nested structure from your controller
@@ -163,19 +161,15 @@ export default function PatientDetailsPage() {
           const nextAppointment = response.data.nextAppointment
 
           let certificates: any[] = patientData.certificates || []
-          console.log("[v0] Certificates from patient data:", certificates)
 
           // If no certificates in patient data, fetch them separately
           if (certificates.length === 0) {
-            console.log("[v0] No certificates in patient data, fetching separately...")
             try {
               const certificatesResponse = await apiClient.getCertificates(patientId)
-              console.log("[v0] Certificates API response:", certificatesResponse)
               if (certificatesResponse.success && certificatesResponse.data) {
                 certificates = Array.isArray(certificatesResponse.data)
                   ? certificatesResponse.data
                   : (certificatesResponse.data.certificates || [])
-                console.log("[v0] Loaded certificates from API:", certificates)
               }
             } catch (certError) {
               console.error("[v0] Error fetching certificates:", certError)
@@ -206,15 +200,14 @@ export default function PatientDetailsPage() {
             certificates: certificates,
           }
 
-          console.log("[v0] Transformed patient data:", transformedPatient)
           setPatient(transformedPatient)
         } else {
-          console.error("[v0] Failed to fetch patient details:", response)
-          setError("Failed to load patient details")
+          console.error("Failed to fetch patient details:", response)
+          setError("Impossible de charger les détails du patient")
         }
       } catch (err) {
-        console.error("[v0] Error fetching patient details:", err)
-        setError("Network error occurred")
+        console.error("Error fetching patient details:", err)
+        setError("Erreur réseau")
       } finally {
         setLoading(false)
       }
@@ -269,21 +262,19 @@ export default function PatientDetailsPage() {
   const handleEditPatient = useCallback(
     async (formData: any) => {
       try {
-        console.log("[v0] Updating patient with data:", formData)
         const response = await apiClient.updatePatient(patientId, formData)
 
         if (response.success) {
           // Update local state with new data
           setPatient((prev: any) => ({ ...prev, ...formData }))
           setIsEditModalOpen(false)
-          console.log("[v0] Patient updated successfully")
         } else {
-          console.error("[v0] Failed to update patient:", response)
-          setError("Failed to update patient")
+          console.error("Failed to update patient:", response)
+          setError("Impossible de mettre à jour le patient")
         }
       } catch (err) {
-        console.error("[v0] Error updating patient:", err)
-        setError("Network error occurred while updating patient")
+        console.error("Error updating patient:", err)
+        setError("Erreur réseau lors de la mise à jour du patient")
       }
     },
     [patientId],
@@ -317,25 +308,15 @@ export default function PatientDetailsPage() {
   const handleAddCertificate = useCallback(
     async (certificateData: any) => {
       try {
-        console.log("[v0] Creating certificate with data:", certificateData)
-        const certificatePayload = {
-          ...certificateData,
-          ID_patient: patientId,
-        }
-        console.log("[v0] Certificate payload being sent:", certificatePayload)
         const response = await apiClient.createCertificate(patientId, certificateData)
-
-        console.log("[v0] Certificate creation response:", response)
 
         if (response.success) {
           const newCertificate = response.data
-          console.log("[v0] New certificate created:", newCertificate)
           setPatient((prev: any) => {
             const updatedCerts = Array.isArray(prev.certificates) ? [...prev.certificates] : []
             if (newCertificate && newCertificate.ID_CM) {
               updatedCerts.push(newCertificate)
             }
-            console.log("[v0] Updated certificates array:", updatedCerts)
             return { ...prev, certificates: updatedCerts }
           })
 
@@ -344,7 +325,6 @@ export default function PatientDetailsPage() {
           // skipCache=true — otherwise the 30s response cache would return the
           // list from before this certificate existed.
           const certificatesResponse = await apiClient.getCertificates(patientId, true)
-          console.log("[v0] Fetched certificates after creation:", certificatesResponse)
           if (certificatesResponse.success && certificatesResponse.data) {
             const certs = Array.isArray(certificatesResponse.data)
               ? certificatesResponse.data
@@ -361,7 +341,6 @@ export default function PatientDetailsPage() {
             description: "Certificat créé avec succès",
             variant: "default",
           })
-          console.log("[v0] Certificate created successfully")
         } else {
           console.error("[v0] Failed to create certificate:", response)
           toast({
@@ -385,7 +364,6 @@ export default function PatientDetailsPage() {
   const handleDeleteCertificate = useCallback(
     async (certificateId: number) => {
       try {
-        console.log("[v0] Deleting certificate with ID:", certificateId)
         const response = await apiClient.deleteCertificate(certificateId)
 
         if (response.success) {
@@ -400,7 +378,6 @@ export default function PatientDetailsPage() {
             description: "Certificat supprimé avec succès",
             variant: "default",
           })
-          console.log("[v0] Certificate deleted successfully")
         } else {
           console.error("[v0] Failed to delete certificate:", response)
           toast({
@@ -686,10 +663,7 @@ export default function PatientDetailsPage() {
   const handlePrintCertificate = useCallback(
     async (certificateId: number) => {
       try {
-        console.log("[v0] Fetching certificate for printing with ID:", certificateId)
         const response = await apiClient.getCertificate(certificateId)
-
-        console.log("[v0] Certificate fetch response:", response)
 
         if (response.success && response.data?.certificate) {
           const certificate = response.data.certificate
@@ -697,23 +671,14 @@ export default function PatientDetailsPage() {
             ? formatName(patient.first_name, patient.last_name)
             : "Patient"
 
-          console.log("[v0] Certificate object:", certificate)
-          console.log("[v0] Start date raw:", JSON.stringify(certificate.start_date))
-          console.log("[v0] End date raw:", JSON.stringify(certificate.end_date))
-
           const startDateStr = String(certificate.start_date || "").trim()
           const endDateStr = String(certificate.end_date || "").trim()
-
-
 
           if (!startDateStr || !endDateStr) {
             console.error("[v0] Certificate dates are missing or invalid:", { startDateStr, endDateStr })
             alert("Erreur: Les dates du certificat sont manquantes")
             return
           }
-
-          console.log("[v0] Start date trimmed:", startDateStr)
-          console.log("[v0] End date trimmed:", endDateStr)
 
           try {
             const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number)
@@ -726,11 +691,7 @@ export default function PatientDetailsPage() {
             const startDate = new Date(startYear, startMonth - 1, startDay)
             const endDate = new Date(endYear, endMonth - 1, endDay)
 
-            console.log("[v0] Parsed start date:", startDate)
-            console.log("[v0] Parsed end date:", endDate)
-
             const restDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
-            console.log("[v0] Calculated rest days:", restDays)
 
             const startDateFormatted = startDate.toLocaleDateString("fr-FR")
             const endDateFormatted = endDate.toLocaleDateString("fr-FR")
@@ -759,7 +720,6 @@ export default function PatientDetailsPage() {
             // Open the layout-based preview (positions + background from settings).
             setCertificateBody(bodyText)
             setCertificatePreviewOpen(true)
-            console.log("[v0] Certificate ready for preview")
           } catch (error) {
             console.error("[v0] Date parsing error:", error, { startDateStr, endDateStr })
             alert("Erreur: Impossible de parser les dates du certificat")

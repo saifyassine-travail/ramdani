@@ -32,9 +32,7 @@ export default function SettingsPage() {
   // Role → French label + badge/avatar colours for the Users tab.
   const ROLE_META: Record<string, { label: string; badge: string; avatar: string }> = {
     admin: { label: "Administrateur", badge: "bg-purple-100 text-purple-700", avatar: "bg-gradient-to-br from-purple-500 to-purple-600" },
-    doctor: { label: "Médecin", badge: "bg-blue-100 text-blue-700", avatar: "bg-gradient-to-br from-blue-500 to-blue-600" },
     nurse: { label: "Infirmière", badge: "bg-emerald-100 text-emerald-700", avatar: "bg-gradient-to-br from-emerald-500 to-emerald-600" },
-    receptionist: { label: "Réceptionniste", badge: "bg-amber-100 text-amber-700", avatar: "bg-gradient-to-br from-amber-500 to-amber-600" },
   }
   const roleMeta = (role?: string) =>
     ROLE_META[role || ""] || { label: role || "—", badge: "bg-gray-100 text-gray-600", avatar: "bg-gradient-to-br from-gray-400 to-gray-500" }
@@ -85,7 +83,6 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchSettings()
     fetchUsers()
-    fetchBackups()
     fetchUserProfile()
 
     // Feedback when returning from the Google OAuth callback
@@ -348,9 +345,10 @@ export default function SettingsPage() {
         })
       }
     } catch (error: any) {
+      console.error("Failed to create user:", error)
       toast({
         title: "Erreur",
-        description: error.message || "Erreur lors de la création de l'utilisateur",
+        description: "Erreur lors de la création de l'utilisateur",
         variant: "destructive",
       })
     }
@@ -387,6 +385,7 @@ export default function SettingsPage() {
     { id: "medecin", label: "Espace Médecin" },
     { id: "patients", label: "Patients" },
     { id: "medicaments", label: "Médicaments" },
+    { id: "stock", label: "Stock" },
     { id: "analyses", label: "Analyses" },
     { id: "statistics", label: "Statistiques" },
     { id: "settings", label: "Paramètres" },
@@ -461,17 +460,15 @@ export default function SettingsPage() {
               <SettingsIcon className="w-4 h-4" />
               Préférences
             </TabsTrigger>
-            <TabsTrigger value="users" className={tabTriggerClass}>
-              <Users className="w-4 h-4" />
-              Utilisateurs
-            </TabsTrigger>
+            {isAdmin && (
+              <TabsTrigger value="users" className={tabTriggerClass}>
+                <Users className="w-4 h-4" />
+                Utilisateurs
+              </TabsTrigger>
+            )}
             <TabsTrigger value="documents" className={tabTriggerClass}>
               <FileText className="w-4 h-4" />
               Documents
-            </TabsTrigger>
-            <TabsTrigger value="backup" className={tabTriggerClass}>
-              <Cloud className="w-4 h-4" />
-              Sauvegarde & Sync
             </TabsTrigger>
             {isAdmin && (
               <TabsTrigger value="activity" className={tabTriggerClass}>
@@ -1234,8 +1231,6 @@ export default function SettingsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="nurse">Infirmière</SelectItem>
-                            <SelectItem value="receptionist">Réceptionniste</SelectItem>
-                            <SelectItem value="doctor">Médecin</SelectItem>
                             <SelectItem value="admin">Administrateur</SelectItem>
                           </SelectContent>
                         </Select>

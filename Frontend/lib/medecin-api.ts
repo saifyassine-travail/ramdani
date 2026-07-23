@@ -39,7 +39,6 @@ class MedecinApiClient {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
     try {
       const url = `${this.baseURL}${endpoint}`
-      console.log("[v0] Medecin API Request URL:", url)
 
       const token = getAuthToken()
       const response = await fetch(url, {
@@ -69,7 +68,7 @@ class MedecinApiClient {
     } catch (error) {
       return {
         success: false,
-        message: "Network error occurred",
+        message: "Erreur réseau. Veuillez réessayer.",
         error: error instanceof Error ? error.message : "Unknown error",
       }
     }

@@ -810,14 +810,10 @@ export default function AppointmentDetailsPage() {
         setLoading(true)
         setError(null)
 
-        console.log("[v0] Fetching appointment data for ID:", appointmentId)
-
         const response = await apiClient.getEditData(Number(appointmentId))
 
-        console.log("[v0] getEditData response:", response)
-
         if (!response.success || !response.data) {
-          throw new Error(response.message || "Failed to load appointment data")
+          throw new Error(response.message || "Impossible de charger les données du rendez-vous")
         }
 
         let appt = response.data.appointment || response.data.data?.appointment || response.data
@@ -960,7 +956,7 @@ export default function AppointmentDetailsPage() {
         hasFetchedRef.current = true
       } catch (err) {
         console.error("[v0] Error fetching appointment data:", err)
-        setError(err instanceof Error ? err.message : "Failed to load appointment data")
+        setError(err instanceof Error ? err.message : "Impossible de charger les données du rendez-vous")
       } finally {
         setLoading(false)
         isLoadingRef.current = false
@@ -1152,7 +1148,7 @@ export default function AppointmentDetailsPage() {
         const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
 
         if (!response.success) {
-          throw new Error(response.message || "Failed to save appointment details")
+          throw new Error(response.message || "Impossible d'enregistrer les détails du rendez-vous")
         }
 
         const cacheKey = `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/appointments/${appointmentId}/edit-data`
@@ -1170,7 +1166,7 @@ export default function AppointmentDetailsPage() {
         }, 500)
       } catch (err) {
         console.error("[v0] Error saving appointment:", err)
-        setError(err instanceof Error ? err.message : "Failed to save appointment details")
+        setError(err instanceof Error ? err.message : "Impossible d'enregistrer les détails du rendez-vous")
         toast({
           title: "Erreur",
           description: err instanceof Error ? err.message : "Erreur lors de la sauvegarde",

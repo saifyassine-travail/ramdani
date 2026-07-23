@@ -133,7 +133,6 @@ const Dashboard = () => {
 
       const idx = fromList.findIndex(a => a.ID_RV === appointmentId)
       if (idx === -1) {
-        console.log("Appointment not found in source:", appointmentId, fromStatus)
         return prev
       }
 
@@ -146,9 +145,6 @@ const Dashboard = () => {
         [fromKey]: newFromList,
         [toKey]: newToList,
       }
-
-      console.log("Moved appointment:", appointmentId, "from", fromStatus, "to", toStatus)
-      console.log("New state:", newState)
 
       return newState
     })
@@ -201,7 +197,6 @@ const Dashboard = () => {
       }
 
       card.style.opacity = "0.5"
-      console.log("Drag started:", id, "from", status)
     }
 
     const handleDragEnd = (e: DragEvent) => {
@@ -216,7 +211,6 @@ const Dashboard = () => {
       })
 
       dragStateRef.current.isDragging = false
-      console.log("Drag ended")
     }
 
     const handleDragOver = (e: DragEvent) => {
@@ -246,7 +240,6 @@ const Dashboard = () => {
       const { appointmentId, sourceStatus, isDragging } = dragStateRef.current
 
       if (!isDragging || !appointmentId || !sourceStatus) {
-        console.log("Drop cancelled - invalid state")
         return
       }
 
@@ -254,12 +247,10 @@ const Dashboard = () => {
       const targetStatus = container?.getAttribute("data-status")
 
       if (!targetStatus) {
-        console.log("Drop cancelled - no target status")
         return
       }
 
       if (sourceStatus === targetStatus) {
-        console.log("Drop cancelled - same status")
         dragStateRef.current = { appointmentId: null, sourceStatus: null, isDragging: false }
         return
       }

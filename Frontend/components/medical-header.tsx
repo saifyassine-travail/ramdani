@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/use-auth"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import NotificationsBell from "./notifications-bell"
+import { useChat } from "@/hooks/use-chat"
 import { useCalendar } from "@/hooks/use-calendar"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
@@ -130,6 +131,7 @@ const MedicalHeader = () => {
   const { toast } = useToast()
   const { logout, user } = useAuth()
   const { appointmentCounts } = useCalendar() // Fetch appointment data
+  const { openPanel, unreadCount: chatUnread } = useChat()
 
   const [patientFormData, setPatientFormData] = useState({
     first_name: "",
@@ -241,11 +243,8 @@ const MedicalHeader = () => {
       return
     }
 
-    console.log("[v0] Submitting patient form with data:", patientFormData)
-
     try {
       const response = await apiClient.createPatient(patientFormData)
-      console.log("[v0] Create patient response:", response)
 
       if (response.success) {
         toast({
@@ -295,10 +294,6 @@ const MedicalHeader = () => {
   const handleAddAppointment = async (e: React.FormEvent) => {
     e.preventDefault()
     setAppointmentFormError("")
-    console.log("[v0] Submitting appointment form")
-    console.log("[v0] Search term:", searchTerm)
-    console.log("[v0] Selected patient ID:", selectedPatientId)
-    console.log("[v0] Form data:", appointmentFormData)
 
     try {
       if (!selectedPatientId) {
@@ -316,18 +311,14 @@ const MedicalHeader = () => {
         ? `${appointmentFormData.appointment_date} ${appointmentFormData.appointment_time}:00`
         : `${appointmentFormData.appointment_date} 00:00:00`
 
-      console.log("[v0] Combined date-time:", appointmentDateTime)
-
       const appointmentPayload = {
         patient_id: selectedPatientId,
         type: appointmentFormData.type,
         appointment_date: appointmentDateTime,
         notes: appointmentFormData.notes,
       }
-      console.log("[v0] Appointment payload:", appointmentPayload)
 
       const response = await apiClient.createAppointment(appointmentPayload)
-      console.log("[v0] Create appointment response:", response)
 
       if (response.success) {
         toast({
@@ -390,7 +381,6 @@ const MedicalHeader = () => {
     setIsSearching(true)
     try {
       const response = await apiClient.searchPatients(term)
-      console.log("[v0] Patient search response:", response)
 
       if (response.success && response.data) {
         const patients = response.data.map((p: any) => ({
@@ -1036,6 +1026,24 @@ const MedicalHeader = () => {
                 </div>
               </PopoverContent>
             </Popover>
+
+            {/* Chat icon */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={openPanel}
+              className="relative text-gray-600 hover:bg-gray-100 hover:text-blue-600 transition-colors"
+              aria-label="Messages"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              {chatUnread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold shadow">
+                  {chatUnread > 99 ? "99+" : chatUnread}
+                </span>
+              )}
+            </Button>
 
             <NotificationsBell />
 

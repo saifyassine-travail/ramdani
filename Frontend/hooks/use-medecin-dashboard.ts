@@ -17,10 +17,10 @@ export function useMedecinDashboard() {
       if (response.success && response.data) {
         setDashboardData(response.data)
       } else {
-        setError(response.message || "Failed to fetch dashboard data")
+        setError(response.message || "Impossible de charger le tableau de bord")
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred")
+      setError(err instanceof Error ? err.message : "Une erreur est survenue")
     } finally {
       setLoading(false)
     }
@@ -37,7 +37,7 @@ export function useMedecinDashboard() {
           return { success: false, message: response.message }
         }
       } catch (err) {
-        return { success: false, message: err instanceof Error ? err.message : "An error occurred" }
+        return { success: false, message: err instanceof Error ? err.message : "Une erreur est survenue" }
       }
     },
     [fetchDashboard],
@@ -54,7 +54,7 @@ export function useMedecinDashboard() {
           return { success: false, message: response.message }
         }
       } catch (err) {
-        return { success: false, message: err instanceof Error ? err.message : "An error occurred" }
+        return { success: false, message: err instanceof Error ? err.message : "Une erreur est survenue" }
       }
     },
     [fetchDashboard],
@@ -71,7 +71,7 @@ export function useMedecinDashboard() {
           return { success: false, message: response.message }
         }
       } catch (err) {
-        return { success: false, message: err instanceof Error ? err.message : "An error occurred" }
+        return { success: false, message: err instanceof Error ? err.message : "Une erreur est survenue" }
       }
     },
     [fetchDashboard],

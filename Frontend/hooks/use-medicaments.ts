@@ -44,11 +44,11 @@ export function useMedicaments(showArchived = false) {
             setTotalPages(1)
           }
         } else {
-          setError("Failed to fetch medicaments - unexpected response format")
+          setError("Impossible de charger les médicaments")
           setMedicaments([])
         }
       } catch (err) {
-        setError("Network error occurred")
+        setError("Erreur réseau")
         setMedicaments([])
       } finally {
         setLoading(false)
@@ -81,7 +81,7 @@ export function useMedicaments(showArchived = false) {
             } else if (typeof response.data === "object" && response.data !== null) {
               searchResults = [response.data]
             } else {
-              setError("Search returned unexpected data format")
+              setError("Format de réponse de recherche invalide")
               setMedicaments([])
               return
             }
@@ -101,11 +101,11 @@ export function useMedicaments(showArchived = false) {
           setCurrentPage(1)
           setTotalPages(1)
         } else {
-          setError("Search request failed")
+          setError("La recherche a échoué")
           setMedicaments([])
         }
       } catch (err) {
-        setError(`Search error: ${err.message || "Network error occurred"}`)
+        setError("Erreur réseau lors de la recherche")
         setMedicaments([])
       } finally {
         setLoading(false)
@@ -122,10 +122,10 @@ export function useMedicaments(showArchived = false) {
         fetchMedicaments() // Refresh the list
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to create medicament" }
+        return { success: false, message: response.message || "Impossible de créer le médicament" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
@@ -137,10 +137,10 @@ export function useMedicaments(showArchived = false) {
         fetchMedicaments(currentPage) // Refresh the current page
         return { success: true }
       } else {
-        return { success: false, message: response.message || "Failed to update medicament" }
+        return { success: false, message: response.message || "Impossible de mettre à jour le médicament" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
@@ -162,7 +162,7 @@ export function useMedicaments(showArchived = false) {
           Number(m.ID_Medicament) === Number(medicamentId) ? { ...m, is_favorite: !m.is_favorite } : m
         )
       )
-      return { success: false, message: response.message || "Failed to update favorite" }
+      return { success: false, message: response.message || "Impossible de mettre à jour le favori" }
     } catch {
       // Revert on error
       setMedicaments((prev) =>
@@ -170,14 +170,14 @@ export function useMedicaments(showArchived = false) {
           Number(m.ID_Medicament) === Number(medicamentId) ? { ...m, is_favorite: !m.is_favorite } : m
         )
       )
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
   const toggleArchiveStatus = async (medicamentId: number) => {
     try {
       const medicament = medicaments.find((m) => m.ID_Medicament === medicamentId || m.id === medicamentId)
-      if (!medicament) return { success: false, message: "Medicament not found" }
+      if (!medicament) return { success: false, message: "Médicament introuvable" }
 
       let response
       if (medicament.archived) {
@@ -190,10 +190,10 @@ export function useMedicaments(showArchived = false) {
         await fetchMedicaments(currentPage)
         return { success: true, message: response.data?.message }
       } else {
-        return { success: false, message: response.message || "Failed to update medicament status" }
+        return { success: false, message: response.message || "Impossible de modifier le statut du médicament" }
       }
     } catch (err) {
-      return { success: false, message: "Network error occurred" }
+      return { success: false, message: "Erreur réseau" }
     }
   }
 
