@@ -706,10 +706,6 @@ export default function AppointmentDetailsPage() {
         ? formatName(appointment.patient.first_name, appointment.patient.last_name)
         : appointment?.patient?.name || "Patient"
 
-      const dateStr = new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
-        day: "numeric", month: "long", year: "numeric"
-      })
-
       let analysesHTML = ""
 
       if (layout) {
@@ -744,10 +740,8 @@ export default function AppointmentDetailsPage() {
     <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
       ${patientName}
     </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${dateStr}
-    </div>
     <div class="element list-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.8; width: ${100 - (elements.medications?.x || 0) - 5}%">
+      <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #000; padding-bottom: 4px;">Faire SVP</div>
       ${analyses.length > 0
           ? analyses.map(a => `<div style="margin-bottom: 6px;">• ${a.name || "Analyse"}</div>`).join('')
           : '<div style="color:#999;">Aucune analyse demandée</div>'
@@ -778,8 +772,8 @@ export default function AppointmentDetailsPage() {
 <body>
   <div class="header">
     <div class="patient">${patientName}</div>
-    <div class="date">${dateStr}</div>
   </div>
+  <div class="faire-svp" style="font-size: 13pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 6px; margin-bottom: 6px;">Faire SVP</div>
   <div class="analysis-list">
     ${analyses.length > 0
         ? analyses.map(a => `<div class="analysis-item">• ${a.name || "Analyse"}</div>`).join("")
