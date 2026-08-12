@@ -121,7 +121,10 @@ function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: s
       const seg = part.split(':')
       const time = (seg[0] || '').trim()
       let units = (seg[1] || '').trim()
-      if (units && isNaN(Number(units))) {
+      // A dose value may be a whole number (2), a decimal (1.5) or a fraction
+      // (1/2, 1/4, 3/4). Anything else is legacy meal-timing text.
+      const looksLikeDose = /^\d+(?:[.,]\d+)?$|^\d+\/\d+$/.test(units)
+      if (units && !looksLikeDose) {
         if (!mealTiming) mealTiming = units
         units = ''
       }
@@ -971,7 +974,7 @@ export default function AppointmentDetailsPage() {
       pivot: {
         dosage: "",
         frequence: "",
-        duree: "",
+        duree: "3 mois",
       },
     }
     setMedications((prev) => [...prev, newMedication])
@@ -1865,13 +1868,23 @@ export default function AppointmentDetailsPage() {
                                     {active && (
                                       <div className="flex items-center gap-1 px-1">
                                         <Input
-                                          type="number"
-                                          min="0"
+                                          type="text"
+                                          inputMode="decimal"
+                                          list={`dose-opts-${medIndex}-${time}`}
                                           value={dose!.units}
                                           onChange={(e) => setUnits(e.target.value)}
                                           placeholder="1"
+                                          title="Nombre à prendre (ex : 1/4, 1/2, 3/4, 1, 2)"
                                           className="h-7 text-[10px] text-center px-1 border-blue-200 w-full"
                                         />
+                                        <datalist id={`dose-opts-${medIndex}-${time}`}>
+                                          <option value="1/4" />
+                                          <option value="1/2" />
+                                          <option value="3/4" />
+                                          <option value="1" />
+                                          <option value="2" />
+                                          <option value="3" />
+                                        </datalist>
                                         {isInj && <span className="text-[10px] text-blue-600 font-medium">UI</span>}
                                       </div>
                                     )}
