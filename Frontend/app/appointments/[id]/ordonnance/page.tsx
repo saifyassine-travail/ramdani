@@ -286,10 +286,8 @@ export default function AppointmentDetailsPage() {
       size: ${paper.width}mm ${paper.height}mm;
       margin: 0;
     }
-    /* No positioned/overflow ancestor around the table so Chrome repeats the
-       <thead> reserved top zone on page 2+. Name/date are absolute against the
-       page itself (page 1 only). */
     body { font-family: Arial, sans-serif; width: ${paper.width}mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Full-bleed letterhead, repeated on every page. */
     .page-bg {
       position: fixed; top: 0; left: 0;
       width: ${paper.width}mm; height: ${paper.height}mm;
@@ -298,11 +296,10 @@ export default function AppointmentDetailsPage() {
       z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); }
-    .flow { width: 100%; border-collapse: collapse; }
-    .flow thead { display: table-header-group; }
-    .flow .spacer > div { height: ${mdTop}mm; }
-    .meds-container { display: flex; flex-direction: column; }
-    .meds-container > div { break-inside: avoid; page-break-inside: avoid; }
+    /* Medication list starts below the letterhead header; a script inserts page
+       breaks so each overflow page also starts below the header. */
+    #meds { margin-left: ${mdLeft}%; width: ${mdWidth}%; margin-top: ${mdTop}mm; font-size: ${md.fontSize}%; line-height: 1.5; }
+    #meds > div { break-inside: avoid; page-break-inside: avoid; }
     @media screen {
       body { background: #eee; }
       .page-bg { position: absolute; }
@@ -317,21 +314,27 @@ export default function AppointmentDetailsPage() {
   <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dt.fontSize}px; white-space: nowrap;">
     ${dateStr}
   </div>
-  <table class="flow">
-    <thead><tr><td class="spacer"><div></div></td></tr></thead>
-    <tbody><tr><td>
-      <div class="meds-container" style="margin-left: ${mdLeft}%; width: ${mdWidth}%; font-size: ${md.fontSize}%; line-height: 1.5;">
-        ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
-      </div>
-    </td></tr></tbody>
-  </table>
+  <div id="meds">
+    ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
+  </div>
   <script>
-    window.onload = () => {
-      setTimeout(() => {
-        window.print();
-        // window.close();
-      }, 500);
-    };
+    (function(){
+      function paginate(){
+        var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${mdTop}*mmToPx, safety = 2;
+        var box = document.getElementById('meds'); if(!box) return;
+        var blocks = [].slice.call(box.children), pageIndex = 0;
+        for(var i=0;i<blocks.length;i++){
+          var b = blocks[i]; if(b.className === 'pgspacer') continue;
+          var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
+          if(bottom > pageBottom - safety){
+            var gap = (pageBottom - top) + header;
+            var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
+            box.insertBefore(sp, b); pageIndex++;
+          }
+        }
+      }
+      window.onload = () => { paginate(); setTimeout(() => window.print(), 300); };
+    })();
   </script>
 </body>
 </html>`

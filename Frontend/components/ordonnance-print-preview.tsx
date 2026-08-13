@@ -60,9 +60,6 @@ function buildPrintHTML(
   medicationsHTML: string,
 ) {
   // Vertical positions -> mm so they stay put once the sheet grows past one page.
-  // The medication list flows inside a table whose repeating header reserves the
-  // top zone on EVERY page, so an overflowing list continues on page 2 below the
-  // letterhead instead of being clipped.
   const pnTop = ((els.patient_name.y / 100) * paper.height).toFixed(2)
   const dtTop = ((els.date.y / 100) * paper.height).toFixed(2)
   const mdTop = ((els.medications.y / 100) * paper.height).toFixed(2)
@@ -77,10 +74,8 @@ function buildPrintHTML(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     @page { size: ${paper.width}mm ${paper.height}mm; margin: 0; }
-    /* No positioned/overflow ancestor around the table: Chrome only repeats the
-       <thead> reserved top zone on page 2+ when the table has no such ancestor.
-       Name/date are absolute against the page itself (page 1 only). */
     body { font-family: Arial, sans-serif; width: ${paper.width}mm; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Full-bleed letterhead, repeated on every page. */
     .page-bg {
       position: fixed; top: 0; left: 0;
       width: ${paper.width}mm; height: ${paper.height}mm;
@@ -89,11 +84,10 @@ function buildPrintHTML(
       z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); color: #000; }
-    .flow { width: 100%; border-collapse: collapse; }
-    .flow thead { display: table-header-group; }
-    .flow .spacer > div { height: ${mdTop}mm; }
-    .meds-container { display: flex; flex-direction: column; }
-    .meds-container > div { break-inside: avoid; page-break-inside: avoid; }
+    /* Medication list starts below the letterhead header; a script inserts page
+       breaks so each overflow page also starts below the header (see paginate). */
+    #meds { margin-left: ${mdLeft}%; width: ${mdWidth}%; margin-top: ${mdTop}mm; font-size: ${els.medications.fontSize}px; line-height: 1.5; }
+    #meds > div { break-inside: avoid; page-break-inside: avoid; }
     @media screen {
       body { background: #eee; }
       .page-bg { position: absolute; }
@@ -104,14 +98,40 @@ function buildPrintHTML(
   ${background ? '<div class="page-bg"></div>' : ""}
   <div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
   <div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
-  <table class="flow">
-    <thead><tr><td class="spacer"><div></div></td></tr></thead>
-    <tbody><tr><td>
-      <div class="meds-container" style="margin-left:${mdLeft}%; width:${mdWidth}%; font-size:${els.medications.fontSize}px; line-height:1.5;">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
-    </td></tr></tbody>
-  </table>
+  <div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
+  ${paginationScript(paper.height, mdTop)}
 </body>
 </html>`
+}
+
+// Chrome will not repeat a tall table <thead> across pages, so instead of relying
+// on the browser to reserve the header zone we compute the page breaks ourselves:
+// any medication block that would cross a page boundary is pushed to the next page
+// with a spacer tall enough to also clear the letterhead header on that page.
+function paginationScript(paperHeightMm: number, headerMm: string) {
+  return `<script>
+  (function(){
+    function paginate(){
+      var mmToPx = 96/25.4, pageH = ${paperHeightMm}*mmToPx, header = ${headerMm}*mmToPx, safety = 2;
+      var box = document.getElementById('meds');
+      if(!box) return;
+      var blocks = [].slice.call(box.children), pageIndex = 0;
+      for(var i=0;i<blocks.length;i++){
+        var b = blocks[i];
+        if(b.className === 'pgspacer') continue;
+        var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
+        if(bottom > pageBottom - safety){
+          var gap = (pageBottom - top) + header;
+          var sp = document.createElement('div');
+          sp.className = 'pgspacer'; sp.style.height = gap + 'px'; sp.style.width = '1px';
+          box.insertBefore(sp, b); pageIndex++;
+        }
+      }
+    }
+    if(document.readyState === 'complete') paginate();
+    else window.addEventListener('load', paginate);
+  })();
+  </script>`
 }
 
 export default function OrdonnancePrintPreview({
