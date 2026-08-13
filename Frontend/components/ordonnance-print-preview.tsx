@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -59,6 +59,16 @@ function buildPrintHTML(
   dateStr: string,
   medicationsHTML: string,
 ) {
+  // Vertical positions -> mm so they stay put once the sheet grows past one page.
+  // The medication list flows inside a table whose repeating header reserves the
+  // top zone on EVERY page, so an overflowing list continues on page 2 below the
+  // letterhead instead of being clipped.
+  const pnTop = ((els.patient_name.y / 100) * paper.height).toFixed(2)
+  const dtTop = ((els.date.y / 100) * paper.height).toFixed(2)
+  const mdTop = ((els.medications.y / 100) * paper.height).toFixed(2)
+  const mdLeft = els.medications.x
+  const mdWidth = 100 - els.medications.x - 5
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -67,31 +77,38 @@ function buildPrintHTML(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     @page { size: ${paper.width}mm ${paper.height}mm; margin: 0; }
-    body { font-family: Arial, sans-serif; }
-    .page {
-      position: relative;
+    body { font-family: Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet { position: relative; width: ${paper.width}mm; min-height: ${paper.height}mm; color: #000; }
+    .page-bg {
+      position: fixed; top: 0; left: 0;
       width: ${paper.width}mm; height: ${paper.height}mm;
-      background-color: #fff;
       background-image: ${background ? `url('${background}')` : "none"};
       background-size: cover; background-repeat: no-repeat; background-position: center;
-      overflow: hidden;
+      z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); color: #000; }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
+    .flow { width: 100%; border-collapse: collapse; }
+    .flow .spacer { height: ${mdTop}mm; }
+    .meds-container { display: flex; flex-direction: column; }
+    .meds-container > div { break-inside: avoid; page-break-inside: avoid; }
     @media screen {
       body { background: #eee; display: flex; justify-content: center; padding: 20px; }
-      .page { box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    }
-    @media print {
-      html, body { width: ${paper.width}mm; height: ${paper.height}mm; }
+      .sheet { background: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+      .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="element" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
-    <div class="element" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
-    <div class="element meds-container" style="left:${els.medications.x}%; top:${els.medications.y}%; font-size:${els.medications.fontSize}px; line-height:1.5; width:${100 - els.medications.x - 5}%;">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
+  <div class="sheet">
+    ${background ? '<div class="page-bg"></div>' : ""}
+    <div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
+    <div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
+    <table class="flow">
+      <thead><tr><td class="spacer"></td></tr></thead>
+      <tbody><tr><td>
+        <div class="meds-container" style="margin-left:${mdLeft}%; width:${mdWidth}%; font-size:${els.medications.fontSize}px; line-height:1.5;">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
+      </td></tr></tbody>
+    </table>
   </div>
 </body>
 </html>`
@@ -113,6 +130,10 @@ export default function OrdonnancePrintPreview({
   const [bgUrl, setBgUrl] = useState<string | null>(null)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const medsRef = useRef<HTMLDivElement>(null)
+  // Height of the previewed sheet in px, rounded up to whole pages so the
+  // preview shows page 2 (and beyond) when the medication list overflows.
+  const [contentHpx, setContentHpx] = useState(0)
 
   // Seed temporary state from the saved layout each time the preview opens, so
   // edits made here never persist back to settings.
@@ -171,12 +192,32 @@ export default function OrdonnancePrintPreview({
   const pageHpx = paper.height * MM_TO_PX
   const scale = DISPLAY_W / pageWpx
 
+  // Measure the medication block and round the sheet up to whole pages, so the
+  // preview mirrors the paginated printout (medications continue on page 2).
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = medsRef.current
+      const topPx = (els.medications.y / 100) * pageHpx
+      const bottom = el ? topPx + el.offsetHeight : pageHpx
+      const pages = Math.max(1, Math.ceil(bottom / pageHpx - 0.01))
+      setContentHpx(pages * pageHpx)
+    }
+    const raf = requestAnimationFrame(measure)
+    return () => cancelAnimationFrame(raf)
+  }, [open, medicationsHTML, els.medications.x, els.medications.y, els.medications.fontSize, pageHpx])
+
+  const totalPages = pageHpx > 0 ? Math.max(1, Math.round((contentHpx || pageHpx) / pageHpx)) : 1
+  const sheetHpx = (contentHpx || pageHpx)
+
   const updateSelectedFromPointer = (clientX: number, clientY: number) => {
     if (!selectedId) return
     const rect = wrapperRef.current?.getBoundingClientRect()
     if (!rect) return
+    // Positions are expressed relative to a single page, even when the preview
+    // spans several pages, so dragging keeps anchoring elements to page 1.
+    const onePageH = pageHpx * scale
     const x = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100))
-    const y = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100))
+    const y = Math.min(100, Math.max(0, ((clientY - rect.top) / onePageH) * 100))
     setEls((prev) => ({ ...prev, [selectedId]: { ...prev[selectedId], x, y } }))
   }
 
@@ -200,7 +241,7 @@ export default function OrdonnancePrintPreview({
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, patientName, dateStr, medicationsHTML)
+    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML)
 
     // Print via a hidden iframe — reliable across browsers (no popup blockers,
     // no blank-window issues from writing into window.open).
@@ -242,7 +283,7 @@ export default function OrdonnancePrintPreview({
     const common: React.CSSProperties = {
       position: "absolute",
       left: `${el.x}%`,
-      top: `${el.y}%`,
+      top: `${(el.y / 100) * pageHpx}px`,
       cursor: dragging && selected ? "grabbing" : "grab",
       outline: selected ? "2px solid #2563eb" : "1px dashed rgba(37,99,235,0.35)",
       outlineOffset: "2px",
@@ -251,6 +292,7 @@ export default function OrdonnancePrintPreview({
       return (
         <div
           key={id}
+          ref={medsRef}
           onMouseDown={startDrag(id)}
           style={{
             ...common,
@@ -302,19 +344,49 @@ export default function OrdonnancePrintPreview({
               }}
               onMouseUp={() => setDragging(false)}
               onMouseLeave={() => setDragging(false)}
-              style={{ width: DISPLAY_W, height: pageHpx * scale, position: "relative" }}
+              style={{ width: DISPLAY_W, height: sheetHpx * scale, position: "relative" }}
             >
               <div
                 style={{
                   width: pageWpx,
-                  height: pageHpx,
+                  height: sheetHpx,
                   transform: `scale(${scale})`,
                   transformOrigin: "top left",
                   position: "relative",
-                  background: bgUrl ? `#fff url('${bgUrl}') center/cover no-repeat` : "#fff",
+                  background: bgUrl ? `#fff url('${bgUrl}') top center / 100% ${pageHpx}px repeat-y` : "#fff",
                   boxShadow: "0 0 10px rgba(0,0,0,0.15)",
                 }}
               >
+                {/* Page-break guides so overflow onto page 2+ is visible */}
+                {Array.from({ length: Math.max(0, totalPages - 1) }).map((_, i) => (
+                  <div
+                    key={`pb-${i}`}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: (i + 1) * pageHpx,
+                      borderTop: "2px dashed #ef4444",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: 8,
+                        top: 6,
+                        fontSize: 22,
+                        fontFamily: "Arial, sans-serif",
+                        color: "#ef4444",
+                        background: "rgba(255,255,255,0.85)",
+                        padding: "2px 10px",
+                        borderRadius: 6,
+                      }}
+                    >
+                      Page {i + 2}
+                    </span>
+                  </div>
+                ))}
                 {renderElement("patient_name")}
                 {renderElement("date")}
                 {renderElement("medications")}
