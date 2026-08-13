@@ -606,8 +606,10 @@ export default function AppointmentDetailsPage() {
       size: ${paper.width}mm ${paper.height}mm;
       margin: 0;
     }
-    body { font-family: Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .sheet { position: relative; width: ${paper.width}mm; min-height: ${paper.height}mm; }
+    /* No positioned/overflow ancestor around the table so Chrome repeats the
+       <thead> reserved top zone on page 2+. Name/date are absolute against the
+       page itself (page 1 only). */
+    body { font-family: Arial, sans-serif; width: ${paper.width}mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .page-bg {
       position: fixed; top: 0; left: 0;
       width: ${paper.width}mm; height: ${paper.height}mm;
@@ -617,34 +619,32 @@ export default function AppointmentDetailsPage() {
     }
     .element { position: absolute; transform: translate(0, -50%); }
     .flow { width: 100%; border-collapse: collapse; }
-    .flow .spacer { height: ${mdTop}mm; }
+    .flow thead { display: table-header-group; }
+    .flow .spacer > div { height: ${mdTop}mm; }
     .meds-container { display: flex; flex-direction: column; }
     .meds-container > div { break-inside: avoid; page-break-inside: avoid; }
     @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; }
-      .sheet { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+      body { background: #eee; }
       .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="sheet">
-    ${background ? '<div class="page-bg"></div>' : ''}
-    <div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">
-      ${patientName}
-    </div>
-    <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">
-      ${dateStr}
-    </div>
-    <table class="flow">
-      <thead><tr><td class="spacer"></td></tr></thead>
-      <tbody><tr><td>
-        <div class="meds-container" style="margin-left: ${mdLeft}%; width: ${mdWidth}%; font-size: ${mdFont}mm; line-height: 1.5;">
-          ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
-        </div>
-      </td></tr></tbody>
-    </table>
+  ${background ? '<div class="page-bg"></div>' : ''}
+  <div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">
+    ${patientName}
   </div>
+  <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">
+    ${dateStr}
+  </div>
+  <table class="flow">
+    <thead><tr><td class="spacer"><div></div></td></tr></thead>
+    <tbody><tr><td>
+      <div class="meds-container" style="margin-left: ${mdLeft}%; width: ${mdWidth}%; font-size: ${mdFont}mm; line-height: 1.5;">
+        ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
+      </div>
+    </td></tr></tbody>
+  </table>
   <script>
     window.onload = () => {
       setTimeout(() => {
