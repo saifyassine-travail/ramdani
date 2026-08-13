@@ -126,8 +126,10 @@ function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: s
       const seg = part.split(':')
       const time = (seg[0] || '').trim()
       let units = (seg[1] || '').trim()
-      // Legacy: a non-numeric second segment was actually the meal timing
-      if (units && isNaN(Number(units))) {
+      // A dose value may be a whole number (2), a decimal (1.5) or a fraction
+      // (1/2, 1/4, 3/4). Anything else is legacy meal-timing text.
+      const looksLikeDose = /^\d+(?:[.,]\d+)?$|^\d+\/\d+$/.test(units)
+      if (units && !looksLikeDose) {
         if (!mealTiming) mealTiming = units
         units = ''
       }
@@ -146,8 +148,27 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// The meal timing can carry an optional offset, stored/printed as "1h avant repas"
+// or "2h après repas". "pendant repas" never has an offset.
+function parseMealTiming(mealTiming: string): { base: string; offset: string } {
+  const mt = (mealTiming || '').trim()
+  if (!mt) return { base: '', offset: '' }
+  for (const base of MEAL_TIMINGS) {
+    if (mt === base) return { base, offset: '' }
+    if (mt.endsWith(base)) return { base, offset: mt.slice(0, mt.length - base.length).trim() }
+  }
+  return { base: mt, offset: '' }
+}
+
+function buildMealTiming(base: string, offset: string): string {
+  if (!base) return ''
+  const o = (offset || '').trim()
+  if (!o || base === 'pendant repas') return base
+  return `${o} ${base}`
+}
+
 // One medication block for the ordonnance (2 lines: name + posology).
-function getMedicationHTML(med: MedicationForm): string {
+function getMedicationHTML(med: MedicationForm, index: number): string {
   const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
   const duration = med.pivot?.duree || ''
   const fullName = med.name || 'Médicament'
@@ -162,7 +183,7 @@ function getMedicationHTML(med: MedicationForm): string {
   if (mealTiming) parts.push(mealTiming)
   if (duration) parts.push(`pendant ${duration}`)
   const posology = parts.join(', ')
-  return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
+  return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${index + 1} - ${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
 }
 
 export default function AppointmentDetailsPage() {
@@ -285,7 +306,7 @@ export default function AppointmentDetailsPage() {
       ${dateStr}
     </div>
     <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${elements.medications?.fontSize}%; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => getMedicationHTML(m)).join('')}
+       ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
     </div>
   </div>
   <script>
@@ -321,7 +342,7 @@ export default function AppointmentDetailsPage() {
   <body>
     <div class="print-container">
       <div class="medication-list">
-        ${medications.length > 0 ? medications.map(m => getMedicationHTML(m)).join("") : '<div style="color: #999;">Aucun médicament prescrit</div>'}
+        ${medications.length > 0 ? medications.map((m, i) => getMedicationHTML(m, i)).join("") : '<div style="color: #999;">Aucun médicament prescrit</div>'}
       </div>
     </div>
   </body>
@@ -568,7 +589,7 @@ export default function AppointmentDetailsPage() {
       pivot: {
         dosage: "",
         frequence: "",
-        duree: "",
+        duree: "3 mois",
       },
     }
     setMedications([...medications, newMedication])
@@ -993,9 +1014,16 @@ export default function AppointmentDetailsPage() {
                   const setUnits = (time: string, units: string) => {
                     updateMedication(index, 'frequence', buildMedFrequence(doses.map(d => d.time === time ? { ...d, units } : d), mealTiming))
                   }
-                  const setMeal = (m: string) => {
-                    updateMedication(index, 'frequence', buildMedFrequence(doses, mealTiming === m ? '' : m))
+                  const { base: mealBase, offset: mealOffset } = parseMealTiming(mealTiming)
+                  const setMealBase = (m: string) => {
+                    const newBase = mealBase === m ? '' : m
+                    const newOffset = newBase === 'pendant repas' ? '' : mealOffset
+                    updateMedication(index, 'frequence', buildMedFrequence(doses, buildMealTiming(newBase, newOffset)))
                   }
+                  const setMealOffset = (o: string) => {
+                    updateMedication(index, 'frequence', buildMedFrequence(doses, buildMealTiming(mealBase, o)))
+                  }
+                  const showMealOffset = mealBase === 'avant repas' || mealBase === 'après repas'
                   return (
                     <div key={index} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
                       {/* Medication name + remove */}
@@ -1061,13 +1089,23 @@ export default function AppointmentDetailsPage() {
                                 {active && (
                                   <div className="mt-3 flex items-center gap-1.5">
                                     <Input
-                                      type="number"
-                                      min="0"
+                                      type="text"
+                                      inputMode="decimal"
+                                      list={`dose-opts-${index}-${time}`}
                                       value={dose!.units}
                                       onChange={(e) => setUnits(time, e.target.value)}
                                       placeholder="1"
+                                      title="Nombre à prendre (ex : 1/4, 1/2, 3/4, 1, 2)"
                                       className="h-9 text-center text-sm"
                                     />
+                                    <datalist id={`dose-opts-${index}-${time}`}>
+                                      <option value="1/4" />
+                                      <option value="1/2" />
+                                      <option value="3/4" />
+                                      <option value="1" />
+                                      <option value="2" />
+                                      <option value="3" />
+                                    </datalist>
                                     <span className="whitespace-nowrap text-xs font-medium text-gray-500">{unitLabel}</span>
                                   </div>
                                 )}
@@ -1077,7 +1115,7 @@ export default function AppointmentDetailsPage() {
                         </div>
                       </div>
 
-                      {/* Meal timing (applies to all times) */}
+                      {/* Meal timing (applies to all times) + optional delay for avant/après */}
                       {doses.length > 0 && (
                         <div>
                           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Par rapport au repas</p>
@@ -1086,10 +1124,10 @@ export default function AppointmentDetailsPage() {
                               <button
                                 key={m}
                                 type="button"
-                                onClick={() => setMeal(m)}
+                                onClick={() => setMealBase(m)}
                                 className={cn(
                                   "rounded-xl border py-2.5 text-sm font-medium capitalize transition-all",
-                                  mealTiming === m
+                                  mealBase === m
                                     ? "border-blue-400 bg-blue-50/60 text-blue-700 shadow-sm"
                                     : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
                                 )}
@@ -1098,6 +1136,27 @@ export default function AppointmentDetailsPage() {
                               </button>
                             ))}
                           </div>
+                          {showMealOffset && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
+                                Combien {mealBase === 'avant repas' ? 'avant' : 'après'} le repas ?
+                              </span>
+                              <Input
+                                type="text"
+                                list={`meal-offset-${index}`}
+                                value={mealOffset}
+                                onChange={(e) => setMealOffset(e.target.value)}
+                                placeholder="1h"
+                                title="Délai avant/après le repas (optionnel), ex : 1h, 2h, 30min"
+                                className="h-9 w-24 text-center text-sm"
+                              />
+                              <datalist id={`meal-offset-${index}`}>
+                                <option value="30min" />
+                                <option value="1h" />
+                                <option value="2h" />
+                              </datalist>
+                            </div>
+                          )}
                         </div>
                       )}
 

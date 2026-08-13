@@ -143,6 +143,25 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// The meal timing can carry an optional offset, stored/printed as "1h avant repas"
+// or "2h après repas". "pendant repas" never has an offset.
+function parseMealTiming(mealTiming: string): { base: string; offset: string } {
+  const mt = (mealTiming || '').trim()
+  if (!mt) return { base: '', offset: '' }
+  for (const base of MEAL_TIMINGS) {
+    if (mt === base) return { base, offset: '' }
+    if (mt.endsWith(base)) return { base, offset: mt.slice(0, mt.length - base.length).trim() }
+  }
+  return { base: mt, offset: '' }
+}
+
+function buildMealTiming(base: string, offset: string): string {
+  if (!base) return ''
+  const o = (offset || '').trim()
+  if (!o || base === 'pendant repas') return base
+  return `${o} ${base}`
+}
+
 // Short pharmaceutical-form label (cp, sirop, inj, ...).
 function getMedTypeLabel(med: { type?: string; type_category?: string; name?: string }): string {
   const cat = (med.type_category || '').toLowerCase()
@@ -181,7 +200,7 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
 }
 
 // One medication block for the ordonnance (name + posology).
-function getMedicationHTML(med: MedicationForm): string {
+function getMedicationHTML(med: MedicationForm, index: number): string {
   const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
   const duration = med.pivot?.duree || ''
   const fullName = med.name || 'Médicament'
@@ -196,7 +215,7 @@ function getMedicationHTML(med: MedicationForm): string {
   if (mealTiming) parts.push(mealTiming)
   if (duration) parts.push(`pendant ${duration}`)
   const posology = parts.join(', ')
-  return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
+  return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${index + 1} - ${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
 }
 
 export default function AppointmentDetailsPage() {
@@ -530,7 +549,7 @@ export default function AppointmentDetailsPage() {
       }
 
       // Helper to generate medication HTML block for ordonnance (2 lines: name + posology)
-      const getMedicationHTML = (med: MedicationForm) => {
+      const getMedicationHTML = (med: MedicationForm, index: number) => {
         const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
         const duration = med.pivot?.duree || ''
         const fullName = med.name || 'Médicament'
@@ -548,7 +567,7 @@ export default function AppointmentDetailsPage() {
         if (duration) parts.push(`pendant ${duration}`)
         const posology = parts.join(', ')
 
-        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
+        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${index + 1} - ${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
       }
 
       let ordonnanceHTML = ""
@@ -603,7 +622,7 @@ export default function AppointmentDetailsPage() {
       ${dateStr}
     </div>
     <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => getMedicationHTML(m)).join('')}
+       ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
     </div>
   </div>
   <script>
@@ -639,7 +658,7 @@ export default function AppointmentDetailsPage() {
     <div class="patient-info">${patientName}</div>
     <div class="meds-title">Ordonnance</div>
     <div class="medication-list">
-      ${medications.map(m => getMedicationHTML(m)).join('')}
+      ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
     </div>
     <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
   </body>
@@ -1893,30 +1912,60 @@ export default function AppointmentDetailsPage() {
                               })}
                             </div>
 
-                            {/* Meal timing (applies to all times) */}
+                            {/* Meal timing (applies to all times) + optional delay for avant/après */}
                             {(() => {
                               const { doses, mealTiming } = parseMedFrequence(med.pivot.frequence || '')
                               if (doses.length === 0) return null
-                              const setMeal = (m: string) =>
-                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, mealTiming === m ? '' : m))
+                              const { base, offset } = parseMealTiming(mealTiming)
+                              const setBase = (m: string) => {
+                                const newBase = base === m ? '' : m
+                                const newOffset = newBase === 'pendant repas' ? '' : offset
+                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, buildMealTiming(newBase, newOffset)))
+                              }
+                              const setOffset = (o: string) =>
+                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, buildMealTiming(base, o)))
+                              const showOffset = base === 'avant repas' || base === 'après repas'
                               return (
-                                <div className="grid grid-cols-3 gap-1">
-                                  {MEAL_TIMINGS.map(m => (
-                                    <button
-                                      key={m}
-                                      type="button"
-                                      onClick={() => setMeal(m)}
-                                      className={cn(
-                                        "rounded-md border py-1 text-[10px] font-medium capitalize transition-colors",
-                                        mealTiming === m
-                                          ? "border-blue-400 bg-blue-100 text-blue-700"
-                                          : "border-blue-200 bg-white text-gray-500 hover:bg-blue-50",
-                                      )}
-                                    >
-                                      {m.replace(' repas', '')}
-                                    </button>
-                                  ))}
-                                </div>
+                                <>
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {MEAL_TIMINGS.map(m => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => setBase(m)}
+                                        className={cn(
+                                          "rounded-md border py-1 text-[10px] font-medium capitalize transition-colors",
+                                          base === m
+                                            ? "border-blue-400 bg-blue-100 text-blue-700"
+                                            : "border-blue-200 bg-white text-gray-500 hover:bg-blue-50",
+                                        )}
+                                      >
+                                        {m.replace(' repas', '')}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {showOffset && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">
+                                        Combien {base === 'avant repas' ? 'avant' : 'après'} ?
+                                      </span>
+                                      <Input
+                                        type="text"
+                                        list={`meal-offset-${medIndex}`}
+                                        value={offset}
+                                        onChange={(e) => setOffset(e.target.value)}
+                                        placeholder="1h"
+                                        title="Délai avant/après le repas (optionnel), ex : 1h, 2h, 30min"
+                                        className="h-7 text-[10px] text-center px-1 border-blue-200 w-16"
+                                      />
+                                      <datalist id={`meal-offset-${medIndex}`}>
+                                        <option value="30min" />
+                                        <option value="1h" />
+                                        <option value="2h" />
+                                      </datalist>
+                                    </div>
+                                  )}
+                                </>
                               )
                             })()}
 
