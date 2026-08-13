@@ -577,6 +577,23 @@ export default function AppointmentDetailsPage() {
         const elements = layout as any
         const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
 
+        // Positioned elements. Vertical positions are converted to mm (not %) so
+        // they stay put once the sheet grows past one page. The medication list
+        // flows inside a table whose repeating header reserves the top zone on
+        // EVERY page, so an overflowing list continues on page 2 below the
+        // letterhead instead of being clipped.
+        const pn = elements.patient_name || {}
+        const dt = elements.date || {}
+        const md = elements.medications || {}
+        const pnTop = (((pn.y ?? 0) / 100) * paper.height).toFixed(2)
+        const dtTop = (((dt.y ?? 0) / 100) * paper.height).toFixed(2)
+        const mdTop = (((md.y ?? 0) / 100) * paper.height).toFixed(2)
+        const mdLeft = md.x ?? 0
+        const mdWidth = 100 - (md.x ?? 0) - 5
+        const pnFont = ((pn.fontSize ?? 18) * paper.width / 600).toFixed(2)
+        const dtFont = ((dt.fontSize ?? 16) * paper.width / 600).toFixed(2)
+        const mdFont = ((md.fontSize ?? 16) * paper.width / 600).toFixed(2)
+
         ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
@@ -585,45 +602,48 @@ export default function AppointmentDetailsPage() {
   <title>Ordonnance - ${patientName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    @page { 
-      size: ${paper.width}mm ${paper.height}mm; 
-      margin: 0; 
+    @page {
+      size: ${paper.width}mm ${paper.height}mm;
+      margin: 0;
     }
-    body { 
-      font-family: Arial, sans-serif; 
-      width: ${paper.width}mm; 
-      height: ${paper.height}mm;
-      overflow: hidden;
-    }
-    .page { 
-      position: relative; 
-      width: 100%; 
-      height: 100%;
+    body { font-family: Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .sheet { position: relative; width: ${paper.width}mm; min-height: ${paper.height}mm; }
+    .page-bg {
+      position: fixed; top: 0; left: 0;
+      width: ${paper.width}mm; height: ${paper.height}mm;
       background-image: ${background ? `url('${background}')` : 'none'};
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
+      background-size: cover; background-repeat: no-repeat; background-position: center;
+      z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
-    
+    .flow { width: 100%; border-collapse: collapse; }
+    .flow .spacer { height: ${mdTop}mm; }
+    .meds-container { display: flex; flex-direction: column; }
+    .meds-container > div { break-inside: avoid; page-break-inside: avoid; }
     @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
-      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+      body { background: #eee; display: flex; justify-content: center; padding: 20px; }
+      .sheet { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+      .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+  <div class="sheet">
+    ${background ? '<div class="page-bg"></div>' : ''}
+    <div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">
       ${patientName}
     </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
+    <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">
       ${dateStr}
     </div>
-    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
-    </div>
+    <table class="flow">
+      <thead><tr><td class="spacer"></td></tr></thead>
+      <tbody><tr><td>
+        <div class="meds-container" style="margin-left: ${mdLeft}%; width: ${mdWidth}%; font-size: ${mdFont}mm; line-height: 1.5;">
+          ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
+        </div>
+      </td></tr></tbody>
+    </table>
   </div>
   <script>
     window.onload = () => {
