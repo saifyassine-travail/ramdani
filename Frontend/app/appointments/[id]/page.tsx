@@ -365,6 +365,7 @@ export default function AppointmentDetailsPage() {
   const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
   const [openMedicationDropdown, setOpenMedicationDropdown] = useState<number | null>(null)
   const [medicationSearchQuery, setMedicationSearchQuery] = useState("")
+  const [editingMedNameIndex, setEditingMedNameIndex] = useState<number | null>(null)
   const [analysisSearchQuery, setAnalysisSearchQuery] = useState("")
 
   const [vitalSigns, setVitalSigns] = useState({
@@ -641,12 +642,13 @@ export default function AppointmentDetailsPage() {
     (function(){
       function paginate(){
         var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${mdTop}*mmToPx, safety = 2;
+        var footer = Math.min(header * 0.5, 20 * mmToPx);
         var box = document.getElementById('meds'); if(!box) return;
         var blocks = [].slice.call(box.children), pageIndex = 0;
         for(var i=0;i<blocks.length;i++){
           var b = blocks[i]; if(b.className === 'pgspacer') continue;
           var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
-          if(bottom > pageBottom - safety){
+          if(bottom > pageBottom - footer - safety){
             var gap = (pageBottom - top) + header;
             var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
             box.insertBefore(sp, b); pageIndex++;
@@ -1059,6 +1061,25 @@ export default function AppointmentDetailsPage() {
     setOpenMedicationDropdown(null)
     setMedicationSearchQuery("")
   }, [])
+
+  // Rename a chosen medication. The edited name is what prints, so a changed
+  // name turns the entry into a free-typed (custom) drug rather than staying
+  // linked to the catalog. Leaving it unchanged keeps the catalog link.
+  const commitMedName = useCallback((index: number, value: string) => {
+    setEditingMedNameIndex(null)
+    const name = value.trim()
+    if (!name) return
+    setMedications((prev) => {
+      const updated = [...prev]
+      const cur = updated[index]
+      const catalogName = cur.ID_Medicament
+        ? availableMedicaments.find((m) => m.ID_Medicament.toString() === cur.ID_Medicament.toString())?.name
+        : undefined
+      if (cur.ID_Medicament && name === catalogName) return prev
+      updated[index] = { ...cur, name, ID_Medicament: "", custom: true }
+      return updated
+    })
+  }, [availableMedicaments])
 
   const updateMedication = useCallback(
     (index: number, field: string, value: string) => {
@@ -1778,7 +1799,34 @@ export default function AppointmentDetailsPage() {
                     <div className="space-y-3">
                       {medications.map((med, medIndex) => (
                         <div key={medIndex} className="p-3 bg-gray-50 rounded-lg border text-sm">
-                          <div className="mb-2">
+                          <div className="mb-2 flex items-center gap-1.5">
+                            {editingMedNameIndex === medIndex ? (
+                              <>
+                                <Input
+                                  autoFocus
+                                  defaultValue={
+                                    med.ID_Medicament
+                                      ? availableMedicaments.find(
+                                          (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
+                                        )?.name || med.name || ""
+                                      : med.name || ""
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault()
+                                      commitMedName(medIndex, (e.target as HTMLInputElement).value)
+                                    } else if (e.key === "Escape") {
+                                      setEditingMedNameIndex(null)
+                                    }
+                                  }}
+                                  onBlur={(e) => commitMedName(medIndex, e.target.value)}
+                                  placeholder="Nom du médicament"
+                                  className="h-9 flex-1 bg-white"
+                                />
+                                <span className="flex-shrink-0 text-[10px] font-medium text-blue-600">Entrée pour valider</span>
+                              </>
+                            ) : (
+                            <div className="flex-1 min-w-0">
                             <Popover
                               open={openMedicationDropdown === medIndex}
                               onOpenChange={(open) => {
@@ -1873,6 +1921,20 @@ export default function AppointmentDetailsPage() {
                                 </Command>
                               </PopoverContent>
                             </Popover>
+                            </div>
+                            )}
+                            {editingMedNameIndex !== medIndex && (med.ID_Medicament || med.name) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setEditingMedNameIndex(medIndex)}
+                                title="Modifier le nom du médicament"
+                                className="h-9 w-9 flex-shrink-0 text-blue-600 hover:bg-blue-50"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                           <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
                             {/* Time of day with per-time units */}

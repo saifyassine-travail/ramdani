@@ -321,12 +321,13 @@ export default function AppointmentDetailsPage() {
     (function(){
       function paginate(){
         var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${mdTop}*mmToPx, safety = 2;
+        var footer = Math.min(header * 0.5, 20 * mmToPx);
         var box = document.getElementById('meds'); if(!box) return;
         var blocks = [].slice.call(box.children), pageIndex = 0;
         for(var i=0;i<blocks.length;i++){
           var b = blocks[i]; if(b.className === 'pgspacer') continue;
           var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
-          if(bottom > pageBottom - safety){
+          if(bottom > pageBottom - footer - safety){
             var gap = (pageBottom - top) + header;
             var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
             box.insertBefore(sp, b); pageIndex++;
