@@ -134,6 +134,9 @@ function paginationScript(paperHeightMm: number, headerMm: string, page2Left: nu
           var gap = (pageBottom - top) + header;
           var sp = document.createElement('div');
           sp.className = 'pgspacer'; sp.style.height = gap + 'px'; sp.style.width = '1px';
+          // The spacer MUST be allowed to split across the page boundary, otherwise
+          // break-inside:avoid pushes it wholesale onto the next page.
+          sp.style.breakInside = 'auto'; sp.style.pageBreakInside = 'auto';
           box.insertBefore(sp, b); pageIndex++;
         }
         // On page 2+, move medications to their customized position/width.

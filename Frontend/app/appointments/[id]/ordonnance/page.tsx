@@ -336,6 +336,7 @@ export default function AppointmentDetailsPage() {
           if(bottom > pageBottom - footer - safety){
             var gap = (pageBottom - top) + header;
             var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
+            sp.style.breakInside='auto'; sp.style.pageBreakInside='auto';
             box.insertBefore(sp, b); pageIndex++;
           }
           if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
