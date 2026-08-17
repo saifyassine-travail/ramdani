@@ -47,6 +47,10 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type },
         { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar },
         { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: "Liste Médicaments", icon: List },
+        // Where the medication list resumes on page 2 (and beyond) when it overflows.
+        // Defaults near the top (page 2 usually needs less clearance than page 1)
+        // and offset from the page-1 marker so it can be grabbed separately.
+        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: "Médicaments (page 2)", icon: List },
     ])
 
     const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -83,7 +87,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             ctx.font = `${selectedId === el.id ? 'bold ' : ''}${el.fontSize}px Arial`
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
 
-            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : "• Médicament Exemple 1\n• Médicament Exemple 2"
+            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : el.id === "medications_page2" ? "↳ (Page 2) Médicament suivant\n↳ (Page 2) Médicament suivant" : "• Médicament Exemple 1\n• Médicament Exemple 2"
             const padding = 10
 
             if (selectedId === el.id) {
@@ -96,7 +100,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             }
 
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
-            if (el.id === "medications") {
+            if (el.id === "medications" || el.id === "medications_page2") {
                 const lines = text.split('\n')
                 lines.forEach((line, index) => {
                     ctx.fillText(line, px, py + (index * (el.fontSize + 8)))
@@ -254,7 +258,8 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
                 paper,
                 patient_name: elements.find(e => e.id === "patient_name"),
                 date: elements.find(e => e.id === "date"),
-                medications: elements.find(e => e.id === "medications")
+                medications: elements.find(e => e.id === "medications"),
+                medications_page2: elements.find(e => e.id === "medications_page2")
             }
             await onSave(background, layout)
         } finally {

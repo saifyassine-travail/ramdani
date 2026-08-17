@@ -586,9 +586,12 @@ export default function AppointmentDetailsPage() {
         const pn = elements.patient_name || {}
         const dt = elements.date || {}
         const md = elements.medications || {}
+        const md2 = elements.medications_page2 || {}
         const pnTop = (((pn.y ?? 0) / 100) * paper.height).toFixed(2)
         const dtTop = (((dt.y ?? 0) / 100) * paper.height).toFixed(2)
         const mdTop = (((md.y ?? 0) / 100) * paper.height).toFixed(2)
+        // Where the list resumes on page 2+; defaults to the page-1 start.
+        const page2Top = (((md2.y ?? md.y ?? 0) / 100) * paper.height).toFixed(2)
         const mdLeft = md.x ?? 0
         const mdWidth = 100 - (md.x ?? 0) - 5
         const pnFont = ((pn.fontSize ?? 18) * paper.width / 600).toFixed(2)
@@ -641,7 +644,7 @@ export default function AppointmentDetailsPage() {
   <script>
     (function(){
       function paginate(){
-        var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${mdTop}*mmToPx, safety = 2;
+        var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${page2Top}*mmToPx, safety = 2;
         var footer = Math.min(header * 0.5, 20 * mmToPx);
         var box = document.getElementById('meds'); if(!box) return;
         var blocks = [].slice.call(box.children), pageIndex = 0;

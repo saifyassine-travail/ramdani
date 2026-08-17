@@ -256,7 +256,7 @@ class StatisticsController extends Controller
                     
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $m)
-                        ->selectRaw("COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
+                        ->selectRaw("SUM(CASE WHEN status = 'Terminé' THEN 1 ELSE 0 END) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
                         ->first();
 
                     $labels[] = $monthLabel;
@@ -277,7 +277,7 @@ class StatisticsController extends Controller
                     $data = Appointment::whereYear('appointment_date', $year)
                         ->whereMonth('appointment_date', $month)
                         ->whereDay('appointment_date', $d)
-                        ->selectRaw("COUNT(*) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
+                        ->selectRaw("SUM(CASE WHEN status = 'Terminé' THEN 1 ELSE 0 END) as count, SUM(CASE WHEN status = 'Terminé' THEN payement ELSE 0 END) as revenue, SUM(credit) as credit")
                         ->first();
 
                     $labels[] = $dayLabel;

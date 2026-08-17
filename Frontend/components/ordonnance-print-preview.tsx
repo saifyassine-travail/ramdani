@@ -58,11 +58,14 @@ function buildPrintHTML(
   patientName: string,
   dateStr: string,
   medicationsHTML: string,
+  page2Y: number,
 ) {
   // Vertical positions -> mm so they stay put once the sheet grows past one page.
   const pnTop = ((els.patient_name.y / 100) * paper.height).toFixed(2)
   const dtTop = ((els.date.y / 100) * paper.height).toFixed(2)
   const mdTop = ((els.medications.y / 100) * paper.height).toFixed(2)
+  // Where the list resumes on page 2+ (customizable in settings).
+  const page2Top = ((page2Y / 100) * paper.height).toFixed(2)
   const mdLeft = els.medications.x
   const mdWidth = 100 - els.medications.x - 5
 
@@ -99,7 +102,7 @@ function buildPrintHTML(
   <div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
   <div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
   <div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
-  ${paginationScript(paper.height, mdTop)}
+  ${paginationScript(paper.height, page2Top)}
 </body>
 </html>`
 }
@@ -264,7 +267,8 @@ export default function OrdonnancePrintPreview({
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML)
+    const page2Y = layout?.medications_page2?.y ?? els.medications.y
+    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML, page2Y)
 
     // Print via a hidden iframe — reliable across browsers (no popup blockers,
     // no blank-window issues from writing into window.open).
