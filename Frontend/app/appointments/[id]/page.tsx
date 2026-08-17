@@ -592,6 +592,8 @@ export default function AppointmentDetailsPage() {
         const mdTop = (((md.y ?? 0) / 100) * paper.height).toFixed(2)
         // Where the list resumes on page 2+; defaults to the page-1 start.
         const page2Top = (((md2.y ?? md.y ?? 0) / 100) * paper.height).toFixed(2)
+        const page2Left = md2.x ?? md.x ?? 0
+        const page2Width = 100 - (md2.x ?? md.x ?? 0) - 5
         const mdLeft = md.x ?? 0
         const mdWidth = 100 - (md.x ?? 0) - 5
         const pnFont = ((pn.fontSize ?? 18) * paper.width / 600).toFixed(2)
@@ -622,8 +624,8 @@ export default function AppointmentDetailsPage() {
     .element { position: absolute; transform: translate(0, -50%); }
     /* Medication list starts below the letterhead header; a script inserts page
        breaks so each overflow page also starts below the header. */
-    #meds { margin-left: ${mdLeft}%; width: ${mdWidth}%; margin-top: ${mdTop}mm; font-size: ${mdFont}mm; line-height: 1.5; }
-    #meds > div { break-inside: avoid; page-break-inside: avoid; }
+    #meds { margin-top: ${mdTop}mm; font-size: ${mdFont}mm; line-height: 1.5; }
+    #meds > div { margin-left: ${mdLeft}%; width: ${mdWidth}%; break-inside: avoid; page-break-inside: avoid; }
     @media screen {
       body { background: #eee; }
       .page-bg { position: absolute; }
@@ -646,6 +648,7 @@ export default function AppointmentDetailsPage() {
       function paginate(){
         var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${page2Top}*mmToPx, safety = 2;
         var footer = Math.min(header * 0.5, 20 * mmToPx);
+        var p2Left = '${page2Left}%', p2W = '${page2Width}%';
         var box = document.getElementById('meds'); if(!box) return;
         var blocks = [].slice.call(box.children), pageIndex = 0;
         for(var i=0;i<blocks.length;i++){
@@ -656,6 +659,7 @@ export default function AppointmentDetailsPage() {
             var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
             box.insertBefore(sp, b); pageIndex++;
           }
+          if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
         }
       }
       window.onload = () => { paginate(); setTimeout(() => window.print(), 300); };

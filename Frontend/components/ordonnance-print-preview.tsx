@@ -58,14 +58,17 @@ function buildPrintHTML(
   patientName: string,
   dateStr: string,
   medicationsHTML: string,
+  page2X: number,
   page2Y: number,
 ) {
   // Vertical positions -> mm so they stay put once the sheet grows past one page.
   const pnTop = ((els.patient_name.y / 100) * paper.height).toFixed(2)
   const dtTop = ((els.date.y / 100) * paper.height).toFixed(2)
   const mdTop = ((els.medications.y / 100) * paper.height).toFixed(2)
-  // Where the list resumes on page 2+ (customizable in settings).
+  // Where the list resumes on page 2+ (customizable in settings) — position and width.
   const page2Top = ((page2Y / 100) * paper.height).toFixed(2)
+  const page2Left = page2X
+  const page2Width = 100 - page2X - 5
   const mdLeft = els.medications.x
   const mdWidth = 100 - els.medications.x - 5
 
@@ -89,8 +92,8 @@ function buildPrintHTML(
     .element { position: absolute; transform: translate(0, -50%); color: #000; }
     /* Medication list starts below the letterhead header; a script inserts page
        breaks so each overflow page also starts below the header (see paginate). */
-    #meds { margin-left: ${mdLeft}%; width: ${mdWidth}%; margin-top: ${mdTop}mm; font-size: ${els.medications.fontSize}px; line-height: 1.5; }
-    #meds > div { break-inside: avoid; page-break-inside: avoid; }
+    #meds { margin-top: ${mdTop}mm; font-size: ${els.medications.fontSize}px; line-height: 1.5; }
+    #meds > div { margin-left: ${mdLeft}%; width: ${mdWidth}%; break-inside: avoid; page-break-inside: avoid; }
     @media screen {
       body { background: #eee; }
       .page-bg { position: absolute; }
@@ -102,7 +105,7 @@ function buildPrintHTML(
   <div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
   <div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
   <div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
-  ${paginationScript(paper.height, page2Top)}
+  ${paginationScript(paper.height, page2Top, page2Left, page2Width)}
 </body>
 </html>`
 }
@@ -111,7 +114,7 @@ function buildPrintHTML(
 // on the browser to reserve the header zone we compute the page breaks ourselves:
 // any medication block that would cross a page boundary is pushed to the next page
 // with a spacer tall enough to also clear the letterhead header on that page.
-function paginationScript(paperHeightMm: number, headerMm: string) {
+function paginationScript(paperHeightMm: number, headerMm: string, page2Left: number, page2Width: number) {
   return `<script>
   (function(){
     function paginate(){
@@ -119,6 +122,7 @@ function paginationScript(paperHeightMm: number, headerMm: string) {
       // Reserve some space at the bottom of each page too, but less than the top
       // header zone that opens each following page.
       var footer = Math.min(header * 0.5, 20 * mmToPx);
+      var p2Left = '${page2Left}%', p2W = '${page2Width}%';
       var box = document.getElementById('meds');
       if(!box) return;
       var blocks = [].slice.call(box.children), pageIndex = 0;
@@ -132,6 +136,8 @@ function paginationScript(paperHeightMm: number, headerMm: string) {
           sp.className = 'pgspacer'; sp.style.height = gap + 'px'; sp.style.width = '1px';
           box.insertBefore(sp, b); pageIndex++;
         }
+        // On page 2+, move medications to their customized position/width.
+        if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
       }
     }
     if(document.readyState === 'complete') paginate();
@@ -267,8 +273,9 @@ export default function OrdonnancePrintPreview({
   }
 
   const handlePrint = () => {
+    const page2X = layout?.medications_page2?.x ?? els.medications.x
     const page2Y = layout?.medications_page2?.y ?? els.medications.y
-    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML, page2Y)
+    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML, page2X, page2Y)
 
     // Print via a hidden iframe — reliable across browsers (no popup blockers,
     // no blank-window issues from writing into window.open).
