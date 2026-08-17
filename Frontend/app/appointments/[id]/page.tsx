@@ -174,6 +174,7 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
     if (afterComma.includes('comprim')) return 'cp'
     if (afterComma.includes('sirop')) return 'sirop'
     if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+    if (afterComma.includes('gel')) return 'fois'
     if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
     // A name with a comma usually ends in its form ("…, ovule"); use that word.
     // A brand-only name (no comma, e.g. "Doliprane 1000") has no form, so default
@@ -183,6 +184,8 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
   if (src.includes('comprim')) return 'cp'
   if (src.includes('sirop')) return 'sirop'
   if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+  // A gel is applied a number of times, not counted like a tablet → "fois".
+  if (src.includes('gel')) return 'fois'
   if (src.includes('suspension injectable')) return 'susp inj'
   if (src.includes('injectable') || src.includes('injection')) return 'inj'
   if (src.includes('perfusion')) return 'perf'
@@ -527,12 +530,14 @@ export default function AppointmentDetailsPage() {
           if (afterComma.includes('comprim')) return 'cp'
           if (afterComma.includes('sirop')) return 'sirop'
           if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+          if (afterComma.includes('gel')) return 'fois'
           if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
           return afterComma.split(' ')[0] || 'cp'
         }
         if (src.includes('comprim')) return 'cp'
         if (src.includes('sirop')) return 'sirop'
         if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+        if (src.includes('gel')) return 'fois'
         if (src.includes('suspension injectable')) return 'susp inj'
         if (src.includes('injectable') || src.includes('injection')) return 'inj'
         if (src.includes('perfusion')) return 'perf'
