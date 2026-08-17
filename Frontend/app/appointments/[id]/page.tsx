@@ -2396,8 +2396,6 @@ export default function AppointmentDetailsPage() {
           price: medicalActs.find((a) => a.name === name)?.price ?? 0,
         }))}
         total={appointment?.payement ?? totalActsPrice}
-        credit={(appointment as any)?.credit ?? 0}
-        mutuelle={!!appointment?.mutuelle}
         header={{
           practiceName: (caseConfig as any).practice_name,
           specialization: (caseConfig as any).specialization,

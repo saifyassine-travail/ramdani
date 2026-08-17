@@ -40,8 +40,6 @@ interface FacturePrintPreviewProps {
   dateStr: string
   acts: { name: string; price: number }[]
   total: number
-  credit: number
-  mutuelle: boolean
   header: FactureHeaderInfo
 }
 
@@ -57,7 +55,7 @@ const ELEMENT_META: { id: ElId; label: string; icon: any }[] = [
   { id: "patient_name", label: "Nom Patient", icon: Type },
   { id: "date", label: "Date", icon: Calendar },
   { id: "acts_table", label: "Tableau des Actes", icon: Table2 },
-  { id: "totals", label: "Total / Crédit / Mutuelle", icon: Coins },
+  { id: "totals", label: "Total (en lettres)", icon: Coins },
   { id: "footer", label: "Pied de page", icon: AlignLeft },
 ]
 
@@ -68,7 +66,7 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
 }
 
-function actsTableHTML(acts: { name: string; price: number }[]): string {
+function actsTableHTML(acts: { name: string; price: number }[], total: number): string {
   const rows = acts.length
     ? acts
         .map(
@@ -77,23 +75,63 @@ function actsTableHTML(acts: { name: string; price: number }[]): string {
         )
         .join("")
     : `<tr><td colspan="2" style="border:1px solid #333;padding:4px 8px;color:#999">Aucun acte enregistré</td></tr>`
+  const totalRow = `<tr>
+      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">Total</td>
+      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">${total} DH</td>
+    </tr>`
   return `<table style="border-collapse:collapse;width:100%">
     <thead><tr>
       <th style="border:1px solid #333;padding:4px 8px;text-align:left;background:#f3f4f6">Désignation</th>
       <th style="border:1px solid #333;padding:4px 8px;text-align:right;background:#f3f4f6">Prix (DH)</th>
     </tr></thead>
-    <tbody>${rows}</tbody>
+    <tbody>${rows}${totalRow}</tbody>
   </table>`
 }
 
-function totalsHTML(total: number, credit: number, mutuelle: boolean): string {
-  return [
-    `<div><strong>Total : ${total} DH</strong></div>`,
-    credit > 0 ? `<div style="color:#dc2626">Crédit restant : ${credit} DH</div>` : "",
-    `<div>Mutuelle : ${mutuelle ? "Oui" : "Non"}</div>`,
-  ]
-    .filter(Boolean)
-    .join("")
+// Write an integer amount (0..999999) in French words, e.g. 250 -> "deux cent cinquante".
+function numberToFrenchWords(value: number): string {
+  let n = Math.floor(Math.abs(value))
+  if (n === 0) return "zéro"
+  const units = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix",
+    "onze", "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf"]
+  const tens = ["", "", "vingt", "trente", "quarante", "cinquante", "soixante", "soixante", "quatre-vingt", "quatre-vingt"]
+  const below100 = (x: number): string => {
+    if (x < 20) return units[x]
+    const t = Math.floor(x / 10)
+    const u = x % 10
+    if (t === 7 || t === 9) {
+      const base = t === 7 ? "soixante" : "quatre-vingt"
+      if (t === 7 && u === 1) return "soixante et onze"
+      return base + "-" + units[10 + u]
+    }
+    if (u === 0) return t === 8 ? "quatre-vingts" : tens[t]
+    if (u === 1 && t >= 2 && t <= 6) return tens[t] + " et un"
+    return tens[t] + "-" + units[u]
+  }
+  const below1000 = (x: number): string => {
+    const h = Math.floor(x / 100)
+    const r = x % 100
+    let s = ""
+    if (h > 0) {
+      s = (h > 1 ? units[h] + " " : "") + "cent"
+      if (h > 1 && r === 0) s += "s"
+    }
+    if (r > 0) s = (s ? s + " " : "") + below100(r)
+    return s
+  }
+  let result = ""
+  const thousands = Math.floor(n / 1000)
+  const rest = n % 1000
+  if (thousands > 0) result += (thousands > 1 ? below1000(thousands) + " mille" : "mille") + " "
+  if (rest > 0) result += below1000(rest)
+  return result.trim()
+}
+
+function totalsHTML(total: number): string {
+  const words = numberToFrenchWords(total)
+  const dh = total > 1 ? "dirhams" : "dirham"
+  return `<div>Arrêtée la présente facture à la somme de :</div>
+    <div style="margin-top:2px;text-transform:capitalize"><strong>${escapeHtml(words)} ${dh}</strong></div>`
 }
 
 function footerHTML(header: FactureHeaderInfo, dateStr: string): string {
@@ -109,8 +147,6 @@ function buildPrintHTML(
   dateStr: string,
   acts: { name: string; price: number }[],
   total: number,
-  credit: number,
-  mutuelle: boolean,
   header: FactureHeaderInfo,
 ) {
   return `<!DOCTYPE html>
@@ -145,8 +181,8 @@ function buildPrintHTML(
   <div class="page">
     <div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;"><strong>Patient : </strong>${escapeHtml(patientName)}</div>
     <div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>
-    <div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts)}</div>
-    <div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5;">${totalsHTML(total, credit, mutuelle)}</div>
+    <div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total)}</div>
+    <div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total)}</div>
     <div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr)}</div>
   </div>
 </body>
@@ -162,8 +198,6 @@ export default function FacturePrintPreview({
   dateStr,
   acts,
   total,
-  credit,
-  mutuelle,
   header,
 }: FacturePrintPreviewProps) {
   const [els, setEls] = useState<Record<ElId, El>>(DEFAULTS)
@@ -249,7 +283,7 @@ export default function FacturePrintPreview({
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, credit, mutuelle, header)
+    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, header)
 
     const old = document.getElementById("facture-print-frame")
     if (old) old.remove()
@@ -301,7 +335,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px`, width: `${100 - el.x - 8}%` }}
-          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts) }}
+          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts, total) }}
         />
       )
     }
@@ -310,8 +344,8 @@ export default function FacturePrintPreview({
         <div
           key={id}
           onMouseDown={startDrag(id)}
-          style={{ ...common, fontSize: `${el.fontSize}px`, lineHeight: 1.5 }}
-          dangerouslySetInnerHTML={{ __html: totalsHTML(total, credit, mutuelle) }}
+          style={{ ...common, fontSize: `${el.fontSize}px`, lineHeight: 1.5, width: `${100 - el.x - 8}%` }}
+          dangerouslySetInnerHTML={{ __html: totalsHTML(total) }}
         />
       )
     }

@@ -50,7 +50,7 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
         { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 24, fontSize: initialLayout?.patient_name?.fontSize ?? 16, label: "Nom Patient", icon: Type },
         { id: "date", x: initialLayout?.date?.x ?? 68, y: initialLayout?.date?.y ?? 24, fontSize: initialLayout?.date?.fontSize ?? 14, label: "Date", icon: Calendar },
         { id: "acts_table", x: initialLayout?.acts_table?.x ?? 10, y: initialLayout?.acts_table?.y ?? 34, fontSize: initialLayout?.acts_table?.fontSize ?? 14, label: "Tableau des Actes", icon: Table2 },
-        { id: "totals", x: initialLayout?.totals?.x ?? 55, y: initialLayout?.totals?.y ?? 70, fontSize: initialLayout?.totals?.fontSize ?? 14, label: "Total / Crédit / Mutuelle", icon: Coins },
+        { id: "totals", x: initialLayout?.totals?.x ?? 55, y: initialLayout?.totals?.y ?? 70, fontSize: initialLayout?.totals?.fontSize ?? 14, label: "Total (en lettres)", icon: Coins },
         { id: "footer", x: initialLayout?.footer?.x ?? 10, y: initialLayout?.footer?.y ?? 92, fontSize: initialLayout?.footer?.fontSize ?? 12, label: "Pied de page", icon: AlignLeft },
     ])
 
@@ -100,7 +100,7 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
             if (el.id === "acts_table") {
                 drawSampleTable(ctx, px, py, el.fontSize, canvas.width, isSel)
             } else if (el.id === "totals") {
-                const lines = ["Total : 650 DH", "Crédit restant : 0 DH", "Mutuelle : Non"]
+                const lines = ["Arrêtée la présente facture à la somme de :", "Six cent cinquante dirhams"]
                 lines.forEach((line, i) => ctx.fillText(line, px, py + i * (el.fontSize + 4)))
             } else {
                 const text =
