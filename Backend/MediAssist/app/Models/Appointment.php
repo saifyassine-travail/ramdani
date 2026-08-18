@@ -46,8 +46,9 @@ class Appointment extends Model
     public function medicaments()
     {
         return $this->belongsToMany(Medicament::class, 'appointment_medicament', 'ID_RV', 'ID_Medicament')
-            ->withPivot('dosage', 'frequence', 'duree','created_at')
-            ->orderBy('pivot_created_at', 'desc')
+            ->withPivot('dosage', 'frequence', 'duree', 'ordonnance_no', 'created_at')
+            ->orderBy('pivot_ordonnance_no', 'asc')
+            ->orderBy('pivot_created_at', 'asc')
             ->withTimestamps();
     }
 

@@ -256,6 +256,9 @@ class AppointmentController extends Controller
                 'medicaments.*.dosage' => 'nullable|string|max:50',
                 'medicaments.*.frequence' => 'nullable|string|max:50',
                 'medicaments.*.duree' => 'nullable|string|max:50',
+                // Which ordonnance (1, 2, 3…) this medicament belongs to. One RDV
+                // can have several independent ordonnances.
+                'medicaments.*.ordonnance_no' => 'nullable|integer|min:1',
                 'analyses' => 'nullable|array',
                 'analyses.*.ID_Analyse' => 'required_with:analyses|exists:analyses,ID_Analyse',
             ]);
@@ -294,8 +297,13 @@ if (!empty($caseData)) {
 }
 
 
-            // Sync medicaments
-            $medSync = [];
+            // Save medicaments grouped by ordonnance. The same medicament may appear
+            // in several ordonnances of one RDV, so a plain sync() (one row per drug)
+            // is not enough — rebuild the pivot rows manually, keyed by
+            // (medicament, ordonnance) to avoid duplicates within one ordonnance.
+            $now = now();
+            $medRows = [];
+            $medOrder = 0;
             if ($request->has('medicaments')) {
                 foreach ($request->input('medicaments') as $med) {
                     $medId = $med['ID_Medicament'] ?? null;
@@ -313,15 +321,27 @@ if (!empty($caseData)) {
                     }
 
                     if (!empty($medId)) {
-                        $medSync[$medId] = [
+                        $ordNo = max(1, (int) ($med['ordonnance_no'] ?? 1));
+                        // Incremental timestamp preserves the doctor's ordering inside
+                        // each ordonnance (all rows are inserted in one save).
+                        $ts = $now->copy()->addMilliseconds($medOrder++);
+                        $medRows["{$medId}_{$ordNo}"] = [
+                            'ID_RV' => $appointment->ID_RV,
+                            'ID_Medicament' => $medId,
+                            'ordonnance_no' => $ordNo,
                             'dosage' => $med['dosage'] ?? null,
                             'frequence' => $med['frequence'] ?? null,
                             'duree' => $med['duree'] ?? null,
+                            'created_at' => $ts,
+                            'updated_at' => $ts,
                         ];
                     }
                 }
             }
-            $appointment->medicaments()->sync($medSync);
+            DB::table('appointment_medicament')->where('ID_RV', $appointment->ID_RV)->delete();
+            if (!empty($medRows)) {
+                DB::table('appointment_medicament')->insert(array_values($medRows));
+            }
 
             // Sync analyses (only IDs)
             $analysisIds = $request->has('analyses')

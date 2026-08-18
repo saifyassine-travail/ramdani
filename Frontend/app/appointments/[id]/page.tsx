@@ -368,7 +368,27 @@ export default function AppointmentDetailsPage() {
 
   const [caseDescription, setCaseDescription] = useState("")
   const [diagnostic, setDiagnostic] = useState("")
-  const [medications, setMedications] = useState<MedicationForm[]>([])
+  // One RDV can hold several independent ordonnances; each is its own med list.
+  const [ordonnancesAll, setOrdonnancesAll] = useState<MedicationForm[][]>([[]])
+  const [activeOrd, setActiveOrd] = useState(0)
+  const activeOrdRef = useRef(0)
+  useEffect(() => { activeOrdRef.current = activeOrd }, [activeOrd])
+  // The medications of the ordonnance currently being edited/printed.
+  const medications = ordonnancesAll[activeOrd] ?? []
+  // Existing handlers call setMedications(...) — route them to the active ordonnance
+  // (via a ref so this keeps a stable identity for the memoized handlers).
+  const setMedications = useCallback(
+    (updater: MedicationForm[] | ((prev: MedicationForm[]) => MedicationForm[])) => {
+      const idx = activeOrdRef.current
+      setOrdonnancesAll((prev) => {
+        const copy = [...prev]
+        const cur = copy[idx] ?? []
+        copy[idx] = typeof updater === "function" ? (updater as any)(cur) : updater
+        return copy
+      })
+    },
+    [],
+  )
   const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
   const [openMedicationDropdown, setOpenMedicationDropdown] = useState<number | null>(null)
   const [medicationSearchQuery, setMedicationSearchQuery] = useState("")
@@ -935,8 +955,11 @@ export default function AppointmentDetailsPage() {
         setDdr(appt?.patient?.DDR || "")
 
         if (appt?.medicaments && Array.isArray(appt.medicaments) && appt.medicaments.length > 0) {
-          setMedications(
-            appt.medicaments.map((med) => ({
+          // Group the flat medicament list back into ordonnances by ordonnance_no.
+          const groups: Record<number, MedicationForm[]> = {}
+          appt.medicaments.forEach((med: any) => {
+            const no = Math.max(1, Number(med?.pivot?.ordonnance_no) || 1)
+            ;(groups[no] ||= []).push({
               ID_Medicament: med?.ID_Medicament || "",
               name: med?.name || "",
               pivot: {
@@ -944,8 +967,14 @@ export default function AppointmentDetailsPage() {
                 frequence: med?.pivot?.frequence || "",
                 duree: med?.pivot?.duree || "",
               },
-            })),
-          )
+            })
+          })
+          const ordered = Object.keys(groups)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((no) => groups[no])
+          setOrdonnancesAll(ordered.length > 0 ? ordered : [[]])
+          setActiveOrd(0)
         }
 
         if (appt?.analyses && Array.isArray(appt.analyses) && appt.analyses.length > 0) {
@@ -1039,6 +1068,25 @@ export default function AppointmentDetailsPage() {
       },
     }
     setMedications((prev) => [...prev, newMedication])
+  }, [setMedications])
+
+  // Add a new, empty ordonnance and switch to it.
+  const addOrdonnance = useCallback(() => {
+    setOrdonnancesAll((prev) => {
+      const next = [...prev, []]
+      setActiveOrd(next.length - 1)
+      return next
+    })
+  }, [])
+
+  // Remove an ordonnance (always keep at least one).
+  const removeOrdonnance = useCallback((idx: number) => {
+    setOrdonnancesAll((prev) => {
+      if (prev.length <= 1) return [[]]
+      const next = prev.filter((_, i) => i !== idx)
+      setActiveOrd((cur) => Math.max(0, Math.min(cur > idx ? cur - 1 : cur, next.length - 1)))
+      return next
+    })
   }, [])
 
   const copyMedicamentFromLast = useCallback((medicament: LastAppointmentData["medicaments"][0]) => {
@@ -1189,20 +1237,25 @@ export default function AppointmentDetailsPage() {
         setSaving(true)
         setError(null)
 
-        const medicamentsData = medications
-          .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
-          .map((med) => {
-            const base = {
-              dosage: med.pivot.dosage,
-              frequence: med.pivot.frequence,
-              duree: med.pivot.duree,
-            }
-            // Catalog drug -> send its id; free-typed drug -> send the name so the
-            // backend can find-or-create it.
-            return med.ID_Medicament && med.ID_Medicament !== ""
-              ? { ID_Medicament: Number(med.ID_Medicament), ...base }
-              : { custom_name: (med.name || "").trim(), ...base }
-          })
+        // Flatten every ordonnance into one list, tagging each med with its
+        // ordonnance number (1-based) so the backend can regroup them.
+        const medicamentsData = ordonnancesAll.flatMap((meds, ordIdx) =>
+          meds
+            .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
+            .map((med) => {
+              const base = {
+                dosage: med.pivot.dosage,
+                frequence: med.pivot.frequence,
+                duree: med.pivot.duree,
+                ordonnance_no: ordIdx + 1,
+              }
+              // Catalog drug -> send its id; free-typed drug -> send the name so the
+              // backend can find-or-create it.
+              return med.ID_Medicament && med.ID_Medicament !== ""
+                ? { ID_Medicament: Number(med.ID_Medicament), ...base }
+                : { custom_name: (med.name || "").trim(), ...base }
+            }),
+        )
 
         const analysesData = analyses
           .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
@@ -1257,7 +1310,7 @@ export default function AppointmentDetailsPage() {
         setSaving(false)
       }
     },
-    [appointmentId, medications, analyses, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
+    [appointmentId, ordonnancesAll, analyses, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
   )
 
   const formatDate = (dateString: string) => {
@@ -1812,6 +1865,54 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
+                  {/* Ordonnance tabs — one RDV can have several ordonnances */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-3 pb-3 border-b">
+                    {ordonnancesAll.map((ord, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActiveOrd(i)}
+                        className={cn(
+                          "group flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold border transition-colors",
+                          activeOrd === i
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50",
+                        )}
+                      >
+                        <span>Ordonnance {i + 1}</span>
+                        {ord.length > 0 && (
+                          <span className={cn(
+                            "rounded-full px-1.5 text-[10px]",
+                            activeOrd === i ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500",
+                          )}>{ord.length}</span>
+                        )}
+                        {ordonnancesAll.length > 1 && (
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => { e.stopPropagation(); removeOrdonnance(i) }}
+                            title="Supprimer cette ordonnance"
+                            className={cn(
+                              "ml-0.5 rounded p-0.5 hover:bg-red-100 hover:text-red-600",
+                              activeOrd === i ? "text-white/80" : "text-gray-400",
+                            )}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-dashed"
+                      onClick={addOrdonnance}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Ordonnance
+                    </Button>
+                  </div>
                   <div className="space-y-4">
                     <div className="space-y-3">
                       {medications.map((med, medIndex) => (
