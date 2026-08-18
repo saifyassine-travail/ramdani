@@ -181,7 +181,7 @@ function buildPrintHTML(
 </head>
 <body>
   <div class="page">
-    <div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;"><strong>Patient : </strong>${escapeHtml(patientName)}</div>
+    <div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;">${escapeHtml(patientName)}</div>
     <div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>
     <div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total)}</div>
     <div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total)}</div>
@@ -367,7 +367,7 @@ export default function FacturePrintPreview({
         onMouseDown={startDrag(id)}
         style={{ ...common, transform: "translate(0, -50%)", fontSize: `${el.fontSize}px`, whiteSpace: "nowrap" }}
       >
-        {id === "patient_name" ? `Patient : ${patientName}` : dateStr}
+        {id === "patient_name" ? patientName : dateStr}
       </div>
     )
   }
