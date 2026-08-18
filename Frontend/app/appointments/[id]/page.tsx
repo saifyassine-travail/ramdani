@@ -1536,7 +1536,7 @@ export default function AppointmentDetailsPage() {
                 </Badge>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
+            <PopoverContent className="w-[420px] max-w-[95vw] p-0" align="end">
               <div className="p-4 bg-pink-50 border-b border-pink-100">
                 <h4 className="font-medium text-pink-900 flex items-center gap-2">
                   <Stethoscope className="h-4 w-4" />
@@ -1578,7 +1578,7 @@ export default function AppointmentDetailsPage() {
                           value={actPrices[act.name] ?? act.price}
                           onChange={(e) => handleActPriceChange(act.name, e.target.value)}
                           onBlur={handleActPriceBlur}
-                          className="h-7 w-16 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold"
+                          className="h-7 w-24 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold"
                         />
                         <span className="text-xs text-pink-600">DH</span>
                       </div>
