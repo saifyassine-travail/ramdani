@@ -67,8 +67,10 @@ function escapeHtml(s: string): string {
 }
 
 function actsTableHTML(acts: { name: string; price: number }[], total: number): string {
-  const rows = acts.length
-    ? acts
+  // Only bill acts that actually have a price — 0 DH acts are not shown.
+  const billable = acts.filter((a) => Number(a.price) > 0)
+  const rows = billable.length
+    ? billable
         .map(
           (a) =>
             `<tr><td style="border:1px solid #333;padding:4px 8px">${escapeHtml(a.name)}</td><td style="border:1px solid #333;padding:4px 8px;text-align:right">${a.price} DH</td></tr>`,
