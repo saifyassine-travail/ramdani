@@ -859,7 +859,7 @@ export default function AppointmentDetailsPage() {
       ${patientName}
     </div>
     <div class="element list-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.8; width: ${100 - (elements.medications?.x || 0) - 5}%">
-      <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #000; padding-bottom: 4px;">Faire SVP</div>
+      <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #000; padding-bottom: 4px;">Prière de faire SVP</div>
       ${analyses.length > 0
           ? analyses.map(a => `<div style="margin-bottom: 6px;">• ${a.name || "Analyse"}</div>`).join('')
           : '<div style="color:#999;">Aucune analyse demandée</div>'
@@ -891,7 +891,7 @@ export default function AppointmentDetailsPage() {
   <div class="header">
     <div class="patient">${patientName}</div>
   </div>
-  <div class="faire-svp" style="font-size: 13pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 6px; margin-bottom: 6px;">Faire SVP</div>
+  <div class="faire-svp" style="font-size: 13pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 6px; margin-bottom: 6px;">Prière de faire SVP</div>
   <div class="analysis-list">
     ${analyses.length > 0
         ? analyses.map(a => `<div class="analysis-item">• ${a.name || "Analyse"}</div>`).join("")
