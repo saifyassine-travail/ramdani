@@ -457,11 +457,17 @@ export default function AppointmentDetailsPage() {
   }, [caseConfig.medical_acts, caseConfig.default_consultation_price, caseConfig.default_control_price])
 
   const [selectedActs, setSelectedActs] = useState<string[]>([])
+  // Per-act price for THIS appointment (overrides the catalog price). The paid
+  // amount is the sum of these — the doctor edits act prices, not a paid field.
+  const [actPrices, setActPrices] = useState<Record<string, number>>({})
   const [totalActsPrice, setTotalActsPrice] = useState(0)
-  // Editable paid amount (kept as a string for the input). May be LESS than the
-  // acts total to record a partial payment.
-  const [payment, setPayment] = useState<string>("")
   const [savingPayment, setSavingPayment] = useState(false)
+
+  // Effective price of an act: the per-appointment override, else the catalog price.
+  const actPriceOf = useCallback(
+    (name: string) => actPrices[name] ?? (medicalActs.find((a) => a.name === name)?.price ?? 0),
+    [actPrices, medicalActs],
+  )
 
   useEffect(() => {
     // If appointment type is "Contrôle", ensure "Consultation" is not selected 
@@ -474,23 +480,27 @@ export default function AppointmentDetailsPage() {
       setSelectedActs(prev => prev.filter(a => a !== "Consultation"))
     }
 
-    const total = selectedActs.reduce((sum, actName) => {
-      const act = medicalActs.find((a) => a.name === actName)
-      return sum + (act ? act.price : 0)
-    }, 0)
+    const total = selectedActs.reduce((sum, actName) => sum + actPriceOf(actName), 0)
     setTotalActsPrice(total)
-  }, [selectedActs, appointment?.type])
+  }, [selectedActs, actPrices, appointment?.type, actPriceOf])
 
   // Persist the selected acts + the paid amount. Replaces the old "Appliquer"
   // button: it's called immediately when an act is toggled and when the doctor
   // finishes editing the payment field, so no explicit apply step is needed.
+  // Persist the selected acts (with their per-appointment prices). The paid amount
+  // is the sum of the act prices — there is no separate paid field to edit.
   const persistActsAndPayment = useCallback(
-    async (acts: string[], paymentValue: number) => {
+    async (acts: string[], prices: Record<string, number>) => {
+      const actObjects = acts.map((name) => ({
+        name,
+        price: prices[name] ?? (medicalActs.find((a) => a.name === name)?.price ?? 0),
+      }))
+      const total = actObjects.reduce((sum, a) => sum + (Number(a.price) || 0), 0)
       try {
         setSavingPayment(true)
-        await apiClient.updatePrice(Number(appointmentId), paymentValue, acts)
+        await apiClient.updatePrice(Number(appointmentId), total, actObjects)
         // Keep the local appointment in sync so the facture reflects the amount.
-        setAppointment((prev) => (prev ? { ...prev, payement: paymentValue } : prev))
+        setAppointment((prev) => (prev ? { ...prev, payement: total } : prev))
       } catch (e) {
         toast({
           title: "Erreur",
@@ -501,7 +511,7 @@ export default function AppointmentDetailsPage() {
         setSavingPayment(false)
       }
     },
-    [appointmentId, toast],
+    [appointmentId, medicalActs, toast],
   )
 
   const handleActToggle = (actName: string) => {
@@ -514,25 +524,32 @@ export default function AppointmentDetailsPage() {
       return
     }
 
-    const newActs = selectedActs.includes(actName)
+    const isSelected = selectedActs.includes(actName)
+    const newActs = isSelected
       ? selectedActs.filter((a) => a !== actName)
       : [...selectedActs, actName]
-    const newTotal = newActs.reduce((sum, name) => {
-      const act = medicalActs.find((a) => a.name === name)
-      return sum + (act ? act.price : 0)
-    }, 0)
+    const newPrices = { ...actPrices }
+    if (isSelected) {
+      delete newPrices[actName]
+    } else if (newPrices[actName] == null) {
+      // Seed the editable price from the catalog when first selected.
+      newPrices[actName] = medicalActs.find((a) => a.name === actName)?.price ?? 0
+    }
 
     setSelectedActs(newActs)
-    // Default the paid amount to the new acts total; the doctor can still lower it.
-    setPayment(String(newTotal))
-    persistActsAndPayment(newActs, newTotal)
+    setActPrices(newPrices)
+    persistActsAndPayment(newActs, newPrices)
   }
 
-  // Save the (possibly partial) paid amount when the doctor leaves the field.
-  const handlePaymentBlur = () => {
-    const value = payment.trim() === "" ? 0 : Number(payment)
-    if (isNaN(value) || value < 0) return
-    persistActsAndPayment(selectedActs, value)
+  // Edit an act's price for this appointment (live) …
+  const handleActPriceChange = (name: string, value: string) => {
+    const price = value.trim() === "" ? 0 : Math.max(0, Math.round(Number(value)) || 0)
+    setActPrices((prev) => ({ ...prev, [name]: price }))
+  }
+
+  // … and persist when the doctor leaves the field.
+  const handleActPriceBlur = () => {
+    persistActsAndPayment(selectedActs, actPrices)
   }
 
   const handlePrintOrdonnance = () => {
@@ -937,10 +954,22 @@ export default function AppointmentDetailsPage() {
 
         setAppointment(appt)
         if (appt.medical_acts && Array.isArray(appt.medical_acts)) {
-          setSelectedActs(appt.medical_acts)
+          // medical_acts may be an array of names (legacy) or {name, price} objects.
+          const names: string[] = []
+          const prices: Record<string, number> = {}
+          appt.medical_acts.forEach((item: any) => {
+            if (item && typeof item === "object") {
+              if (item.name) {
+                names.push(item.name)
+                if (item.price != null) prices[item.name] = Number(item.price)
+              }
+            } else if (typeof item === "string") {
+              names.push(item)
+            }
+          })
+          setSelectedActs(names)
+          setActPrices(prices)
         }
-        // Show the previously recorded paid amount (may be a partial payment).
-        setPayment(appt?.payement != null ? String(appt.payement) : "")
         setAvailableMedicaments(available_medicaments || [])
         setAvailableAnalyses(available_analyses || [])
 
@@ -1516,32 +1545,51 @@ export default function AppointmentDetailsPage() {
                 <p className="text-xs text-pink-600 mt-1">Sélectionnez les actes effectués</p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto">
-                {medicalActs.map((act) => (
+                {medicalActs.map((act) => {
+                  const selected = selectedActs.includes(act.name)
+                  return (
                   <div
                     key={act.name}
                     onClick={() => handleActToggle(act.name)}
                     className={`
                         cursor-pointer rounded-md p-2 flex items-center justify-between transition-colors
-                        ${selectedActs.includes(act.name)
+                        ${selected
                         ? "bg-pink-50 text-pink-900"
                         : "hover:bg-gray-50 text-gray-700"}
                         ${appointment?.type === "Contrôle" && act.name === "Consultation" ? "opacity-50 cursor-not-allowed" : ""}
                       `}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <div className={`
-                          w-4 h-4 rounded border flex items-center justify-center transition-colors
-                          ${selectedActs.includes(act.name) ? "bg-pink-500 border-pink-500" : "border-gray-300 bg-white"}
+                          w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0
+                          ${selected ? "bg-pink-500 border-pink-500" : "border-gray-300 bg-white"}
                         `}>
-                        {selectedActs.includes(act.name) && <Check className="h-3 w-3 text-white" />}
+                        {selected && <Check className="h-3 w-3 text-white" />}
                       </div>
-                      <span className="text-sm">{act.name}</span>
+                      <span className="text-sm truncate">{act.name}</span>
                     </div>
-                    <span className="text-xs font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
-                      {act.price} DH
-                    </span>
+                    {selected ? (
+                      // Edit the price for this appointment; the paid total is their sum.
+                      <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          value={actPrices[act.name] ?? act.price}
+                          onChange={(e) => handleActPriceChange(act.name, e.target.value)}
+                          onBlur={handleActPriceBlur}
+                          className="h-7 w-16 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold"
+                        />
+                        <span className="text-xs text-pink-600">DH</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                        {act.price} DH
+                      </span>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
               <div className="p-3 border-t bg-gray-50 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-600">Total des actes</span>
@@ -1550,21 +1598,10 @@ export default function AppointmentDetailsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Editable paid amount — can be LESS than the acts total (partial payment).
-              Saves automatically on blur; no "Appliquer" button needed. */}
-          <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+          {/* Paid amount = sum of the (editable) act prices. Not directly editable. */}
+          <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1">
             <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Payé</span>
-            <Input
-              type="number"
-              min="0"
-              inputMode="numeric"
-              value={payment}
-              onChange={(e) => setPayment(e.target.value)}
-              onBlur={handlePaymentBlur}
-              placeholder="0"
-              className="h-7 w-20 text-right border-emerald-200 bg-white text-emerald-800 font-semibold focus-visible:ring-emerald-500"
-            />
-            <span className="text-xs text-emerald-600">DH</span>
+            <span className="text-emerald-800 font-semibold">{totalActsPrice} DH</span>
             {savingPayment && <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />}
           </div>
 
@@ -2595,7 +2632,7 @@ export default function AppointmentDetailsPage() {
         })}
         acts={selectedActs.map((name) => ({
           name,
-          price: medicalActs.find((a) => a.name === name)?.price ?? 0,
+          price: actPriceOf(name),
         }))}
         total={appointment?.payement ?? totalActsPrice}
         header={{

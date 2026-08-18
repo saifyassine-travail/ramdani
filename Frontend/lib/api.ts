@@ -390,7 +390,7 @@ class ApiClient {
     return this.request(`/appointments/${appointmentId}/last-info`, {}, true)
   }
 
-  async updatePrice(appointmentId: number, price: number, medicalActs?: string[]): Promise<ApiResponse<{ price: number; medical_acts?: string[] }>> {
+  async updatePrice(appointmentId: number, price: number, medicalActs?: Array<string | { name: string; price: number }>): Promise<ApiResponse<{ price: number; medical_acts?: Array<string | { name: string; price: number }> }>> {
     return this.request("/appointments/update-price", {
       method: "POST",
       headers: {
