@@ -389,7 +389,24 @@ export default function AppointmentDetailsPage() {
     },
     [],
   )
-  const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
+  // One RDV can hold several independent analysis requests; each is its own list.
+  const [analysesAll, setAnalysesAll] = useState<AnalysisForm[][]>([[]])
+  const [activeAnalyse, setActiveAnalyse] = useState(0)
+  const activeAnalyseRef = useRef(0)
+  useEffect(() => { activeAnalyseRef.current = activeAnalyse }, [activeAnalyse])
+  const analyses = analysesAll[activeAnalyse] ?? []
+  const setAnalyses = useCallback(
+    (updater: AnalysisForm[] | ((prev: AnalysisForm[]) => AnalysisForm[])) => {
+      const idx = activeAnalyseRef.current
+      setAnalysesAll((prev) => {
+        const copy = [...prev]
+        const cur = copy[idx] ?? []
+        copy[idx] = typeof updater === "function" ? (updater as any)(cur) : updater
+        return copy
+      })
+    },
+    [],
+  )
   const [openMedicationDropdown, setOpenMedicationDropdown] = useState<number | null>(null)
   const [medicationSearchQuery, setMedicationSearchQuery] = useState("")
   const [editingMedNameIndex, setEditingMedNameIndex] = useState<number | null>(null)
@@ -978,12 +995,21 @@ export default function AppointmentDetailsPage() {
         }
 
         if (appt?.analyses && Array.isArray(appt.analyses) && appt.analyses.length > 0) {
-          setAnalyses(
-            appt.analyses.map((analysis) => ({
+          // Group the flat analyse list back into requests by analyse_no.
+          const groups: Record<number, AnalysisForm[]> = {}
+          appt.analyses.forEach((analysis: any) => {
+            const no = Math.max(1, Number(analysis?.pivot?.analyse_no) || 1)
+            ;(groups[no] ||= []).push({
               ID_Analyse: analysis?.ID_Analyse || "",
               name: analysis?.type_analyse || "",
-            })),
-          )
+            })
+          })
+          const ordered = Object.keys(groups)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((no) => groups[no])
+          setAnalysesAll(ordered.length > 0 ? ordered : [[]])
+          setActiveAnalyse(0)
         }
 
         try {
@@ -1175,6 +1201,25 @@ export default function AppointmentDetailsPage() {
       name: "",
     }
     setAnalyses((prev) => [...prev, newAnalysis])
+  }, [setAnalyses])
+
+  // Add a new, empty analysis request and switch to it.
+  const addAnalyseRequest = useCallback(() => {
+    setAnalysesAll((prev) => {
+      const next = [...prev, []]
+      setActiveAnalyse(next.length - 1)
+      return next
+    })
+  }, [])
+
+  // Remove an analysis request (always keep at least one).
+  const removeAnalyseRequest = useCallback((idx: number) => {
+    setAnalysesAll((prev) => {
+      if (prev.length <= 1) return [[]]
+      const next = prev.filter((_, i) => i !== idx)
+      setActiveAnalyse((cur) => Math.max(0, Math.min(cur > idx ? cur - 1 : cur, next.length - 1)))
+      return next
+    })
   }, [])
 
   const copyAnalysisFromLast = useCallback((analysis: LastAppointmentData["analyses"][0]) => {
@@ -1257,11 +1302,15 @@ export default function AppointmentDetailsPage() {
             }),
         )
 
-        const analysesData = analyses
-          .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
-          .map((analysis) => ({
-            ID_Analyse: Number(analysis.ID_Analyse),
-          }))
+        // Flatten every analysis request, tagging each with its request number.
+        const analysesData = analysesAll.flatMap((list, anIdx) =>
+          list
+            .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
+            .map((analysis) => ({
+              ID_Analyse: Number(analysis.ID_Analyse),
+              analyse_no: anIdx + 1,
+            })),
+        )
 
         const requestData = {
           case_description: caseDescription || "",
@@ -1310,7 +1359,7 @@ export default function AppointmentDetailsPage() {
         setSaving(false)
       }
     },
-    [appointmentId, ordonnancesAll, analyses, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
+    [appointmentId, ordonnancesAll, analysesAll, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
   )
 
   const formatDate = (dateString: string) => {
@@ -2246,6 +2295,54 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
+                  {/* Analysis-request tabs — one RDV can have several demandes d'analyses */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-3 pb-3 border-b">
+                    {analysesAll.map((list, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActiveAnalyse(i)}
+                        className={cn(
+                          "group flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold border transition-colors",
+                          activeAnalyse === i
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50",
+                        )}
+                      >
+                        <span>Demande {i + 1}</span>
+                        {list.length > 0 && (
+                          <span className={cn(
+                            "rounded-full px-1.5 text-[10px]",
+                            activeAnalyse === i ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500",
+                          )}>{list.length}</span>
+                        )}
+                        {analysesAll.length > 1 && (
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => { e.stopPropagation(); removeAnalyseRequest(i) }}
+                            title="Supprimer cette demande"
+                            className={cn(
+                              "ml-0.5 rounded p-0.5 hover:bg-red-100 hover:text-red-600",
+                              activeAnalyse === i ? "text-white/80" : "text-gray-400",
+                            )}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-dashed"
+                      onClick={addAnalyseRequest}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Demande
+                    </Button>
+                  </div>
                   <div className="space-y-3">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />

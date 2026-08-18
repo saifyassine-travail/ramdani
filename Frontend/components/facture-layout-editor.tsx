@@ -100,7 +100,7 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
             if (el.id === "acts_table") {
                 drawSampleTable(ctx, px, py, el.fontSize, canvas.width, isSel)
             } else if (el.id === "totals") {
-                const lines = ["Six cent cinquante dirhams"]
+                const lines = ["Arrêtée la présente facture à la somme de :", "Six cent cinquante dirhams"]
                 lines.forEach((line, i) => ctx.fillText(line, px, py + i * (el.fontSize + 4)))
             } else {
                 const text =

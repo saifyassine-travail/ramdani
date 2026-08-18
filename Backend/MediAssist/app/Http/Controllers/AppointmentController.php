@@ -261,6 +261,8 @@ class AppointmentController extends Controller
                 'medicaments.*.ordonnance_no' => 'nullable|integer|min:1',
                 'analyses' => 'nullable|array',
                 'analyses.*.ID_Analyse' => 'required_with:analyses|exists:analyses,ID_Analyse',
+                // Which analysis request (1, 2, 3…) this analyse belongs to.
+                'analyses.*.analyse_no' => 'nullable|integer|min:1',
             ]);
 
             // Update diagnostic
@@ -343,11 +345,31 @@ if (!empty($caseData)) {
                 DB::table('appointment_medicament')->insert(array_values($medRows));
             }
 
-            // Sync analyses (only IDs)
-            $analysisIds = $request->has('analyses')
-                ? array_column($request->input('analyses'), 'ID_Analyse')
-                : [];
-            $appointment->analyses()->sync($analysisIds);
+            // Save analyses grouped by request number (same idea as ordonnances):
+            // an analyse may appear in several requests of one RDV, so rebuild the
+            // pivot rows manually keyed by (analyse, request).
+            $analyseRows = [];
+            $analyseOrder = 0;
+            if ($request->has('analyses')) {
+                foreach ($request->input('analyses') as $an) {
+                    $anId = $an['ID_Analyse'] ?? null;
+                    if (!empty($anId)) {
+                        $anNo = max(1, (int) ($an['analyse_no'] ?? 1));
+                        $ts = $now->copy()->addMilliseconds($analyseOrder++);
+                        $analyseRows["{$anId}_{$anNo}"] = [
+                            'ID_RV' => $appointment->ID_RV,
+                            'ID_Analyse' => $anId,
+                            'analyse_no' => $anNo,
+                            'created_at' => $ts,
+                            'updated_at' => $ts,
+                        ];
+                    }
+                }
+            }
+            DB::table('appointment_analyse')->where('ID_RV', $appointment->ID_RV)->delete();
+            if (!empty($analyseRows)) {
+                DB::table('appointment_analyse')->insert(array_values($analyseRows));
+            }
 
             DB::commit();
 

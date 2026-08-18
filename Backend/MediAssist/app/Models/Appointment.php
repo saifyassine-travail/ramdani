@@ -39,6 +39,9 @@ class Appointment extends Model
     public function analyses()
     {
         return $this->belongsToMany(Analysis::class, 'appointment_analyse', 'ID_RV', 'ID_Analyse')
+            ->withPivot('analyse_no', 'created_at')
+            ->orderBy('pivot_analyse_no', 'asc')
+            ->orderBy('pivot_created_at', 'asc')
             ->withTimestamps();
     }
 
