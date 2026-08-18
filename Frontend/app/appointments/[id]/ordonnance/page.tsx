@@ -105,9 +105,13 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
   return cat.split(' ')[0] || raw.split(' ')[0] || 'cp'
 }
 
-function isInjType(med: { type?: string; type_category?: string }): boolean {
-  const src = `${med.type_category || ''} ${med.type || ''}`.toLowerCase()
-  return src.includes('injectable') || src.includes('injection')
+function isInjType(med: { type?: string; type_category?: string; name?: string }): boolean {
+  const src = `${med.type_category || ''} ${med.type || ''} ${med.name || ''}`.toLowerCase()
+  // Insulins (tagged "[Ins]" in the catalog) and any injectable/parenteral form
+  // are dosed in international units (UI), not counted like tablets.
+  return src.includes('injectable') || src.includes('injection') ||
+    src.includes('parenteral') || src.includes('parentéral') ||
+    src.includes('insulin') || src.includes('[ins]')
 }
 
 // Parse the `frequence` field into per-time units + a single meal timing.
