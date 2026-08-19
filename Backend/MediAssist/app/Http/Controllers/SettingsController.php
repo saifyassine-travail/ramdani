@@ -98,7 +98,8 @@ class SettingsController extends Controller
                 'ordonnance_background', 'ordonnance_layout', 'show_ddr', 'case_autosuggest',
                 'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts',
                 'facture_background', 'facture_layout', 'certificate_template', 'practice_city',
-                'case_description_cumulative', 'certificate_background', 'certificate_layout'
+                'case_description_cumulative', 'certificate_background', 'certificate_layout',
+                'analyse_background', 'analyse_layout'
             ];
 
             $data = [];
@@ -112,7 +113,7 @@ class SettingsController extends Controller
             \Log::info('Filtered data before json encode', $data);
 
             // Handle arrays to JSON for DB query builder
-            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts', 'facture_layout', 'certificate_layout'] as $jsonField) {
+            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts', 'facture_layout', 'certificate_layout', 'analyse_layout'] as $jsonField) {
                 if (isset($data[$jsonField])) {
                     if (is_array($data[$jsonField]) || is_object($data[$jsonField])) {
                         $data[$jsonField] = json_encode($data[$jsonField]);
@@ -437,6 +438,59 @@ class SettingsController extends Controller
     public function serveFactureBackground($filename)
     {
         $path = storage_path('app/public/factures/' . basename($filename));
+
+        if (!file_exists($path)) {
+            abort(404);
+        }
+
+        $file = file_get_contents($path);
+        $type = mime_content_type($path);
+
+        return response($file)
+            ->header('Content-Type', $type)
+            ->header('Access-Control-Allow-Origin', '*')
+            ->header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+            ->header('Access-Control-Allow-Headers', 'Origin, Content-Type, Accept, Authorization');
+    }
+
+    // Upload Analyse Background
+    public function uploadAnalyseBackground(Request $request)
+    {
+        try {
+            $userId = auth()->id() ?? $request->user_id;
+            if (!$userId) {
+                return response()->json(['success' => false, 'message' => 'Non authentifié'], 401);
+            }
+
+            if (!$request->hasFile('background')) {
+                return response()->json(['success' => false, 'message' => 'Aucun fichier reçu'], 400);
+            }
+
+            $file = $request->file('background');
+            $filename = 'analyse_bg_' . $userId . '_' . time() . '.' . $file->getClientOriginalExtension();
+            $file->storeAs('analyses', $filename, 'public');
+
+            $url = "/storage/analyses/{$filename}";
+            DB::table('user_settings')->updateOrInsert(
+                ['user_id' => $userId],
+                ['analyse_background' => $url, 'updated_at' => now()]
+            );
+
+            return response()->json([
+                'success' => true,
+                'url' => url('/api/settings/analyse-background/' . $filename)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Serve analyse background image with CORS headers
+     */
+    public function serveAnalyseBackground($filename)
+    {
+        $path = storage_path('app/public/analyses/' . basename($filename));
 
         if (!file_exists($path)) {
             abort(404);

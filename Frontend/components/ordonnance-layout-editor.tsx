@@ -39,9 +39,22 @@ interface OrdonnanceLayoutEditorProps {
     initialBackground?: string
     initialLayout?: any
     onSave: (background: string, layout: any) => void
+    // Optional overrides so the same editor can drive other list documents (analyses).
+    uploadBackground?: (formData: FormData) => Promise<any>
+    listLabel?: string
+    page2Label?: string
+    sampleItems?: [string, string]
 }
 
-export default function OrdonnanceLayoutEditor({ initialBackground, initialLayout, onSave }: OrdonnanceLayoutEditorProps) {
+export default function OrdonnanceLayoutEditor({
+    initialBackground,
+    initialLayout,
+    onSave,
+    uploadBackground,
+    listLabel = "Liste Médicaments",
+    page2Label = "Médicaments (page 2)",
+    sampleItems = ["• Médicament Exemple 1", "• Médicament Exemple 2"],
+}: OrdonnanceLayoutEditorProps) {
     const { toast } = useToast()
     const [background, setBackground] = useState(initialBackground || "")
     const [imageLoaded, setImageLoaded] = useState(false)
@@ -51,11 +64,11 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
     const [elements, setElements] = useState<LayoutElement[]>([
         { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type, hidden: initialLayout?.patient_name?.hidden ?? false },
         { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar, hidden: initialLayout?.date?.hidden ?? false },
-        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: "Liste Médicaments", icon: List, hidden: initialLayout?.medications?.hidden ?? false },
+        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: listLabel, icon: List, hidden: initialLayout?.medications?.hidden ?? false },
         // Where the medication list resumes on page 2 (and beyond) when it overflows.
         // Defaults near the top (page 2 usually needs less clearance than page 1)
         // and offset from the page-1 marker so it can be grabbed separately.
-        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: "Médicaments (page 2)", icon: List, hidden: initialLayout?.medications_page2?.hidden ?? false },
+        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: page2Label, icon: List, hidden: initialLayout?.medications_page2?.hidden ?? false },
     ])
 
     const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -96,7 +109,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             ctx.font = `${selectedId === el.id ? 'bold ' : ''}${el.fontSize}px Arial`
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
 
-            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : el.id === "medications_page2" ? "↳ Médicament suivant\n↳ Médicament suivant" : "• Médicament Exemple 1\n• Médicament Exemple 2"
+            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : el.id === "medications_page2" ? sampleItems.map((s) => "↳ " + s.replace(/^[•↳]\s*/, "")).join("\n") : sampleItems.join("\n")
             const padding = 10
 
             if (selectedId === el.id) {
@@ -203,7 +216,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         const formData = new FormData()
         formData.append("background", e.target.files[0])
         try {
-            const response = await apiClient.uploadOrdonnanceBackground(formData)
+            const response = await (uploadBackground || apiClient.uploadOrdonnanceBackground)(formData)
             if (response.success && response.data?.url) {
                 const fullUrl = resolveDocumentBackgroundUrl(response.data.url)
                 setBackground(fullUrl)

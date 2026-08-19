@@ -166,11 +166,21 @@ export default function SettingsPage() {
           }
         }
 
+        // Parse analyse_layout if it's a string
+        if (typeof parsedData.analyse_layout === 'string') {
+          try {
+            parsedData.analyse_layout = JSON.parse(parsedData.analyse_layout)
+          } catch (e) {
+            parsedData.analyse_layout = null
+          }
+        }
+
         // Resolve background image URLs to the configured backend host so they load
         // on every device (not just the server machine). See resolveDocumentBackgroundUrl.
         parsedData.ordonnance_background = resolveDocumentBackgroundUrl(parsedData.ordonnance_background)
         parsedData.facture_background = resolveDocumentBackgroundUrl(parsedData.facture_background)
         parsedData.certificate_background = resolveDocumentBackgroundUrl(parsedData.certificate_background)
+        parsedData.analyse_background = resolveDocumentBackgroundUrl(parsedData.analyse_background)
 
         localStorage.setItem("app_settings", JSON.stringify(parsedData))
         setSettings(parsedData)
@@ -1479,6 +1489,50 @@ export default function SettingsPage() {
                     if (response.success) {
                       await fetchSettings()
                       toast({ title: "Succès", description: "Configuration de l'ordonnance enregistrée" })
+                    } else {
+                      toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
+                    }
+                  } catch (error: any) {
+                    toast({ title: "Erreur", description: error?.message || "Échec de l'enregistrement", variant: "destructive" })
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Analyses */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-600" />
+                Configuration de l'Analyse
+              </CardTitle>
+              <CardDescription>
+                Personnalisez l'emplacement des éléments sur votre papier de demande d'analyses.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrdonnanceLayoutEditor
+                initialBackground={settings?.analyse_background}
+                initialLayout={settings?.analyse_layout}
+                uploadBackground={(fd) => apiClient.uploadAnalyseBackground(fd)}
+                listLabel="Liste des Analyses"
+                page2Label="Analyses (page 2)"
+                sampleItems={["• Analyse Exemple 1", "• Analyse Exemple 2"]}
+                onSave={async (background, layout) => {
+                  setSaving(true)
+                  try {
+                    const newSettings = {
+                      ...settings,
+                      analyse_background: background,
+                      analyse_layout: layout
+                    }
+                    const response = await apiClient.updateUserSettings(sanitizeSettings(newSettings))
+                    if (response.success) {
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Configuration de l'analyse enregistrée" })
                     } else {
                       toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
                     }

@@ -317,6 +317,14 @@ export default function AppointmentDetailsPage() {
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
               : settingsData.ordonnance_layout || null,
+            analyse_background: resolveDocumentBackgroundUrl(settingsData.analyse_background),
+            analyse_layout: (() => {
+              try {
+                return typeof settingsData.analyse_layout === 'string'
+                  ? JSON.parse(settingsData.analyse_layout)
+                  : settingsData.analyse_layout || null
+              } catch { return null }
+            })(),
             facture_background: resolveDocumentBackgroundUrl(settingsData.facture_background),
             facture_layout: typeof settingsData.facture_layout === 'string'
               ? JSON.parse(settingsData.facture_layout)
@@ -813,8 +821,9 @@ export default function AppointmentDetailsPage() {
         return
       }
 
-      const layout = (caseConfig as any).ordonnance_layout
-      const background = (caseConfig as any).ordonnance_background
+      // Use the dedicated analyses layout if configured, else fall back to the ordonnance one.
+      const layout = (caseConfig as any).analyse_layout || (caseConfig as any).ordonnance_layout
+      const background = (caseConfig as any).analyse_background || (caseConfig as any).ordonnance_background
 
       const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
         ? formatName(appointment.patient.first_name, appointment.patient.last_name)

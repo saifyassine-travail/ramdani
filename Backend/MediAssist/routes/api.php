@@ -136,6 +136,7 @@ Route::prefix('settings')->group(function () {
     Route::get('/ordonnance-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveOrdonnanceBackground']);
     Route::get('/facture-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveFactureBackground']);
     Route::get('/certificate-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveCertificateBackground']);
+    Route::get('/analyse-background/{filename}', [App\Http\Controllers\SettingsController::class, 'serveAnalyseBackground']);
 });
 Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::get('/', [App\Http\Controllers\SettingsController::class, 'getUserSettings']);
@@ -143,6 +144,7 @@ Route::prefix('settings')->middleware('auth:sanctum')->group(function () {
     Route::post('/upload-background', [App\Http\Controllers\SettingsController::class, 'uploadOrdonnanceBackground']);
     Route::post('/upload-facture-background', [App\Http\Controllers\SettingsController::class, 'uploadFactureBackground']);
     Route::post('/upload-certificate-background', [App\Http\Controllers\SettingsController::class, 'uploadCertificateBackground']);
+    Route::post('/upload-analyse-background', [App\Http\Controllers\SettingsController::class, 'uploadAnalyseBackground']);
 });
 
 // USER MANAGEMENT (Admin only)
