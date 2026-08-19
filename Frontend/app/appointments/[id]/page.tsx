@@ -699,15 +699,9 @@ export default function AppointmentDetailsPage() {
 </head>
 <body>
   ${background ? '<div class="page-bg"></div>' : ''}
-  <div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">
-    ${patientName}
-  </div>
-  <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">
-    ${dateStr}
-  </div>
-  <div id="meds">
-    ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
-  </div>
+  ${pn.hidden ? '' : `<div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">${patientName}</div>`}
+  ${dt.hidden ? '' : `<div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">${dateStr}</div>`}
+  ${md.hidden ? '' : `<div id="meds">${medications.map((m, i) => getMedicationHTML(m, i)).join('')}</div>`}
   <script>
     (function(){
       function paginate(){

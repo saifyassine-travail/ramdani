@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Save, Upload, Type, Calendar, List, ChevronUp, ChevronDown, Maximize2, Loader2 } from "lucide-react"
+import { Save, Upload, Type, Calendar, List, ChevronUp, ChevronDown, Maximize2, Loader2, Eye, EyeOff } from "lucide-react"
 import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 
@@ -16,6 +16,7 @@ interface LayoutElement {
     fontSize: number
     label: string
     icon: any
+    hidden?: boolean // when true, the element is not printed
 }
 
 interface PaperConfig {
@@ -48,13 +49,13 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
 
     // Default elements in percentages
     const [elements, setElements] = useState<LayoutElement[]>([
-        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type },
-        { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar },
-        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: "Liste Médicaments", icon: List },
+        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type, hidden: initialLayout?.patient_name?.hidden ?? false },
+        { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar, hidden: initialLayout?.date?.hidden ?? false },
+        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: "Liste Médicaments", icon: List, hidden: initialLayout?.medications?.hidden ?? false },
         // Where the medication list resumes on page 2 (and beyond) when it overflows.
         // Defaults near the top (page 2 usually needs less clearance than page 1)
         // and offset from the page-1 marker so it can be grabbed separately.
-        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: "Médicaments (page 2)", icon: List },
+        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: "Médicaments (page 2)", icon: List, hidden: initialLayout?.medications_page2?.hidden ?? false },
     ])
 
     const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -89,6 +90,8 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             if (!ids.includes(el.id)) return
             const px = (el.x / 100) * canvas.width
             const py = (el.y / 100) * canvas.height
+            // Hidden elements are shown faded (still movable) but won't be printed.
+            ctx.globalAlpha = el.hidden ? 0.25 : 1
 
             ctx.font = `${selectedId === el.id ? 'bold ' : ''}${el.fontSize}px Arial`
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
@@ -114,6 +117,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             } else {
                 ctx.fillText(text, px, py)
             }
+            ctx.globalAlpha = 1
         })
     }, [background, imageLoaded, selectedId])
 
@@ -282,6 +286,9 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
 
     const selectedElement = elements.find(el => el.id === selectedId)
 
+    const toggleHidden = (id: string) =>
+        setElements(prev => prev.map(el => el.id === id ? { ...el, hidden: !el.hidden } : el))
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-4">
@@ -385,15 +392,23 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
                                     className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer
                                 ${selectedId === el.id ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'hover:bg-gray-50 border-gray-100'}`}
                                 >
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
                                         <div className={`p-2.5 rounded-lg ${selectedId === el.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                                             <el.icon className="w-4 h-4" />
                                         </div>
-                                        <div>
-                                            <span className="font-bold text-sm block tracking-tight">{el.label}</span>
+                                        <div className="min-w-0">
+                                            <span className={`font-bold text-sm block tracking-tight truncate ${el.hidden ? 'text-gray-400 line-through' : ''}`}>{el.label}</span>
                                             <span className="text-[10px] text-gray-400 font-mono">POS: {Math.round(el.x)}%, {Math.round(el.y)}%</span>
                                         </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleHidden(el.id) }}
+                                        title={el.hidden ? "Afficher (imprimé)" : "Masquer (non imprimé)"}
+                                        className={`flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 ${el.hidden ? 'text-gray-400' : 'text-blue-600'}`}
+                                    >
+                                        {el.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
                                 </div>
                             ))}
                         </div>

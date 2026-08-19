@@ -15,6 +15,7 @@ interface El {
   x: number // %
   y: number // %
   fontSize: number // px
+  hidden?: boolean
 }
 
 interface Paper {
@@ -102,9 +103,9 @@ function buildPrintHTML(
 </head>
 <body>
   ${background ? '<div class="page-bg"></div>' : ""}
-  <div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
-  <div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
-  <div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
+  ${els.patient_name.hidden ? "" : `<div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>`}
+  ${els.date.hidden ? "" : `<div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>`}
+  ${els.medications.hidden ? "" : `<div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>`}
   ${paginationScript(paper.height, page2Top, page2Left, page2Width)}
 </body>
 </html>`
@@ -180,16 +181,19 @@ export default function OrdonnancePrintPreview({
         x: L.patient_name?.x ?? DEFAULTS.patient_name.x,
         y: L.patient_name?.y ?? DEFAULTS.patient_name.y,
         fontSize: L.patient_name?.fontSize ?? DEFAULTS.patient_name.fontSize,
+        hidden: L.patient_name?.hidden ?? false,
       },
       date: {
         x: L.date?.x ?? DEFAULTS.date.x,
         y: L.date?.y ?? DEFAULTS.date.y,
         fontSize: L.date?.fontSize ?? DEFAULTS.date.fontSize,
+        hidden: L.date?.hidden ?? false,
       },
       medications: {
         x: L.medications?.x ?? DEFAULTS.medications.x,
         y: L.medications?.y ?? DEFAULTS.medications.y,
         fontSize: L.medications?.fontSize ?? DEFAULTS.medications.fontSize,
+        hidden: L.medications?.hidden ?? false,
       },
     })
     setPaper(L.paper || { type: "A4", width: 210, height: 297 })
@@ -316,6 +320,7 @@ export default function OrdonnancePrintPreview({
 
   const renderElement = (id: ElId) => {
     const el = els[id]
+    if (el.hidden) return null
     const selected = selectedId === id
     const common: React.CSSProperties = {
       position: "absolute",

@@ -15,6 +15,7 @@ interface El {
   x: number
   y: number
   fontSize: number
+  hidden?: boolean
 }
 
 interface Paper {
@@ -180,11 +181,11 @@ function buildPrintHTML(
 </head>
 <body>
   <div class="page">
-    <div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;">${escapeHtml(patientName)}</div>
-    <div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>
-    <div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total)}</div>
-    <div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total)}</div>
-    <div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr)}</div>
+    ${els.patient_name.hidden ? "" : `<div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;">${escapeHtml(patientName)}</div>`}
+    ${els.date.hidden ? "" : `<div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>`}
+    ${els.acts_table.hidden ? "" : `<div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total)}</div>`}
+    ${els.totals.hidden ? "" : `<div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total)}</div>`}
+    ${els.footer.hidden ? "" : `<div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr)}</div>`}
   </div>
 </body>
 </html>`
@@ -218,6 +219,7 @@ export default function FacturePrintPreview({
         x: L[id]?.x ?? DEFAULTS[id].x,
         y: L[id]?.y ?? DEFAULTS[id].y,
         fontSize: L[id]?.fontSize ?? DEFAULTS[id].fontSize,
+        hidden: L[id]?.hidden ?? false,
       }
     })
     setEls(seeded)
@@ -319,6 +321,7 @@ export default function FacturePrintPreview({
 
   const renderElement = (id: ElId) => {
     const el = els[id]
+    if (el.hidden) return null
     const selected = selectedId === id
     const common: React.CSSProperties = {
       position: "absolute",
