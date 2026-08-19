@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Save, Upload, Type, Heading, PenLine, ChevronUp, ChevronDown, Maximize2, Loader2 } from "lucide-react"
 import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { CERT_TEXT_DEFAULTS, type CertTexts } from "@/components/certificate-print-preview"
 
 interface LayoutElement {
     id: string
@@ -54,6 +55,8 @@ export default function CertificateLayoutEditor({ initialBackground, initialLayo
     const [dragging, setDragging] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [saving, setSaving] = useState(false)
+    // Editable fixed texts (title + signature), saved into layout.texts.
+    const [texts, setTexts] = useState<CertTexts>({ ...CERT_TEXT_DEFAULTS, ...(initialLayout?.texts || {}) })
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
@@ -95,15 +98,15 @@ export default function CertificateLayoutEditor({ initialBackground, initialLayo
 
             if (el.id === "title") {
                 ctx.font = `bold ${el.fontSize}px Arial`
-                ctx.fillText("CERTIFICAT MÉDICAL", px, py)
+                ctx.fillText(texts.title, px, py)
             } else if (el.id === "content") {
                 const lines = ["Je soussigné(e), Docteur ...", "certifie que le patient ...", "nécessite un repos de X jours."]
                 lines.forEach((line, i) => ctx.fillText(line, px, py + i * (el.fontSize + 5)))
             } else {
-                ctx.fillText("Signature et Cachet", px, py)
+                ctx.fillText(texts.signature, px, py)
             }
         })
-    }, [background, imageLoaded, selectedId])
+    }, [background, imageLoaded, selectedId, texts])
 
     const animate = useCallback(() => {
         drawCanvas()
@@ -238,7 +241,7 @@ export default function CertificateLayoutEditor({ initialBackground, initialLayo
     const handleSave = async () => {
         setSaving(true)
         try {
-            const layout: any = { paper }
+            const layout: any = { paper, texts }
             ELEMENT_IDS.forEach(id => { layout[id] = elements.find(e => e.id === id) })
             await onSave(background, layout)
         } finally {
@@ -360,6 +363,24 @@ export default function CertificateLayoutEditor({ initialBackground, initialLayo
                                 </div>
                             </div>
                         )}
+
+                        {/* Editable fixed texts */}
+                        <div className="pt-4 border-t space-y-3">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600">Textes fixes</h4>
+                            {([
+                                ["title", "Titre"],
+                                ["signature", "Signature et cachet"],
+                            ] as [keyof CertTexts, string][]).map(([key, label]) => (
+                                <div key={key} className="space-y-1">
+                                    <label className="text-[11px] font-medium text-gray-500">{label}</label>
+                                    <Input
+                                        value={texts[key]}
+                                        onChange={(e) => setTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                            ))}
+                        </div>
 
                         <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-md font-bold shadow-blue-200 shadow-xl" onClick={handleSave} disabled={saving}>
                             {saving

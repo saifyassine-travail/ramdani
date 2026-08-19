@@ -38,6 +38,16 @@ const DEFAULTS: Record<ElId, El> = {
   signature: { x: 55, y: 80, fontSize: 14 },
 }
 
+// Editable fixed texts, saved in layout.texts.
+export interface CertTexts {
+  title: string
+  signature: string
+}
+export const CERT_TEXT_DEFAULTS: CertTexts = {
+  title: "CERTIFICAT MÉDICAL",
+  signature: "Signature et Cachet du Médecin",
+}
+
 const ELEMENT_META: { id: ElId; label: string; icon: any }[] = [
   { id: "title", label: "Titre", icon: Heading },
   { id: "content", label: "Contenu", icon: Type },
@@ -54,7 +64,7 @@ function bodyHtml(body: string): string {
   return text.split("\n").map((line) => `<p style="margin:0 0 6px">${escapeHtml(line) || "&nbsp;"}</p>`).join("")
 }
 
-function buildPrintHTML(els: Record<ElId, El>, paper: Paper, background: string | null, body: string) {
+function buildPrintHTML(els: Record<ElId, El>, paper: Paper, background: string | null, body: string, texts: CertTexts) {
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -84,9 +94,9 @@ function buildPrintHTML(els: Record<ElId, El>, paper: Paper, background: string 
 </head>
 <body>
   <div class="page">
-    <div class="element" style="left:${els.title.x}%; top:${els.title.y}%; font-size:${els.title.fontSize}px; font-weight:bold; text-decoration:underline;">CERTIFICAT MÉDICAL</div>
+    <div class="element" style="left:${els.title.x}%; top:${els.title.y}%; font-size:${els.title.fontSize}px; font-weight:bold; text-decoration:underline;">${escapeHtml(texts.title)}</div>
     <div class="element" style="left:${els.content.x}%; top:${els.content.y}%; font-size:${els.content.fontSize}px; line-height:1.7; text-align:justify; width:${100 - els.content.x - 8}%;">${bodyHtml(body)}</div>
-    <div class="element" style="left:${els.signature.x}%; top:${els.signature.y}%; font-size:${els.signature.fontSize}px;">Signature et Cachet du Médecin</div>
+    <div class="element" style="left:${els.signature.x}%; top:${els.signature.y}%; font-size:${els.signature.fontSize}px;">${escapeHtml(texts.signature)}</div>
   </div>
 </body>
 </html>`
@@ -98,6 +108,8 @@ export default function CertificatePrintPreview({ open, onOpenChange, layout, ba
   const [selectedId, setSelectedId] = useState<ElId | null>(null)
   const [dragging, setDragging] = useState(false)
   const [bgUrl, setBgUrl] = useState<string | null>(null)
+
+  const texts: CertTexts = { ...CERT_TEXT_DEFAULTS, ...((layout && layout.texts) || {}) }
 
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -173,7 +185,7 @@ export default function CertificatePrintPreview({ open, onOpenChange, layout, ba
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, body)
+    const html = buildPrintHTML(els, paper, background, body, texts)
     const old = document.getElementById("certificate-print-frame")
     if (old) old.remove()
 
@@ -238,7 +250,7 @@ export default function CertificatePrintPreview({ open, onOpenChange, layout, ba
           textDecoration: id === "title" ? "underline" : "none",
         }}
       >
-        {id === "title" ? "CERTIFICAT MÉDICAL" : "Signature et Cachet du Médecin"}
+        {id === "title" ? texts.title : texts.signature}
       </div>
     )
   }
