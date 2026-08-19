@@ -32,6 +32,24 @@ export interface FactureHeaderInfo {
   city?: string
 }
 
+// Editable fixed texts. Stored in layout.texts; {date} and {ville} are expanded
+// in the footer.
+export interface FactureTexts {
+  col_designation: string
+  col_prix: string
+  total_label: string
+  intro: string
+  footer: string
+}
+
+export const FACTURE_TEXT_DEFAULTS: FactureTexts = {
+  col_designation: "Désignation",
+  col_prix: "Prix (DH)",
+  total_label: "Total",
+  intro: "Arrêtée la présente facture à la somme de :",
+  footer: "{ville} — Facture établie le {date}",
+}
+
 interface FacturePrintPreviewProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -67,7 +85,7 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
 }
 
-function actsTableHTML(acts: { name: string; price: number }[], total: number): string {
+function actsTableHTML(acts: { name: string; price: number }[], total: number, texts: FactureTexts): string {
   // Only bill acts that actually have a price — 0 DH acts are not shown.
   const billable = acts.filter((a) => Number(a.price) > 0)
   const rows = billable.length
@@ -79,13 +97,13 @@ function actsTableHTML(acts: { name: string; price: number }[], total: number): 
         .join("")
     : `<tr><td colspan="2" style="border:1px solid #333;padding:4px 8px;color:#999">Aucun acte enregistré</td></tr>`
   const totalRow = `<tr>
-      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">Total</td>
+      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">${escapeHtml(texts.total_label)}</td>
       <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">${total} DH</td>
     </tr>`
   return `<table style="border-collapse:collapse;width:100%">
     <thead><tr>
-      <th style="border:1px solid #333;padding:4px 8px;text-align:left;background:#f3f4f6">Désignation</th>
-      <th style="border:1px solid #333;padding:4px 8px;text-align:right;background:#f3f4f6">Prix (DH)</th>
+      <th style="border:1px solid #333;padding:4px 8px;text-align:left;background:#f3f4f6">${escapeHtml(texts.col_designation)}</th>
+      <th style="border:1px solid #333;padding:4px 8px;text-align:right;background:#f3f4f6">${escapeHtml(texts.col_prix)}</th>
     </tr></thead>
     <tbody>${rows}${totalRow}</tbody>
   </table>`
@@ -130,15 +148,19 @@ function numberToFrenchWords(value: number): string {
   return result.trim()
 }
 
-function totalsHTML(total: number): string {
+function totalsHTML(total: number, texts: FactureTexts): string {
   const words = numberToFrenchWords(total)
   const dh = total > 1 ? "dirhams" : "dirham"
-  return `<div>Arrêtée la présente facture à la somme de : <strong style="text-transform:capitalize">${escapeHtml(words)} ${dh}</strong></div>`
+  return `<div>${escapeHtml(texts.intro)} <strong style="text-transform:capitalize">${escapeHtml(words)} ${dh}</strong></div>`
 }
 
-function footerHTML(header: FactureHeaderInfo, dateStr: string): string {
-  const city = header.city ? `${escapeHtml(header.city)} — ` : ""
-  return `<div>${city}Facture établie le ${escapeHtml(dateStr)}</div>`
+function footerHTML(header: FactureHeaderInfo, dateStr: string, texts: FactureTexts): string {
+  // Expand {ville} and {date} tokens; a leading "— " with no city is trimmed.
+  let out = texts.footer
+    .split("{ville}").join(header.city ? escapeHtml(header.city) : "")
+    .split("{date}").join(escapeHtml(dateStr))
+  out = out.replace(/^\s*—\s*/, "").trim()
+  return `<div>${out}</div>`
 }
 
 function buildPrintHTML(
@@ -150,6 +172,7 @@ function buildPrintHTML(
   acts: { name: string; price: number }[],
   total: number,
   header: FactureHeaderInfo,
+  texts: FactureTexts,
 ) {
   return `<!DOCTYPE html>
 <html>
@@ -183,9 +206,9 @@ function buildPrintHTML(
   <div class="page">
     ${els.patient_name.hidden ? "" : `<div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;">${escapeHtml(patientName)}</div>`}
     ${els.date.hidden ? "" : `<div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>`}
-    ${els.acts_table.hidden ? "" : `<div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total)}</div>`}
-    ${els.totals.hidden ? "" : `<div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total)}</div>`}
-    ${els.footer.hidden ? "" : `<div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr)}</div>`}
+    ${els.acts_table.hidden ? "" : `<div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total, texts)}</div>`}
+    ${els.totals.hidden ? "" : `<div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total, texts)}</div>`}
+    ${els.footer.hidden ? "" : `<div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr, texts)}</div>`}
   </div>
 </body>
 </html>`
@@ -207,6 +230,9 @@ export default function FacturePrintPreview({
   const [selectedId, setSelectedId] = useState<ElId | null>(null)
   const [dragging, setDragging] = useState(false)
   const [bgUrl, setBgUrl] = useState<string | null>(null)
+
+  // Editable fixed texts saved with the layout (fall back to defaults).
+  const texts: FactureTexts = { ...FACTURE_TEXT_DEFAULTS, ...((layout && layout.texts) || {}) }
 
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -286,7 +312,7 @@ export default function FacturePrintPreview({
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, header)
+    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, header, texts)
 
     const old = document.getElementById("facture-print-frame")
     if (old) old.remove()
@@ -339,7 +365,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px`, width: `${100 - el.x - 8}%` }}
-          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts, total) }}
+          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts, total, texts) }}
         />
       )
     }
@@ -349,7 +375,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px`, lineHeight: 1.5, width: `${100 - el.x - 8}%` }}
-          dangerouslySetInnerHTML={{ __html: totalsHTML(total) }}
+          dangerouslySetInnerHTML={{ __html: totalsHTML(total, texts) }}
         />
       )
     }
@@ -359,7 +385,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px` }}
-          dangerouslySetInnerHTML={{ __html: footerHTML(header, dateStr) }}
+          dangerouslySetInnerHTML={{ __html: footerHTML(header, dateStr, texts) }}
         />
       )
     }

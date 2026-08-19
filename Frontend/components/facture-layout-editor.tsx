@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Save, Upload, Type, Calendar, Table2, Coins, AlignLeft, ChevronUp, ChevronDown, Maximize2, Loader2, Eye, EyeOff } from "lucide-react"
 import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { FACTURE_TEXT_DEFAULTS, type FactureTexts } from "@/components/facture-print-preview"
 
 interface LayoutElement {
     id: string
@@ -59,6 +60,8 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
     const [dragging, setDragging] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [saving, setSaving] = useState(false)
+    // Editable fixed texts, saved into layout.texts.
+    const [texts, setTexts] = useState<FactureTexts>({ ...FACTURE_TEXT_DEFAULTS, ...(initialLayout?.texts || {}) })
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
@@ -103,18 +106,19 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
             if (el.id === "acts_table") {
                 drawSampleTable(ctx, px, py, el.fontSize, canvas.width, isSel)
             } else if (el.id === "totals") {
-                const lines = ["Arrêtée la présente facture à la somme de : Six cent cinquante dirhams"]
+                const lines = [`${texts.intro} Six cent cinquante dirhams`]
                 lines.forEach((line, i) => ctx.fillText(line, px, py + i * (el.fontSize + 4)))
             } else {
+                const footerSample = texts.footer.split("{ville}").join("Casablanca").split("{date}").join("20/07/2026").replace(/^\s*—\s*/, "")
                 const text =
                     el.id === "patient_name" ? "M. NOM DU PATIENT" :
                     el.id === "date" ? "20 Juillet 2026" :
-                    "Cabinet — Facture établie le 20/07/2026"
+                    footerSample
                 ctx.fillText(text, px, py)
             }
             ctx.globalAlpha = 1
         })
-    }, [background, imageLoaded, selectedId])
+    }, [background, imageLoaded, selectedId, texts])
 
     const animate = useCallback(() => {
         drawCanvas()
@@ -255,7 +259,7 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
     const handleSave = async () => {
         setSaving(true)
         try {
-            const layout: any = { paper }
+            const layout: any = { paper, texts }
             ELEMENT_IDS.forEach(id => { layout[id] = elements.find(e => e.id === id) })
             await onSave(background, layout)
         } finally {
@@ -388,6 +392,27 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
                                 </div>
                             </div>
                         )}
+
+                        {/* Editable fixed texts */}
+                        <div className="pt-4 border-t space-y-3">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600">Textes fixes</h4>
+                            {([
+                                ["col_designation", "En-tête colonne 1"],
+                                ["col_prix", "En-tête colonne 2"],
+                                ["total_label", "Libellé Total"],
+                                ["intro", "Phrase du montant en lettres"],
+                                ["footer", "Pied de page ({ville}, {date})"],
+                            ] as [keyof FactureTexts, string][]).map(([key, label]) => (
+                                <div key={key} className="space-y-1">
+                                    <label className="text-[11px] font-medium text-gray-500">{label}</label>
+                                    <Input
+                                        value={texts[key]}
+                                        onChange={(e) => setTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                            ))}
+                        </div>
 
                         <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-md font-bold shadow-blue-200 shadow-xl" onClick={handleSave} disabled={saving}>
                             {saving
