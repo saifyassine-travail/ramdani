@@ -127,7 +127,9 @@ function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: s
       let units = (seg[1] || '').trim()
       // A dose value may be a whole number (2), a decimal (1.5) or a fraction
       // (1/2, 1/4, 3/4). Anything else is legacy meal-timing text.
-      const looksLikeDose = /^\d+(?:[.,]\d+)?$|^\d+\/\d+$/.test(units)
+      // Accept whole numbers, decimals (incl. the partial "1." typed mid-entry) and
+      // fractions (1/2). Commas are normalized to dots before this runs.
+      const looksLikeDose = /^\d+(?:\.\d*)?$|^\d+\/\d*$/.test(units)
       if (units && !looksLikeDose) {
         if (!mealTiming) mealTiming = units
         units = ''
@@ -2152,7 +2154,9 @@ export default function AppointmentDetailsPage() {
                                   const next = active ? doses.filter(d => d.time !== time) : [...doses, { time, units: '' }]
                                   updateMedication(medIndex, 'frequence', buildMedFrequence(next, mealTiming))
                                 }
-                                const setUnits = (units: string) => {
+                                const setUnits = (raw: string) => {
+                                  // Comma is the internal dose separator, so use a dot for decimals (1,5 -> 1.5).
+                                  const units = raw.replace(',', '.')
                                   updateMedication(medIndex, 'frequence', buildMedFrequence(doses.map(d => d.time === time ? { ...d, units } : d), mealTiming))
                                 }
                                 return (
@@ -2190,6 +2194,7 @@ export default function AppointmentDetailsPage() {
                                           <option value="1/2" />
                                           <option value="3/4" />
                                           <option value="1" />
+                                          <option value="1.5" />
                                           <option value="2" />
                                           <option value="3" />
                                         </datalist>
