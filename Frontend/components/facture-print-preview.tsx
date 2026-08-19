@@ -132,8 +132,7 @@ function numberToFrenchWords(value: number): string {
 function totalsHTML(total: number): string {
   const words = numberToFrenchWords(total)
   const dh = total > 1 ? "dirhams" : "dirham"
-  return `<div>Arrêtée la présente facture à la somme de :</div>
-    <div style="margin-top:2px;text-transform:capitalize"><strong>${escapeHtml(words)} ${dh}</strong></div>`
+  return `<div>Arrêtée la présente facture à la somme de : <strong style="text-transform:capitalize">${escapeHtml(words)} ${dh}</strong></div>`
 }
 
 function footerHTML(header: FactureHeaderInfo, dateStr: string): string {
