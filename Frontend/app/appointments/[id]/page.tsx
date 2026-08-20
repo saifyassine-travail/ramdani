@@ -238,6 +238,8 @@ export default function AppointmentDetailsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [autoSaving, setAutoSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
   const [lastAppointment, setLastAppointment] = useState<LastAppointmentData | null>(null)
@@ -1311,93 +1313,111 @@ export default function AppointmentDetailsPage() {
     })
   }, [])
 
+  // Core save (no navigation, no success toast). Reused by the manual button and
+  // the auto-save. Returns true on success.
+  const saveDetails = useCallback(async (): Promise<boolean> => {
+    try {
+      setError(null)
+
+      // Flatten every ordonnance into one list, tagging each med with its
+      // ordonnance number (1-based) so the backend can regroup them.
+      const medicamentsData = ordonnancesAll.flatMap((meds, ordIdx) =>
+        meds
+          .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
+          .map((med) => {
+            const base = {
+              dosage: med.pivot.dosage,
+              frequence: med.pivot.frequence,
+              duree: med.pivot.duree,
+              ordonnance_no: ordIdx + 1,
+            }
+            return med.ID_Medicament && med.ID_Medicament !== ""
+              ? { ID_Medicament: Number(med.ID_Medicament), ...base }
+              : { custom_name: (med.name || "").trim(), ...base }
+          }),
+      )
+
+      const analysesData = analysesAll.flatMap((list, anIdx) =>
+        list
+          .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
+          .map((analysis) => ({
+            ID_Analyse: Number(analysis.ID_Analyse),
+            analyse_no: anIdx + 1,
+          })),
+      )
+
+      const requestData = {
+        case_description: caseDescription || "",
+        weight: vitalSigns.weight ? Number(vitalSigns.weight) : undefined,
+        pulse: vitalSigns.pulse ? Number(vitalSigns.pulse) : undefined,
+        temperature: vitalSigns.temperature ? Number(vitalSigns.temperature) : undefined,
+        blood_pressure: vitalSigns.blood_pressure || undefined,
+        tall: vitalSigns.tall ? Number(vitalSigns.tall) : undefined,
+        spo2: null,
+        DDR: ddr || undefined,
+        notes: vitalSigns.notes || undefined,
+        custom_measures_values: vitalSigns.custom_measures_values,
+        diagnostic: diagnostic || "",
+        medicaments: medicamentsData,
+        analyses: analysesData,
+      }
+
+      const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
+      if (!response.success) {
+        throw new Error(response.message || "Failed to save appointment details")
+      }
+
+      const cacheKey = `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/appointments/${appointmentId}/edit-data`
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(`api-cache-${cacheKey}`)
+      }
+      return true
+    } catch (err) {
+      console.error("[v0] Error saving appointment:", err)
+      setError(err instanceof Error ? err.message : "Failed to save appointment details")
+      return false
+    }
+  }, [appointmentId, ordonnancesAll, analysesAll, caseDescription, vitalSigns, ddr, diagnostic])
+
+  // Keep a ref so the debounced auto-save always calls the latest version
+  // without re-arming the timer on every keystroke.
+  const saveDetailsRef = useRef(saveDetails)
+  useEffect(() => { saveDetailsRef.current = saveDetails }, [saveDetails])
+
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault()
-
-      try {
-        setSaving(true)
-        setError(null)
-
-        // Flatten every ordonnance into one list, tagging each med with its
-        // ordonnance number (1-based) so the backend can regroup them.
-        const medicamentsData = ordonnancesAll.flatMap((meds, ordIdx) =>
-          meds
-            .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
-            .map((med) => {
-              const base = {
-                dosage: med.pivot.dosage,
-                frequence: med.pivot.frequence,
-                duree: med.pivot.duree,
-                ordonnance_no: ordIdx + 1,
-              }
-              // Catalog drug -> send its id; free-typed drug -> send the name so the
-              // backend can find-or-create it.
-              return med.ID_Medicament && med.ID_Medicament !== ""
-                ? { ID_Medicament: Number(med.ID_Medicament), ...base }
-                : { custom_name: (med.name || "").trim(), ...base }
-            }),
-        )
-
-        // Flatten every analysis request, tagging each with its request number.
-        const analysesData = analysesAll.flatMap((list, anIdx) =>
-          list
-            .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
-            .map((analysis) => ({
-              ID_Analyse: Number(analysis.ID_Analyse),
-              analyse_no: anIdx + 1,
-            })),
-        )
-
-        const requestData = {
-          case_description: caseDescription || "",
-          weight: vitalSigns.weight ? Number(vitalSigns.weight) : undefined,
-          pulse: vitalSigns.pulse ? Number(vitalSigns.pulse) : undefined,
-          temperature: vitalSigns.temperature ? Number(vitalSigns.temperature) : undefined,
-          blood_pressure: vitalSigns.blood_pressure || undefined,
-          tall: vitalSigns.tall ? Number(vitalSigns.tall) : undefined,
-          spo2: null,
-          DDR: ddr || undefined,
-          notes: vitalSigns.notes || undefined,
-          custom_measures_values: vitalSigns.custom_measures_values,
-          diagnostic: diagnostic || "",
-          medicaments: medicamentsData,
-          analyses: analysesData,
-        }
-
-        const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
-
-        if (!response.success) {
-          throw new Error(response.message || "Failed to save appointment details")
-        }
-
-        const cacheKey = `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/appointments/${appointmentId}/edit-data`
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem(`api-cache-${cacheKey}`)
-        }
-
-        toast({
-          title: "Succès",
-          description: "Détails du rendez-vous sauvegardés avec succès!",
-        })
-
-        setTimeout(() => {
-          router.push("/medecin")
-        }, 500)
-      } catch (err) {
-        console.error("[v0] Error saving appointment:", err)
-        setError(err instanceof Error ? err.message : "Failed to save appointment details")
-        toast({
-          title: "Erreur",
-          description: err instanceof Error ? err.message : "Erreur lors de la sauvegarde",
-          variant: "destructive",
-        })
-      } finally {
-        setSaving(false)
+      setSaving(true)
+      const ok = await saveDetails()
+      setSaving(false)
+      if (ok) {
+        toast({ title: "Succès", description: "Détails du rendez-vous sauvegardés avec succès!" })
+        setTimeout(() => router.push("/medecin"), 500)
+      } else {
+        toast({ title: "Erreur", description: "Erreur lors de la sauvegarde", variant: "destructive" })
       }
     },
-    [appointmentId, ordonnancesAll, analysesAll, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
+    [saveDetails, toast, router],
   )
+
+  // Auto-save: debounce edits so the doctor never has to click "Enregistrer".
+  const firstAutoSaveSkipped = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    // Skip the first run right after the appointment data is loaded into state.
+    if (!firstAutoSaveSkipped.current) {
+      firstAutoSaveSkipped.current = true
+      return
+    }
+    const t = setTimeout(async () => {
+      setAutoSaving(true)
+      const ok = await saveDetailsRef.current()
+      setAutoSaving(false)
+      if (ok) setLastSavedAt(Date.now())
+    }, 1500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseDescription, diagnostic, ddr, vitalSigns, ordonnancesAll, analysesAll, loading])
 
   const formatDate = (dateString: string) => {
     return formatGlobalDate(dateString)
@@ -2588,9 +2608,23 @@ export default function AppointmentDetailsPage() {
           <p className="text-sm text-blue-700">Interface optimisée pour grand écran. Veuillez agrandir votre fenêtre.</p>
         </div>
 
-        <div className="flex justify-end space-x-4 mt-6 pb-8">
+        <div className="flex justify-end items-center space-x-4 mt-6 pb-8">
+          {/* Auto-save status — the doctor doesn't need to click to save. */}
+          <span className="text-xs text-gray-400 flex items-center gap-1.5" aria-live="polite">
+            {autoSaving ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Enregistrement automatique…
+              </>
+            ) : lastSavedAt ? (
+              <>
+                <Check className="w-3 h-3 text-green-500" />
+                Enregistré automatiquement
+              </>
+            ) : null}
+          </span>
           <Button type="button" variant="outline" onClick={() => router.push("/medecin")}>
-            Annuler
+            Retour
           </Button>
           <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
             {saving ? (
