@@ -776,8 +776,10 @@ export default function AppointmentDetailsPage() {
   }
 
   const filteredMedicaments = useMemo(() => {
+    // Archived medicaments must not be selectable in a new ordonnance.
+    const activeMedicaments = availableMedicaments.filter((m) => !(m as any).archived)
     const uniqueMedicaments = Array.from(
-      new Map(availableMedicaments.map((m) => [m.name.toLowerCase(), m])).values()
+      new Map(activeMedicaments.map((m) => [m.name.toLowerCase(), m])).values()
     )
 
     let list = uniqueMedicaments

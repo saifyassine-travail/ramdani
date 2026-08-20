@@ -38,14 +38,6 @@ export function GlobalSyncProvider({ children }: { children: React.ReactNode }) 
     })
   }, [])
 
-  return (
-    <>
-      {children}
-      {/* Sync Status Indicator */}
-      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-white rounded-lg shadow-lg p-3 text-sm">
-        <div className={`w-2 h-2 rounded-full ${syncStatus === "connected" ? "bg-green-500" : "bg-yellow-500"}`} />
-        <span className="text-gray-700">{connectedUsers > 1 ? `${connectedUsers} users connected` : "Sync ready"}</span>
-      </div>
-    </>
-  )
+  // The floating sync-status badge was removed at the user's request.
+  return <>{children}</>
 }

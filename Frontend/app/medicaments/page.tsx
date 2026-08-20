@@ -203,7 +203,7 @@ export default function MedicamentsPage() {
   }, [])
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-semibold text-gray-800">
           <span className="text-blue-700 border-b border-gray-600 italic">Liste</span>{" "}
