@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Printer, X, Type, Calendar, List, ChevronUp, ChevronDown } from "lucide-react"
+import { Printer, X, Type, Calendar, List, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react"
 
 const MM_TO_PX = 96 / 25.4
 const DISPLAY_W = 540 // on-screen width of the previewed page, in px
@@ -274,6 +274,10 @@ export default function OrdonnancePrintPreview({
     }))
   }
 
+  // Show/hide an element for this print (e.g. the date).
+  const toggleHidden = (id: ElId) =>
+    setEls((prev) => ({ ...prev, [id]: { ...prev[id], hidden: !prev[id].hidden } }))
+
   const setFont = (value: number) => {
     if (!selectedId) return
     setEls((prev) => ({ ...prev, [selectedId]: { ...prev[selectedId], fontSize: Math.max(6, value || 6) } }))
@@ -440,28 +444,37 @@ export default function OrdonnancePrintPreview({
           <div className="lg:col-span-4 space-y-4">
             <div className="space-y-2">
               {ELEMENT_META.map(({ id, label, icon: Icon }) => (
-                <button
+                <div
                   key={id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedId(id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                     selectedId === id ? "border-blue-500 bg-blue-50 shadow-sm" : "hover:bg-gray-50 border-gray-100"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`p-2 rounded-lg ${selectedId === id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}
                     >
                       <Icon className="w-4 h-4" />
                     </div>
-                    <div className="text-left">
-                      <span className="font-semibold text-sm block">{label}</span>
+                    <div className="text-left min-w-0">
+                      <span className={`font-semibold text-sm block truncate ${els[id].hidden ? "text-gray-400 line-through" : ""}`}>{label}</span>
                       <span className="text-[10px] text-gray-400 font-mono">
                         {Math.round(els[id].x)}%, {Math.round(els[id].y)}% · {els[id].fontSize}px
                       </span>
                     </div>
                   </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleHidden(id) }}
+                    title={els[id].hidden ? "Afficher (imprimé)" : "Masquer (non imprimé)"}
+                    className={`flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 ${els[id].hidden ? "text-gray-400" : "text-blue-600"}`}
+                  >
+                    {els[id].hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               ))}
             </div>
 
