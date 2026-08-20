@@ -246,6 +246,7 @@ export default function AppointmentDetailsPage() {
 
   // Settings Configuration for visibility
   const [showPrintPreview, setShowPrintPreview] = useState(false)
+  const [showAnalysePreview, setShowAnalysePreview] = useState(false)
   const [showFacturePreview, setShowFacturePreview] = useState(false)
   const [caseConfig, setCaseConfig] = useState({
     show_weight: true,
@@ -2334,7 +2335,7 @@ export default function AppointmentDetailsPage() {
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
-                      onClick={handlePrintAnalyses}
+                      onClick={() => setShowAnalysePreview(true)}
                     >
                       <Print className="w-3 h-3 mr-1" />
                       Imprimer
@@ -2623,6 +2624,31 @@ export default function AppointmentDetailsPage() {
           year: "numeric",
         })}
         medicationsHTML={medications.map(getMedicationHTML).join("")}
+      />
+
+      {/* Analyses print preview — reuses the ordonnance preview with the analyses
+          layout (placement + show/hide) and the analyses list as its content. */}
+      <OrdonnancePrintPreview
+        open={showAnalysePreview}
+        onOpenChange={setShowAnalysePreview}
+        layout={(caseConfig as any).analyse_layout || (caseConfig as any).ordonnance_layout || null}
+        background={(caseConfig as any).analyse_background || (caseConfig as any).ordonnance_background || null}
+        patientName={
+          appointment?.patient?.last_name && appointment?.patient?.first_name
+            ? formatName(appointment.patient.first_name, appointment.patient.last_name)
+            : (appointment?.patient as any)?.name || "Patient"
+        }
+        dateStr={new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+        medicationsHTML={
+          `<div style="font-weight:bold;margin-bottom:6px;border-bottom:1px solid #000;padding-bottom:4px;">Prière de faire SVP</div>` +
+          (analyses.length > 0
+            ? analyses.map((a) => `<div style="margin-bottom:6px;">• ${a.name || "Analyse"}</div>`).join("")
+            : `<div style="color:#999;">Aucune analyse demandée</div>`)
+        }
       />
 
       <FacturePrintPreview
