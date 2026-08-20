@@ -168,6 +168,34 @@ function buildMealTiming(base: string, offset: string): string {
   return `${o} ${base}`
 }
 
+// Render a dose quantity in French for the printed ordonnance:
+// 1.5 -> "1 et demi", 0.5 / "1/2" -> "un demi", 1.25 -> "1 et quart",
+// 3/4 -> "trois quarts". Unrecognized values are returned as-is.
+function formatDoseQty(raw: string): string {
+  const s = String(raw ?? "").trim()
+  if (!s) return "1"
+  let whole = 0
+  let frac = 0
+  const fr = s.match(/^(\d+)\/(\d+)$/)
+  if (fr) {
+    const den = Number(fr[2])
+    if (!den) return s
+    const val = Number(fr[1]) / den
+    whole = Math.floor(val)
+    frac = +(val - whole).toFixed(2)
+  } else {
+    const n = parseFloat(s.replace(",", "."))
+    if (isNaN(n)) return s
+    whole = Math.floor(n)
+    frac = +(n - whole).toFixed(2)
+  }
+  const word = frac === 0.5 ? "demi" : frac === 0.25 ? "quart" : frac === 0.75 ? "trois quarts" : null
+  if (!word) return s // no recognized fraction → keep the numeric value
+  const fracLabel = word === "trois quarts" ? "trois quarts" : `${word}`
+  if (whole === 0) return word === "trois quarts" ? "trois quarts" : `un ${fracLabel}`
+  return `${whole} et ${fracLabel}`
+}
+
 // Short pharmaceutical-form label (cp, sirop, inj, ...).
 function getMedTypeLabel(med: { type?: string; type_category?: string; name?: string }): string {
   const cat = (med.type_category || '').toLowerCase()
@@ -217,7 +245,7 @@ function getMedicationHTML(med: MedicationForm, index: number): string {
   const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
   const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
   const parts = doses.map((d) => {
-    const qty = d.units || '1'
+    const qty = formatDoseQty(d.units || '1')
     const label = isInj ? 'UI' : typeLabel
     return `${qty} ${label} ${d.time.toLowerCase()}`
   })
@@ -636,7 +664,7 @@ export default function AppointmentDetailsPage() {
         const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
 
         const parts = doses.map(d => {
-          const qty = d.units || '1'
+          const qty = formatDoseQty(d.units || '1')
           const label = isInj ? 'UI' : typeLabel
           return `${qty} ${label} ${d.time.toLowerCase()}`
         })

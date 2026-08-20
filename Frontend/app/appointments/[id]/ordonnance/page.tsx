@@ -175,6 +175,31 @@ function buildMealTiming(base: string, offset: string): string {
   return `${o} ${base}`
 }
 
+// Render a dose quantity in French: 1.5 -> "1 et demi", 1/2 -> "un demi", etc.
+function formatDoseQty(raw: string): string {
+  const s = String(raw ?? "").trim()
+  if (!s) return "1"
+  let whole = 0
+  let frac = 0
+  const fr = s.match(/^(\d+)\/(\d+)$/)
+  if (fr) {
+    const den = Number(fr[2])
+    if (!den) return s
+    const val = Number(fr[1]) / den
+    whole = Math.floor(val)
+    frac = +(val - whole).toFixed(2)
+  } else {
+    const n = parseFloat(s.replace(",", "."))
+    if (isNaN(n)) return s
+    whole = Math.floor(n)
+    frac = +(n - whole).toFixed(2)
+  }
+  const word = frac === 0.5 ? "demi" : frac === 0.25 ? "quart" : frac === 0.75 ? "trois quarts" : null
+  if (!word) return s
+  if (whole === 0) return word === "trois quarts" ? "trois quarts" : `un ${word}`
+  return `${whole} et ${word}`
+}
+
 // One medication block for the ordonnance (2 lines: name + posology).
 function getMedicationHTML(med: MedicationForm, index: number): string {
   const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
@@ -184,7 +209,7 @@ function getMedicationHTML(med: MedicationForm, index: number): string {
   const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
   const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
   const parts = doses.map((d) => {
-    const qty = d.units || '1'
+    const qty = formatDoseQty(d.units || '1')
     const label = isInj ? 'UI' : typeLabel
     return `${qty} ${label} ${d.time.toLowerCase()}`
   })
