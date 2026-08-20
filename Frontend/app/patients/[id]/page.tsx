@@ -1796,6 +1796,8 @@ export default function PatientDetailsPage() {
         layout={docSettings?.certificate_layout || null}
         background={docSettings?.certificate_background || null}
         body={certificateBody}
+        ville={docSettings?.practice_city || "Oujda"}
+        dateStr={new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
       />
 
       {/* Avatar Zoom Modal */}

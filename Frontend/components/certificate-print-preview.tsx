@@ -30,6 +30,9 @@ interface CertificatePrintPreviewProps {
   background: string | null
   /** The rendered certificate body (already substituted), newlines preserved. */
   body: string
+  /** For {ville}/{date} tokens in the title/signature texts. */
+  ville?: string
+  dateStr?: string
 }
 
 const DEFAULTS: Record<ElId, El> = {
@@ -45,7 +48,7 @@ export interface CertTexts {
 }
 export const CERT_TEXT_DEFAULTS: CertTexts = {
   title: "CERTIFICAT MÉDICAL",
-  signature: "Signature et Cachet du Médecin",
+  signature: "A {ville} le {date}",
 }
 
 const ELEMENT_META: { id: ElId; label: string; icon: any }[] = [
@@ -102,14 +105,18 @@ function buildPrintHTML(els: Record<ElId, El>, paper: Paper, background: string 
 </html>`
 }
 
-export default function CertificatePrintPreview({ open, onOpenChange, layout, background, body }: CertificatePrintPreviewProps) {
+export default function CertificatePrintPreview({ open, onOpenChange, layout, background, body, ville, dateStr }: CertificatePrintPreviewProps) {
   const [els, setEls] = useState<Record<ElId, El>>(DEFAULTS)
   const [paper, setPaper] = useState<Paper>({ type: "A4", width: 210, height: 297 })
   const [selectedId, setSelectedId] = useState<ElId | null>(null)
   const [dragging, setDragging] = useState(false)
   const [bgUrl, setBgUrl] = useState<string | null>(null)
 
-  const texts: CertTexts = { ...CERT_TEXT_DEFAULTS, ...((layout && layout.texts) || {}) }
+  const savedTexts: CertTexts = { ...CERT_TEXT_DEFAULTS, ...((layout && layout.texts) || {}) }
+  // Expand {ville}/{date} tokens (any case) in the fixed texts.
+  const expandVars = (t: string) =>
+    (t || "").replace(/\{ville\}/gi, ville || "").replace(/\{date\}/gi, dateStr || "")
+  const texts: CertTexts = { title: expandVars(savedTexts.title), signature: expandVars(savedTexts.signature) }
 
   const wrapperRef = useRef<HTMLDivElement>(null)
 
