@@ -22,7 +22,7 @@ import { isMinor } from "@/lib/age"
 import { useAuth } from "@/hooks/use-auth"
 import FacturePrintPreview from "@/components/facture-print-preview"
 import CertificatePrintPreview from "@/components/certificate-print-preview"
-import { renderCertificateTemplate } from "@/lib/certificate-template"
+import { renderCertificateTemplate, DEFAULT_CERTIFICATE_TEMPLATE } from "@/lib/certificate-template"
 
 interface PatientDetails {
   ID_patient: number
@@ -356,6 +356,11 @@ export default function PatientDetailsPage() {
           }
 
           setIsCertificateModalOpen(false)
+          // Immediately show the print preview (like the ordonnance flow).
+          if ((certificateData.content || "").trim()) {
+            setCertificateBody(certificateData.content.trim())
+            setCertificatePreviewOpen(true)
+          }
           toast({
             title: "Succès",
             description: "Certificat créé avec succès",
@@ -656,6 +661,9 @@ export default function PatientDetailsPage() {
       try { parsed.medical_acts = JSON.parse(parsed.medical_acts) } catch { parsed.medical_acts = [] }
     }
     if (!Array.isArray(parsed.medical_acts)) parsed.medical_acts = []
+    if (typeof parsed.certificate_models === "string") {
+      try { parsed.certificate_models = JSON.parse(parsed.certificate_models) } catch { parsed.certificate_models = null }
+    }
 
     parsed.facture_background = resolveDocumentBackgroundUrl(parsed.facture_background)
     parsed.certificate_background = resolveDocumentBackgroundUrl(parsed.certificate_background)
@@ -1723,7 +1731,12 @@ export default function PatientDetailsPage() {
           <CertificateForm
             onSubmit={handleAddCertificate}
             onCancel={() => setIsCertificateModalOpen(false)}
-            buildContent={(jours, start, end) => {
+            models={
+              Array.isArray(docSettings?.certificate_models) && docSettings.certificate_models.length
+                ? docSettings.certificate_models
+                : [{ name: "Par défaut", template: docSettings?.certificate_template || DEFAULT_CERTIFICATE_TEMPLATE }]
+            }
+            renderContent={(template, jours, start, end) => {
               const patientName = patient?.first_name && patient?.last_name
                 ? formatName(patient.first_name, patient.last_name)
                 : "Patient"
@@ -1731,7 +1744,7 @@ export default function PatientDetailsPage() {
                 const date = new Date(d)
                 return isNaN(date.getTime()) ? d : date.toLocaleDateString("fr-FR")
               }
-              return renderCertificateTemplate(docSettings?.certificate_template, {
+              return renderCertificateTemplate(template, {
                 patient: patientName,
                 cin: patient?.CIN || patient?.guardian_cin || "[Numéro CIN]",
                 jours: String(jours),
@@ -2042,12 +2055,15 @@ function PatientForm({
 function CertificateForm({
   onSubmit,
   onCancel,
-  buildContent,
+  models,
+  renderContent,
 }: {
   onSubmit: (data: any) => void
   onCancel: () => void
-  // Renders the settings template for the given rest-day count + dates.
-  buildContent: (jours: number, start: string, end: string) => string
+  // Available certificate models to choose from.
+  models: { name: string; template: string }[]
+  // Renders a given template for the rest-day count + dates.
+  renderContent: (template: string, jours: number, start: string, end: string) => string
 }) {
   const calculateDays = (start: string, end: string) => {
     const startDate = new Date(start)
@@ -2055,6 +2071,11 @@ function CertificateForm({
     const timeDiff = endDate.getTime() - startDate.getTime()
     return Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
   }
+
+  const safeModels = models && models.length ? models : [{ name: "Par défaut", template: "" }]
+  const [modelIdx, setModelIdx] = useState(0)
+  const buildContent = (jours: number, start: string, end: string) =>
+    renderContent(safeModels[Math.min(modelIdx, safeModels.length - 1)].template, jours, start, end)
 
   const initialStart = new Date().toISOString().split("T")[0]
   const initialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
@@ -2067,6 +2088,16 @@ function CertificateForm({
   const [contentTouched, setContentTouched] = useState(false)
 
   const daysCount = calculateDays(formData.start_date, formData.end_date)
+
+  const chooseModel = (i: number) => {
+    setModelIdx(i)
+    if (!contentTouched) {
+      setFormData((prev) => ({
+        ...prev,
+        content: renderContent(safeModels[i].template, calculateDays(prev.start_date, prev.end_date), prev.start_date, prev.end_date),
+      }))
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -2099,6 +2130,23 @@ function CertificateForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {safeModels.length > 1 && (
+        <div>
+          <Label>Modèle du certificat</Label>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {safeModels.map((m, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => chooseModel(i)}
+                className={`h-8 px-3 rounded-md text-xs font-semibold border transition-colors ${modelIdx === i ? "border-indigo-500 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+              >
+                {m.name || `Modèle ${i + 1}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label htmlFor="start_date">Date de Début</Label>

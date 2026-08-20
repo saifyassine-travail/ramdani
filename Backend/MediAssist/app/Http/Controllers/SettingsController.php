@@ -99,7 +99,7 @@ class SettingsController extends Controller
                 'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts',
                 'facture_background', 'facture_layout', 'certificate_template', 'practice_city',
                 'case_description_cumulative', 'certificate_background', 'certificate_layout',
-                'analyse_background', 'analyse_layout'
+                'analyse_background', 'analyse_layout', 'certificate_models'
             ];
 
             $data = [];
@@ -113,7 +113,7 @@ class SettingsController extends Controller
             \Log::info('Filtered data before json encode', $data);
 
             // Handle arrays to JSON for DB query builder
-            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts', 'facture_layout', 'certificate_layout', 'analyse_layout'] as $jsonField) {
+            foreach (['custom_measures', 'ordonnance_layout', 'working_days', 'medical_acts', 'facture_layout', 'certificate_layout', 'analyse_layout', 'certificate_models'] as $jsonField) {
                 if (isset($data[$jsonField])) {
                     if (is_array($data[$jsonField]) || is_object($data[$jsonField])) {
                         $data[$jsonField] = json_encode($data[$jsonField]);
