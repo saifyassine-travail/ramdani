@@ -98,9 +98,13 @@ interface MedDose {
   units: string
 }
 
-function isInjType(med: { type?: string; type_category?: string }): boolean {
-  const src = `${med.type_category || ''} ${med.type || ''}`.toLowerCase()
-  return src.includes('injectable') || src.includes('injection')
+function isInjType(med: { type?: string; type_category?: string; name?: string }): boolean {
+  const src = `${med.type_category || ''} ${med.type || ''} ${med.name || ''}`.toLowerCase()
+  // Insulins (tagged "[Ins]" in the catalog) and any injectable/parenteral form
+  // are dosed in international units (UI), not counted like tablets.
+  return src.includes('injectable') || src.includes('injection') ||
+    src.includes('parenteral') || src.includes('parentéral') ||
+    src.includes('insulin') || src.includes('[ins]')
 }
 
 // Parse the `frequence` field into per-time units + a single meal timing.
@@ -121,7 +125,12 @@ function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: s
       const seg = part.split(':')
       const time = (seg[0] || '').trim()
       let units = (seg[1] || '').trim()
-      if (units && isNaN(Number(units))) {
+      // A dose value may be a whole number (2), a decimal (1.5) or a fraction
+      // (1/2, 1/4, 3/4). Anything else is legacy meal-timing text.
+      // Accept whole numbers, decimals (incl. the partial "1." typed mid-entry) and
+      // fractions (1/2). Commas are normalized to dots before this runs.
+      const looksLikeDose = /^\d+(?:\.\d*)?$|^\d+\/\d*$/.test(units)
+      if (units && !looksLikeDose) {
         if (!mealTiming) mealTiming = units
         units = ''
       }
@@ -140,6 +149,53 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// The meal timing can carry an optional offset, stored/printed as "1h avant repas"
+// or "2h après repas". "pendant repas" never has an offset.
+function parseMealTiming(mealTiming: string): { base: string; offset: string } {
+  const mt = (mealTiming || '').trim()
+  if (!mt) return { base: '', offset: '' }
+  for (const base of MEAL_TIMINGS) {
+    if (mt === base) return { base, offset: '' }
+    if (mt.endsWith(base)) return { base, offset: mt.slice(0, mt.length - base.length).trim() }
+  }
+  return { base: mt, offset: '' }
+}
+
+function buildMealTiming(base: string, offset: string): string {
+  if (!base) return ''
+  const o = (offset || '').trim()
+  if (!o || base === 'pendant repas') return base
+  return `${o} ${base}`
+}
+
+// Render a dose quantity in French for the printed ordonnance:
+// 1.5 -> "1 et demi", 0.5 / "1/2" -> "un demi", 1.25 -> "1 et quart",
+// 3/4 -> "trois quarts". Unrecognized values are returned as-is.
+function formatDoseQty(raw: string): string {
+  const s = String(raw ?? "").trim()
+  if (!s) return "1"
+  let whole = 0
+  let frac = 0
+  const fr = s.match(/^(\d+)\/(\d+)$/)
+  if (fr) {
+    const den = Number(fr[2])
+    if (!den) return s
+    const val = Number(fr[1]) / den
+    whole = Math.floor(val)
+    frac = +(val - whole).toFixed(2)
+  } else {
+    const n = parseFloat(s.replace(",", "."))
+    if (isNaN(n)) return s
+    whole = Math.floor(n)
+    frac = +(n - whole).toFixed(2)
+  }
+  const word = frac === 0.5 ? "demi" : frac === 0.25 ? "quart" : frac === 0.75 ? "trois quarts" : null
+  if (!word) return s // no recognized fraction → keep the numeric value
+  const fracLabel = word === "trois quarts" ? "trois quarts" : `${word}`
+  if (whole === 0) return word === "trois quarts" ? "trois quarts" : `un ${fracLabel}`
+  return `${whole} et ${fracLabel}`
+}
+
 // Short pharmaceutical-form label (cp, sirop, inj, ...).
 function getMedTypeLabel(med: { type?: string; type_category?: string; name?: string }): string {
   const cat = (med.type_category || '').toLowerCase()
@@ -152,6 +208,7 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
     if (afterComma.includes('comprim')) return 'cp'
     if (afterComma.includes('sirop')) return 'sirop'
     if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+    if (afterComma.includes('gel')) return 'fois'
     if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
     // A name with a comma usually ends in its form ("…, ovule"); use that word.
     // A brand-only name (no comma, e.g. "Doliprane 1000") has no form, so default
@@ -161,6 +218,8 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
   if (src.includes('comprim')) return 'cp'
   if (src.includes('sirop')) return 'sirop'
   if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+  // A gel is applied a number of times, not counted like a tablet → "fois".
+  if (src.includes('gel')) return 'fois'
   if (src.includes('suspension injectable')) return 'susp inj'
   if (src.includes('injectable') || src.includes('injection')) return 'inj'
   if (src.includes('perfusion')) return 'perf'
@@ -178,7 +237,7 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
 }
 
 // One medication block for the ordonnance (name + posology).
-function getMedicationHTML(med: MedicationForm): string {
+function getMedicationHTML(med: MedicationForm, index: number): string {
   const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
   const duration = med.pivot?.duree || ''
   const fullName = med.name || 'Médicament'
@@ -186,14 +245,14 @@ function getMedicationHTML(med: MedicationForm): string {
   const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
   const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
   const parts = doses.map((d) => {
-    const qty = d.units || '1'
+    const qty = formatDoseQty(d.units || '1')
     const label = isInj ? 'UI' : typeLabel
     return `${qty} ${label} ${d.time.toLowerCase()}`
   })
   if (mealTiming) parts.push(mealTiming)
   if (duration) parts.push(`pendant ${duration}`)
   const posology = parts.join(', ')
-  return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
+  return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${index + 1} - ${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
 }
 
 export default function AppointmentDetailsPage() {
@@ -207,6 +266,8 @@ export default function AppointmentDetailsPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [autoSaving, setAutoSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
   const [lastAppointment, setLastAppointment] = useState<LastAppointmentData | null>(null)
@@ -215,6 +276,7 @@ export default function AppointmentDetailsPage() {
 
   // Settings Configuration for visibility
   const [showPrintPreview, setShowPrintPreview] = useState(false)
+  const [showAnalysePreview, setShowAnalysePreview] = useState(false)
   const [showFacturePreview, setShowFacturePreview] = useState(false)
   const [caseConfig, setCaseConfig] = useState({
     show_weight: true,
@@ -286,6 +348,14 @@ export default function AppointmentDetailsPage() {
             ordonnance_layout: typeof settingsData.ordonnance_layout === 'string'
               ? JSON.parse(settingsData.ordonnance_layout)
               : settingsData.ordonnance_layout || null,
+            analyse_background: resolveDocumentBackgroundUrl(settingsData.analyse_background),
+            analyse_layout: (() => {
+              try {
+                return typeof settingsData.analyse_layout === 'string'
+                  ? JSON.parse(settingsData.analyse_layout)
+                  : settingsData.analyse_layout || null
+              } catch { return null }
+            })(),
             facture_background: resolveDocumentBackgroundUrl(settingsData.facture_background),
             facture_layout: typeof settingsData.facture_layout === 'string'
               ? JSON.parse(settingsData.facture_layout)
@@ -339,10 +409,48 @@ export default function AppointmentDetailsPage() {
 
   const [caseDescription, setCaseDescription] = useState("")
   const [diagnostic, setDiagnostic] = useState("")
-  const [medications, setMedications] = useState<MedicationForm[]>([])
-  const [analyses, setAnalyses] = useState<AnalysisForm[]>([])
+  // One RDV can hold several independent ordonnances; each is its own med list.
+  const [ordonnancesAll, setOrdonnancesAll] = useState<MedicationForm[][]>([[]])
+  const [activeOrd, setActiveOrd] = useState(0)
+  const activeOrdRef = useRef(0)
+  useEffect(() => { activeOrdRef.current = activeOrd }, [activeOrd])
+  // The medications of the ordonnance currently being edited/printed.
+  const medications = ordonnancesAll[activeOrd] ?? []
+  // Existing handlers call setMedications(...) — route them to the active ordonnance
+  // (via a ref so this keeps a stable identity for the memoized handlers).
+  const setMedications = useCallback(
+    (updater: MedicationForm[] | ((prev: MedicationForm[]) => MedicationForm[])) => {
+      const idx = activeOrdRef.current
+      setOrdonnancesAll((prev) => {
+        const copy = [...prev]
+        const cur = copy[idx] ?? []
+        copy[idx] = typeof updater === "function" ? (updater as any)(cur) : updater
+        return copy
+      })
+    },
+    [],
+  )
+  // One RDV can hold several independent analysis requests; each is its own list.
+  const [analysesAll, setAnalysesAll] = useState<AnalysisForm[][]>([[]])
+  const [activeAnalyse, setActiveAnalyse] = useState(0)
+  const activeAnalyseRef = useRef(0)
+  useEffect(() => { activeAnalyseRef.current = activeAnalyse }, [activeAnalyse])
+  const analyses = analysesAll[activeAnalyse] ?? []
+  const setAnalyses = useCallback(
+    (updater: AnalysisForm[] | ((prev: AnalysisForm[]) => AnalysisForm[])) => {
+      const idx = activeAnalyseRef.current
+      setAnalysesAll((prev) => {
+        const copy = [...prev]
+        const cur = copy[idx] ?? []
+        copy[idx] = typeof updater === "function" ? (updater as any)(cur) : updater
+        return copy
+      })
+    },
+    [],
+  )
   const [openMedicationDropdown, setOpenMedicationDropdown] = useState<number | null>(null)
   const [medicationSearchQuery, setMedicationSearchQuery] = useState("")
+  const [editingMedNameIndex, setEditingMedNameIndex] = useState<number | null>(null)
   const [analysisSearchQuery, setAnalysisSearchQuery] = useState("")
 
   const [vitalSigns, setVitalSigns] = useState({
@@ -390,11 +498,17 @@ export default function AppointmentDetailsPage() {
   }, [caseConfig.medical_acts, caseConfig.default_consultation_price, caseConfig.default_control_price])
 
   const [selectedActs, setSelectedActs] = useState<string[]>([])
+  // Per-act price for THIS appointment (overrides the catalog price). The paid
+  // amount is the sum of these — the doctor edits act prices, not a paid field.
+  const [actPrices, setActPrices] = useState<Record<string, number>>({})
   const [totalActsPrice, setTotalActsPrice] = useState(0)
-  // Editable paid amount (kept as a string for the input). May be LESS than the
-  // acts total to record a partial payment.
-  const [payment, setPayment] = useState<string>("")
   const [savingPayment, setSavingPayment] = useState(false)
+
+  // Effective price of an act: the per-appointment override, else the catalog price.
+  const actPriceOf = useCallback(
+    (name: string) => actPrices[name] ?? (medicalActs.find((a) => a.name === name)?.price ?? 0),
+    [actPrices, medicalActs],
+  )
 
   useEffect(() => {
     // If appointment type is "Contrôle", ensure "Consultation" is not selected 
@@ -407,23 +521,27 @@ export default function AppointmentDetailsPage() {
       setSelectedActs(prev => prev.filter(a => a !== "Consultation"))
     }
 
-    const total = selectedActs.reduce((sum, actName) => {
-      const act = medicalActs.find((a) => a.name === actName)
-      return sum + (act ? act.price : 0)
-    }, 0)
+    const total = selectedActs.reduce((sum, actName) => sum + actPriceOf(actName), 0)
     setTotalActsPrice(total)
-  }, [selectedActs, appointment?.type])
+  }, [selectedActs, actPrices, appointment?.type, actPriceOf])
 
   // Persist the selected acts + the paid amount. Replaces the old "Appliquer"
   // button: it's called immediately when an act is toggled and when the doctor
   // finishes editing the payment field, so no explicit apply step is needed.
+  // Persist the selected acts (with their per-appointment prices). The paid amount
+  // is the sum of the act prices — there is no separate paid field to edit.
   const persistActsAndPayment = useCallback(
-    async (acts: string[], paymentValue: number) => {
+    async (acts: string[], prices: Record<string, number>) => {
+      const actObjects = acts.map((name) => ({
+        name,
+        price: prices[name] ?? (medicalActs.find((a) => a.name === name)?.price ?? 0),
+      }))
+      const total = actObjects.reduce((sum, a) => sum + (Number(a.price) || 0), 0)
       try {
         setSavingPayment(true)
-        await apiClient.updatePrice(Number(appointmentId), paymentValue, acts)
+        await apiClient.updatePrice(Number(appointmentId), total, actObjects)
         // Keep the local appointment in sync so the facture reflects the amount.
-        setAppointment((prev) => (prev ? { ...prev, payement: paymentValue } : prev))
+        setAppointment((prev) => (prev ? { ...prev, payement: total } : prev))
       } catch (e) {
         toast({
           title: "Erreur",
@@ -434,7 +552,7 @@ export default function AppointmentDetailsPage() {
         setSavingPayment(false)
       }
     },
-    [appointmentId, toast],
+    [appointmentId, medicalActs, toast],
   )
 
   const handleActToggle = (actName: string) => {
@@ -447,25 +565,32 @@ export default function AppointmentDetailsPage() {
       return
     }
 
-    const newActs = selectedActs.includes(actName)
+    const isSelected = selectedActs.includes(actName)
+    const newActs = isSelected
       ? selectedActs.filter((a) => a !== actName)
       : [...selectedActs, actName]
-    const newTotal = newActs.reduce((sum, name) => {
-      const act = medicalActs.find((a) => a.name === name)
-      return sum + (act ? act.price : 0)
-    }, 0)
+    const newPrices = { ...actPrices }
+    if (isSelected) {
+      delete newPrices[actName]
+    } else if (newPrices[actName] == null) {
+      // Seed the editable price from the catalog when first selected.
+      newPrices[actName] = medicalActs.find((a) => a.name === actName)?.price ?? 0
+    }
 
     setSelectedActs(newActs)
-    // Default the paid amount to the new acts total; the doctor can still lower it.
-    setPayment(String(newTotal))
-    persistActsAndPayment(newActs, newTotal)
+    setActPrices(newPrices)
+    persistActsAndPayment(newActs, newPrices)
   }
 
-  // Save the (possibly partial) paid amount when the doctor leaves the field.
-  const handlePaymentBlur = () => {
-    const value = payment.trim() === "" ? 0 : Number(payment)
-    if (isNaN(value) || value < 0) return
-    persistActsAndPayment(selectedActs, value)
+  // Edit an act's price for this appointment (live) …
+  const handleActPriceChange = (name: string, value: string) => {
+    const price = value.trim() === "" ? 0 : Math.max(0, Math.round(Number(value)) || 0)
+    setActPrices((prev) => ({ ...prev, [name]: price }))
+  }
+
+  // … and persist when the doctor leaves the field.
+  const handleActPriceBlur = () => {
+    persistActsAndPayment(selectedActs, actPrices)
   }
 
   const handlePrintOrdonnance = () => {
@@ -504,12 +629,14 @@ export default function AppointmentDetailsPage() {
           if (afterComma.includes('comprim')) return 'cp'
           if (afterComma.includes('sirop')) return 'sirop'
           if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+          if (afterComma.includes('gel')) return 'fois'
           if (afterComma.includes('inject') || afterComma.includes('solution inj')) return 'inj'
           return afterComma.split(' ')[0] || 'cp'
         }
         if (src.includes('comprim')) return 'cp'
         if (src.includes('sirop')) return 'sirop'
         if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+        if (src.includes('gel')) return 'fois'
         if (src.includes('suspension injectable')) return 'susp inj'
         if (src.includes('injectable') || src.includes('injection')) return 'inj'
         if (src.includes('perfusion')) return 'perf'
@@ -527,7 +654,7 @@ export default function AppointmentDetailsPage() {
       }
 
       // Helper to generate medication HTML block for ordonnance (2 lines: name + posology)
-      const getMedicationHTML = (med: MedicationForm) => {
+      const getMedicationHTML = (med: MedicationForm, index: number) => {
         const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
         const duration = med.pivot?.duree || ''
         const fullName = med.name || 'Médicament'
@@ -537,7 +664,7 @@ export default function AppointmentDetailsPage() {
         const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
 
         const parts = doses.map(d => {
-          const qty = d.units || '1'
+          const qty = formatDoseQty(d.units || '1')
           const label = isInj ? 'UI' : typeLabel
           return `${qty} ${label} ${d.time.toLowerCase()}`
         })
@@ -545,7 +672,7 @@ export default function AppointmentDetailsPage() {
         if (duration) parts.push(`pendant ${duration}`)
         const posology = parts.join(', ')
 
-        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
+        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${index + 1} - ${baseName} :</div><div style="padding-left:30px;line-height:1.9;">${posology}</div></div>`
       }
 
       let ordonnanceHTML = ""
@@ -555,6 +682,28 @@ export default function AppointmentDetailsPage() {
         const elements = layout as any
         const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
 
+        // Positioned elements. Vertical positions are converted to mm (not %) so
+        // they stay put once the sheet grows past one page. The medication list
+        // flows inside a table whose repeating header reserves the top zone on
+        // EVERY page, so an overflowing list continues on page 2 below the
+        // letterhead instead of being clipped.
+        const pn = elements.patient_name || {}
+        const dt = elements.date || {}
+        const md = elements.medications || {}
+        const md2 = elements.medications_page2 || {}
+        const pnTop = (((pn.y ?? 0) / 100) * paper.height).toFixed(2)
+        const dtTop = (((dt.y ?? 0) / 100) * paper.height).toFixed(2)
+        const mdTop = (((md.y ?? 0) / 100) * paper.height).toFixed(2)
+        // Where the list resumes on page 2+; defaults to the page-1 start.
+        const page2Top = (((md2.y ?? md.y ?? 0) / 100) * paper.height).toFixed(2)
+        const page2Left = md2.x ?? md.x ?? 0
+        const page2Width = 100 - (md2.x ?? md.x ?? 0) - 5
+        const mdLeft = md.x ?? 0
+        const mdWidth = 100 - (md.x ?? 0) - 5
+        const pnFont = ((pn.fontSize ?? 18) * paper.width / 600).toFixed(2)
+        const dtFont = ((dt.fontSize ?? 16) * paper.width / 600).toFixed(2)
+        const mdFont = ((md.fontSize ?? 16) * paper.width / 600).toFixed(2)
+
         ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
@@ -563,53 +712,57 @@ export default function AppointmentDetailsPage() {
   <title>Ordonnance - ${patientName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    @page { 
-      size: ${paper.width}mm ${paper.height}mm; 
-      margin: 0; 
+    @page {
+      size: ${paper.width}mm ${paper.height}mm;
+      margin: 0;
     }
-    body { 
-      font-family: Arial, sans-serif; 
-      width: ${paper.width}mm; 
-      height: ${paper.height}mm;
-      overflow: hidden;
-    }
-    .page { 
-      position: relative; 
-      width: 100%; 
-      height: 100%;
+    body { font-family: Arial, sans-serif; width: ${paper.width}mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Full-bleed letterhead, repeated on every page. */
+    .page-bg {
+      position: fixed; top: 0; left: 0;
+      width: ${paper.width}mm; height: ${paper.height}mm;
       background-image: ${background ? `url('${background}')` : 'none'};
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
+      background-size: cover; background-repeat: no-repeat; background-position: center;
+      z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
-    
+    /* Medication list starts below the letterhead header; a script inserts page
+       breaks so each overflow page also starts below the header. */
+    #meds { margin-top: ${mdTop}mm; font-size: ${mdFont}mm; line-height: 1.5; }
+    #meds > div { margin-left: ${mdLeft}%; width: ${mdWidth}%; break-inside: avoid; page-break-inside: avoid; }
     @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
-      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+      body { background: #eee; }
+      .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${patientName}
-    </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${dateStr}
-    </div>
-    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => getMedicationHTML(m)).join('')}
-    </div>
-  </div>
+  ${background ? '<div class="page-bg"></div>' : ''}
+  ${pn.hidden ? '' : `<div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pnFont}mm; white-space: nowrap;">${patientName}</div>`}
+  ${dt.hidden ? '' : `<div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dtFont}mm; white-space: nowrap;">${dateStr}</div>`}
+  ${md.hidden ? '' : `<div id="meds">${medications.map((m, i) => getMedicationHTML(m, i)).join('')}</div>`}
   <script>
-    window.onload = () => {
-      setTimeout(() => {
-        window.print();
-        // window.close(); // Optional: close window after printing
-      }, 500);
-    };
+    (function(){
+      function paginate(){
+        var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${page2Top}*mmToPx, safety = 2;
+        var footer = Math.min(header * 0.5, 20 * mmToPx);
+        var p2Left = '${page2Left}%', p2W = '${page2Width}%';
+        var box = document.getElementById('meds'); if(!box) return;
+        var blocks = [].slice.call(box.children), pageIndex = 0;
+        for(var i=0;i<blocks.length;i++){
+          var b = blocks[i]; if(b.className === 'pgspacer') continue;
+          var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
+          if(bottom > pageBottom - footer - safety){
+            var gap = (pageBottom - top) + header;
+            var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
+            sp.style.breakInside='auto'; sp.style.pageBreakInside='auto';
+            box.insertBefore(sp, b); pageIndex++;
+          }
+          if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
+        }
+      }
+      window.onload = () => { paginate(); setTimeout(() => window.print(), 300); };
+    })();
   </script>
 </body>
 </html>`
@@ -636,7 +789,7 @@ export default function AppointmentDetailsPage() {
     <div class="patient-info">${patientName}</div>
     <div class="meds-title">Ordonnance</div>
     <div class="medication-list">
-      ${medications.map(m => getMedicationHTML(m)).join('')}
+      ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
     </div>
     <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
   </body>
@@ -654,8 +807,10 @@ export default function AppointmentDetailsPage() {
   }
 
   const filteredMedicaments = useMemo(() => {
+    // Archived medicaments must not be selectable in a new ordonnance.
+    const activeMedicaments = availableMedicaments.filter((m) => !(m as any).archived)
     const uniqueMedicaments = Array.from(
-      new Map(availableMedicaments.map((m) => [m.name.toLowerCase(), m])).values()
+      new Map(activeMedicaments.map((m) => [m.name.toLowerCase(), m])).values()
     )
 
     let list = uniqueMedicaments
@@ -699,16 +854,13 @@ export default function AppointmentDetailsPage() {
         return
       }
 
-      const layout = (caseConfig as any).ordonnance_layout
-      const background = (caseConfig as any).ordonnance_background
+      // Use the dedicated analyses layout if configured, else fall back to the ordonnance one.
+      const layout = (caseConfig as any).analyse_layout || (caseConfig as any).ordonnance_layout
+      const background = (caseConfig as any).analyse_background || (caseConfig as any).ordonnance_background
 
       const patientName = appointment?.patient?.last_name && appointment?.patient?.first_name
         ? formatName(appointment.patient.first_name, appointment.patient.last_name)
         : appointment?.patient?.name || "Patient"
-
-      const dateStr = new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
-        day: "numeric", month: "long", year: "numeric"
-      })
 
       let analysesHTML = ""
 
@@ -744,10 +896,8 @@ export default function AppointmentDetailsPage() {
     <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
       ${patientName}
     </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${dateStr}
-    </div>
     <div class="element list-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.8; width: ${100 - (elements.medications?.x || 0) - 5}%">
+      <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #000; padding-bottom: 4px;">Prière de faire SVP</div>
       ${analyses.length > 0
           ? analyses.map(a => `<div style="margin-bottom: 6px;">• ${a.name || "Analyse"}</div>`).join('')
           : '<div style="color:#999;">Aucune analyse demandée</div>'
@@ -778,8 +928,8 @@ export default function AppointmentDetailsPage() {
 <body>
   <div class="header">
     <div class="patient">${patientName}</div>
-    <div class="date">${dateStr}</div>
   </div>
+  <div class="faire-svp" style="font-size: 13pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 6px; margin-bottom: 6px;">Prière de faire SVP</div>
   <div class="analysis-list">
     ${analyses.length > 0
         ? analyses.map(a => `<div class="analysis-item">• ${a.name || "Analyse"}</div>`).join("")
@@ -838,10 +988,22 @@ export default function AppointmentDetailsPage() {
 
         setAppointment(appt)
         if (appt.medical_acts && Array.isArray(appt.medical_acts)) {
-          setSelectedActs(appt.medical_acts)
+          // medical_acts may be an array of names (legacy) or {name, price} objects.
+          const names: string[] = []
+          const prices: Record<string, number> = {}
+          appt.medical_acts.forEach((item: any) => {
+            if (item && typeof item === "object") {
+              if (item.name) {
+                names.push(item.name)
+                if (item.price != null) prices[item.name] = Number(item.price)
+              }
+            } else if (typeof item === "string") {
+              names.push(item)
+            }
+          })
+          setSelectedActs(names)
+          setActPrices(prices)
         }
-        // Show the previously recorded paid amount (may be a partial payment).
-        setPayment(appt?.payement != null ? String(appt.payement) : "")
         setAvailableMedicaments(available_medicaments || [])
         setAvailableAnalyses(available_analyses || [])
 
@@ -873,8 +1035,11 @@ export default function AppointmentDetailsPage() {
         setDdr(appt?.patient?.DDR || "")
 
         if (appt?.medicaments && Array.isArray(appt.medicaments) && appt.medicaments.length > 0) {
-          setMedications(
-            appt.medicaments.map((med) => ({
+          // Group the flat medicament list back into ordonnances by ordonnance_no.
+          const groups: Record<number, MedicationForm[]> = {}
+          appt.medicaments.forEach((med: any) => {
+            const no = Math.max(1, Number(med?.pivot?.ordonnance_no) || 1)
+            ;(groups[no] ||= []).push({
               ID_Medicament: med?.ID_Medicament || "",
               name: med?.name || "",
               pivot: {
@@ -882,17 +1047,32 @@ export default function AppointmentDetailsPage() {
                 frequence: med?.pivot?.frequence || "",
                 duree: med?.pivot?.duree || "",
               },
-            })),
-          )
+            })
+          })
+          const ordered = Object.keys(groups)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((no) => groups[no])
+          setOrdonnancesAll(ordered.length > 0 ? ordered : [[]])
+          setActiveOrd(0)
         }
 
         if (appt?.analyses && Array.isArray(appt.analyses) && appt.analyses.length > 0) {
-          setAnalyses(
-            appt.analyses.map((analysis) => ({
+          // Group the flat analyse list back into requests by analyse_no.
+          const groups: Record<number, AnalysisForm[]> = {}
+          appt.analyses.forEach((analysis: any) => {
+            const no = Math.max(1, Number(analysis?.pivot?.analyse_no) || 1)
+            ;(groups[no] ||= []).push({
               ID_Analyse: analysis?.ID_Analyse || "",
               name: analysis?.type_analyse || "",
-            })),
-          )
+            })
+          })
+          const ordered = Object.keys(groups)
+            .map(Number)
+            .sort((a, b) => a - b)
+            .map((no) => groups[no])
+          setAnalysesAll(ordered.length > 0 ? ordered : [[]])
+          setActiveAnalyse(0)
         }
 
         try {
@@ -973,10 +1153,29 @@ export default function AppointmentDetailsPage() {
       pivot: {
         dosage: "",
         frequence: "",
-        duree: "",
+        duree: "3 mois",
       },
     }
     setMedications((prev) => [...prev, newMedication])
+  }, [setMedications])
+
+  // Add a new, empty ordonnance and switch to it.
+  const addOrdonnance = useCallback(() => {
+    setOrdonnancesAll((prev) => {
+      const next = [...prev, []]
+      setActiveOrd(next.length - 1)
+      return next
+    })
+  }, [])
+
+  // Remove an ordonnance (always keep at least one).
+  const removeOrdonnance = useCallback((idx: number) => {
+    setOrdonnancesAll((prev) => {
+      if (prev.length <= 1) return [[]]
+      const next = prev.filter((_, i) => i !== idx)
+      setActiveOrd((cur) => Math.max(0, Math.min(cur > idx ? cur - 1 : cur, next.length - 1)))
+      return next
+    })
   }, [])
 
   const copyMedicamentFromLast = useCallback((medicament: LastAppointmentData["medicaments"][0]) => {
@@ -1017,6 +1216,25 @@ export default function AppointmentDetailsPage() {
     setMedicationSearchQuery("")
   }, [])
 
+  // Rename a chosen medication. The edited name is what prints, so a changed
+  // name turns the entry into a free-typed (custom) drug rather than staying
+  // linked to the catalog. Leaving it unchanged keeps the catalog link.
+  const commitMedName = useCallback((index: number, value: string) => {
+    setEditingMedNameIndex(null)
+    const name = value.trim()
+    if (!name) return
+    setMedications((prev) => {
+      const updated = [...prev]
+      const cur = updated[index]
+      const catalogName = cur.ID_Medicament
+        ? availableMedicaments.find((m) => m.ID_Medicament.toString() === cur.ID_Medicament.toString())?.name
+        : undefined
+      if (cur.ID_Medicament && name === catalogName) return prev
+      updated[index] = { ...cur, name, ID_Medicament: "", custom: true }
+      return updated
+    })
+  }, [availableMedicaments])
+
   const updateMedication = useCallback(
     (index: number, field: string, value: string) => {
       setMedications((prevMedications) => {
@@ -1046,6 +1264,25 @@ export default function AppointmentDetailsPage() {
       name: "",
     }
     setAnalyses((prev) => [...prev, newAnalysis])
+  }, [setAnalyses])
+
+  // Add a new, empty analysis request and switch to it.
+  const addAnalyseRequest = useCallback(() => {
+    setAnalysesAll((prev) => {
+      const next = [...prev, []]
+      setActiveAnalyse(next.length - 1)
+      return next
+    })
+  }, [])
+
+  // Remove an analysis request (always keep at least one).
+  const removeAnalyseRequest = useCallback((idx: number) => {
+    setAnalysesAll((prev) => {
+      if (prev.length <= 1) return [[]]
+      const next = prev.filter((_, i) => i !== idx)
+      setActiveAnalyse((cur) => Math.max(0, Math.min(cur > idx ? cur - 1 : cur, next.length - 1)))
+      return next
+    })
   }, [])
 
   const copyAnalysisFromLast = useCallback((analysis: LastAppointmentData["analyses"][0]) => {
@@ -1100,84 +1337,111 @@ export default function AppointmentDetailsPage() {
     })
   }, [])
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault()
+  // Core save (no navigation, no success toast). Reused by the manual button and
+  // the auto-save. Returns true on success.
+  const saveDetails = useCallback(async (): Promise<boolean> => {
+    try {
+      setError(null)
 
-      try {
-        setSaving(true)
-        setError(null)
-
-        const medicamentsData = medications
+      // Flatten every ordonnance into one list, tagging each med with its
+      // ordonnance number (1-based) so the backend can regroup them.
+      const medicamentsData = ordonnancesAll.flatMap((meds, ordIdx) =>
+        meds
           .filter((med) => (med.ID_Medicament && med.ID_Medicament !== "") || (med.name && med.name.trim() !== ""))
           .map((med) => {
             const base = {
               dosage: med.pivot.dosage,
               frequence: med.pivot.frequence,
               duree: med.pivot.duree,
+              ordonnance_no: ordIdx + 1,
             }
-            // Catalog drug -> send its id; free-typed drug -> send the name so the
-            // backend can find-or-create it.
             return med.ID_Medicament && med.ID_Medicament !== ""
               ? { ID_Medicament: Number(med.ID_Medicament), ...base }
               : { custom_name: (med.name || "").trim(), ...base }
-          })
+          }),
+      )
 
-        const analysesData = analyses
+      const analysesData = analysesAll.flatMap((list, anIdx) =>
+        list
           .filter((analysis) => analysis.ID_Analyse && analysis.ID_Analyse !== "")
           .map((analysis) => ({
             ID_Analyse: Number(analysis.ID_Analyse),
-          }))
+            analyse_no: anIdx + 1,
+          })),
+      )
 
-        const requestData = {
-          case_description: caseDescription || "",
-          weight: vitalSigns.weight ? Number(vitalSigns.weight) : undefined,
-          pulse: vitalSigns.pulse ? Number(vitalSigns.pulse) : undefined,
-          temperature: vitalSigns.temperature ? Number(vitalSigns.temperature) : undefined,
-          blood_pressure: vitalSigns.blood_pressure || undefined,
-          tall: vitalSigns.tall ? Number(vitalSigns.tall) : undefined,
-          spo2: null,
-          DDR: ddr || undefined,
-          notes: vitalSigns.notes || undefined,
-          custom_measures_values: vitalSigns.custom_measures_values,
-          diagnostic: diagnostic || "",
-          medicaments: medicamentsData,
-          analyses: analysesData,
-        }
+      const requestData = {
+        case_description: caseDescription || "",
+        weight: vitalSigns.weight ? Number(vitalSigns.weight) : undefined,
+        pulse: vitalSigns.pulse ? Number(vitalSigns.pulse) : undefined,
+        temperature: vitalSigns.temperature ? Number(vitalSigns.temperature) : undefined,
+        blood_pressure: vitalSigns.blood_pressure || undefined,
+        tall: vitalSigns.tall ? Number(vitalSigns.tall) : undefined,
+        spo2: null,
+        DDR: ddr || undefined,
+        notes: vitalSigns.notes || undefined,
+        custom_measures_values: vitalSigns.custom_measures_values,
+        diagnostic: diagnostic || "",
+        medicaments: medicamentsData,
+        analyses: analysesData,
+      }
 
-        const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
+      const response = await apiClient.updateAppointmentDetails(Number(appointmentId), requestData)
+      if (!response.success) {
+        throw new Error(response.message || "Impossible d'enregistrer les détails du rendez-vous")
+      }
 
-        if (!response.success) {
-          throw new Error(response.message || "Impossible d'enregistrer les détails du rendez-vous")
-        }
+      const cacheKey = `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/appointments/${appointmentId}/edit-data`
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem(`api-cache-${cacheKey}`)
+      }
+      return true
+    } catch (err) {
+      console.error("Error saving appointment:", err)
+      setError(err instanceof Error ? err.message : "Impossible d'enregistrer les détails du rendez-vous")
+      return false
+    }
+  }, [appointmentId, ordonnancesAll, analysesAll, caseDescription, vitalSigns, ddr, diagnostic])
 
-        const cacheKey = `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/appointments/${appointmentId}/edit-data`
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem(`api-cache-${cacheKey}`)
-        }
+  // Keep a ref so the debounced auto-save always calls the latest version
+  // without re-arming the timer on every keystroke.
+  const saveDetailsRef = useRef(saveDetails)
+  useEffect(() => { saveDetailsRef.current = saveDetails }, [saveDetails])
 
-        toast({
-          title: "Succès",
-          description: "Détails du rendez-vous sauvegardés avec succès!",
-        })
-
-        setTimeout(() => {
-          router.push("/medecin")
-        }, 500)
-      } catch (err) {
-        console.error("[v0] Error saving appointment:", err)
-        setError(err instanceof Error ? err.message : "Impossible d'enregistrer les détails du rendez-vous")
-        toast({
-          title: "Erreur",
-          description: err instanceof Error ? err.message : "Erreur lors de la sauvegarde",
-          variant: "destructive",
-        })
-      } finally {
-        setSaving(false)
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      setSaving(true)
+      const ok = await saveDetails()
+      setSaving(false)
+      if (ok) {
+        toast({ title: "Succès", description: "Détails du rendez-vous sauvegardés avec succès!" })
+        setTimeout(() => router.push("/medecin"), 500)
+      } else {
+        toast({ title: "Erreur", description: "Erreur lors de la sauvegarde", variant: "destructive" })
       }
     },
-    [appointmentId, medications, analyses, caseDescription, vitalSigns, ddr, diagnostic, toast, router],
+    [saveDetails, toast, router],
   )
+
+  // Auto-save: debounce edits so the doctor never has to click "Enregistrer".
+  const firstAutoSaveSkipped = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    // Skip the first run right after the appointment data is loaded into state.
+    if (!firstAutoSaveSkipped.current) {
+      firstAutoSaveSkipped.current = true
+      return
+    }
+    const t = setTimeout(async () => {
+      setAutoSaving(true)
+      const ok = await saveDetailsRef.current()
+      setAutoSaving(false)
+      if (ok) setLastSavedAt(Date.now())
+    }, 1500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseDescription, diagnostic, ddr, vitalSigns, ordonnancesAll, analysesAll, loading])
 
   const formatDate = (dateString: string) => {
     return formatGlobalDate(dateString)
@@ -1324,7 +1588,7 @@ export default function AppointmentDetailsPage() {
                 </Badge>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
+            <PopoverContent className="w-[420px] max-w-[95vw] p-0" align="end">
               <div className="p-4 bg-pink-50 border-b border-pink-100">
                 <h4 className="font-medium text-pink-900 flex items-center gap-2">
                   <Stethoscope className="h-4 w-4" />
@@ -1333,32 +1597,51 @@ export default function AppointmentDetailsPage() {
                 <p className="text-xs text-pink-600 mt-1">Sélectionnez les actes effectués</p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto">
-                {medicalActs.map((act) => (
+                {medicalActs.map((act) => {
+                  const selected = selectedActs.includes(act.name)
+                  return (
                   <div
                     key={act.name}
                     onClick={() => handleActToggle(act.name)}
                     className={`
                         cursor-pointer rounded-md p-2 flex items-center justify-between transition-colors
-                        ${selectedActs.includes(act.name)
+                        ${selected
                         ? "bg-pink-50 text-pink-900"
                         : "hover:bg-gray-50 text-gray-700"}
                         ${appointment?.type === "Contrôle" && act.name === "Consultation" ? "opacity-50 cursor-not-allowed" : ""}
                       `}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <div className={`
-                          w-4 h-4 rounded border flex items-center justify-center transition-colors
-                          ${selectedActs.includes(act.name) ? "bg-pink-500 border-pink-500" : "border-gray-300 bg-white"}
+                          w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0
+                          ${selected ? "bg-pink-500 border-pink-500" : "border-gray-300 bg-white"}
                         `}>
-                        {selectedActs.includes(act.name) && <Check className="h-3 w-3 text-white" />}
+                        {selected && <Check className="h-3 w-3 text-white" />}
                       </div>
-                      <span className="text-sm">{act.name}</span>
+                      <span className="text-sm truncate">{act.name}</span>
                     </div>
-                    <span className="text-xs font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
-                      {act.price} DH
-                    </span>
+                    {selected ? (
+                      // Edit the price for this appointment; the paid total is their sum.
+                      <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          type="number"
+                          min="0"
+                          inputMode="numeric"
+                          value={actPrices[act.name] ?? act.price}
+                          onChange={(e) => handleActPriceChange(act.name, e.target.value)}
+                          onBlur={handleActPriceBlur}
+                          className="h-7 w-24 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold"
+                        />
+                        <span className="text-xs text-pink-600">DH</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">
+                        {act.price} DH
+                      </span>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
               <div className="p-3 border-t bg-gray-50 flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-600">Total des actes</span>
@@ -1367,21 +1650,10 @@ export default function AppointmentDetailsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Editable paid amount — can be LESS than the acts total (partial payment).
-              Saves automatically on blur; no "Appliquer" button needed. */}
-          <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
+          {/* Paid amount = sum of the (editable) act prices. Not directly editable. */}
+          <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1">
             <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Payé</span>
-            <Input
-              type="number"
-              min="0"
-              inputMode="numeric"
-              value={payment}
-              onChange={(e) => setPayment(e.target.value)}
-              onBlur={handlePaymentBlur}
-              placeholder="0"
-              className="h-7 w-20 text-right border-emerald-200 bg-white text-emerald-800 font-semibold focus-visible:ring-emerald-500"
-            />
-            <span className="text-xs text-emerald-600">DH</span>
+            <span className="text-emerald-800 font-semibold">{totalActsPrice} DH</span>
             {savingPayment && <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />}
           </div>
 
@@ -1731,11 +2003,86 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
+                  {/* Ordonnance tabs — one RDV can have several ordonnances */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-3 pb-3 border-b">
+                    {ordonnancesAll.map((ord, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActiveOrd(i)}
+                        className={cn(
+                          "group flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold border transition-colors",
+                          activeOrd === i
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50",
+                        )}
+                      >
+                        <span>Ordonnance {i + 1}</span>
+                        {ord.length > 0 && (
+                          <span className={cn(
+                            "rounded-full px-1.5 text-[10px]",
+                            activeOrd === i ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500",
+                          )}>{ord.length}</span>
+                        )}
+                        {ordonnancesAll.length > 1 && (
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => { e.stopPropagation(); removeOrdonnance(i) }}
+                            title="Supprimer cette ordonnance"
+                            className={cn(
+                              "ml-0.5 rounded p-0.5 hover:bg-red-100 hover:text-red-600",
+                              activeOrd === i ? "text-white/80" : "text-gray-400",
+                            )}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-dashed"
+                      onClick={addOrdonnance}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Ordonnance
+                    </Button>
+                  </div>
                   <div className="space-y-4">
                     <div className="space-y-3">
                       {medications.map((med, medIndex) => (
                         <div key={medIndex} className="p-3 bg-gray-50 rounded-lg border text-sm">
-                          <div className="mb-2">
+                          <div className="mb-2 flex items-center gap-1.5">
+                            {editingMedNameIndex === medIndex ? (
+                              <>
+                                <Input
+                                  autoFocus
+                                  defaultValue={
+                                    med.ID_Medicament
+                                      ? availableMedicaments.find(
+                                          (m) => m.ID_Medicament.toString() === med.ID_Medicament.toString(),
+                                        )?.name || med.name || ""
+                                      : med.name || ""
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault()
+                                      commitMedName(medIndex, (e.target as HTMLInputElement).value)
+                                    } else if (e.key === "Escape") {
+                                      setEditingMedNameIndex(null)
+                                    }
+                                  }}
+                                  onBlur={(e) => commitMedName(medIndex, e.target.value)}
+                                  placeholder="Nom du médicament"
+                                  className="h-9 flex-1 bg-white"
+                                />
+                                <span className="flex-shrink-0 text-[10px] font-medium text-blue-600">Entrée pour valider</span>
+                              </>
+                            ) : (
+                            <div className="flex-1 min-w-0">
                             <Popover
                               open={openMedicationDropdown === medIndex}
                               onOpenChange={(open) => {
@@ -1830,6 +2177,20 @@ export default function AppointmentDetailsPage() {
                                 </Command>
                               </PopoverContent>
                             </Popover>
+                            </div>
+                            )}
+                            {editingMedNameIndex !== medIndex && (med.ID_Medicament || med.name) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setEditingMedNameIndex(medIndex)}
+                                title="Modifier le nom du médicament"
+                                className="h-9 w-9 flex-shrink-0 text-blue-600 hover:bg-blue-50"
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                           <div className="space-y-2 mb-2 p-2 bg-blue-50/30 rounded-lg border border-blue-100">
                             {/* Time of day with per-time units */}
@@ -1843,7 +2204,9 @@ export default function AppointmentDetailsPage() {
                                   const next = active ? doses.filter(d => d.time !== time) : [...doses, { time, units: '' }]
                                   updateMedication(medIndex, 'frequence', buildMedFrequence(next, mealTiming))
                                 }
-                                const setUnits = (units: string) => {
+                                const setUnits = (raw: string) => {
+                                  // Comma is the internal dose separator, so use a dot for decimals (1,5 -> 1.5).
+                                  const units = raw.replace(',', '.')
                                   updateMedication(medIndex, 'frequence', buildMedFrequence(doses.map(d => d.time === time ? { ...d, units } : d), mealTiming))
                                 }
                                 return (
@@ -1867,13 +2230,24 @@ export default function AppointmentDetailsPage() {
                                     {active && (
                                       <div className="flex items-center gap-1 px-1">
                                         <Input
-                                          type="number"
-                                          min="0"
+                                          type="text"
+                                          inputMode="decimal"
+                                          list={`dose-opts-${medIndex}-${time}`}
                                           value={dose!.units}
                                           onChange={(e) => setUnits(e.target.value)}
                                           placeholder="1"
+                                          title="Nombre à prendre (ex : 1/4, 1/2, 3/4, 1, 2)"
                                           className="h-7 text-[10px] text-center px-1 border-blue-200 w-full"
                                         />
+                                        <datalist id={`dose-opts-${medIndex}-${time}`}>
+                                          <option value="1/4" />
+                                          <option value="1/2" />
+                                          <option value="3/4" />
+                                          <option value="1" />
+                                          <option value="1.5" />
+                                          <option value="2" />
+                                          <option value="3" />
+                                        </datalist>
                                         {isInj && <span className="text-[10px] text-blue-600 font-medium">UI</span>}
                                       </div>
                                     )}
@@ -1882,30 +2256,60 @@ export default function AppointmentDetailsPage() {
                               })}
                             </div>
 
-                            {/* Meal timing (applies to all times) */}
+                            {/* Meal timing (applies to all times) + optional delay for avant/après */}
                             {(() => {
                               const { doses, mealTiming } = parseMedFrequence(med.pivot.frequence || '')
                               if (doses.length === 0) return null
-                              const setMeal = (m: string) =>
-                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, mealTiming === m ? '' : m))
+                              const { base, offset } = parseMealTiming(mealTiming)
+                              const setBase = (m: string) => {
+                                const newBase = base === m ? '' : m
+                                const newOffset = newBase === 'pendant repas' ? '' : offset
+                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, buildMealTiming(newBase, newOffset)))
+                              }
+                              const setOffset = (o: string) =>
+                                updateMedication(medIndex, 'frequence', buildMedFrequence(doses, buildMealTiming(base, o)))
+                              const showOffset = base === 'avant repas' || base === 'après repas'
                               return (
-                                <div className="grid grid-cols-3 gap-1">
-                                  {MEAL_TIMINGS.map(m => (
-                                    <button
-                                      key={m}
-                                      type="button"
-                                      onClick={() => setMeal(m)}
-                                      className={cn(
-                                        "rounded-md border py-1 text-[10px] font-medium capitalize transition-colors",
-                                        mealTiming === m
-                                          ? "border-blue-400 bg-blue-100 text-blue-700"
-                                          : "border-blue-200 bg-white text-gray-500 hover:bg-blue-50",
-                                      )}
-                                    >
-                                      {m.replace(' repas', '')}
-                                    </button>
-                                  ))}
-                                </div>
+                                <>
+                                  <div className="grid grid-cols-3 gap-1">
+                                    {MEAL_TIMINGS.map(m => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => setBase(m)}
+                                        className={cn(
+                                          "rounded-md border py-1 text-[10px] font-medium capitalize transition-colors",
+                                          base === m
+                                            ? "border-blue-400 bg-blue-100 text-blue-700"
+                                            : "border-blue-200 bg-white text-gray-500 hover:bg-blue-50",
+                                        )}
+                                      >
+                                        {m.replace(' repas', '')}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {showOffset && (
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <span className="text-[10px] text-blue-600 font-medium whitespace-nowrap">
+                                        Combien {base === 'avant repas' ? 'avant' : 'après'} ?
+                                      </span>
+                                      <Input
+                                        type="text"
+                                        list={`meal-offset-${medIndex}`}
+                                        value={offset}
+                                        onChange={(e) => setOffset(e.target.value)}
+                                        placeholder="1h"
+                                        title="Délai avant/après le repas (optionnel), ex : 1h, 2h, 30min"
+                                        className="h-7 text-[10px] text-center px-1 border-blue-200 w-16"
+                                      />
+                                      <datalist id={`meal-offset-${medIndex}`}>
+                                        <option value="30min" />
+                                        <option value="1h" />
+                                        <option value="2h" />
+                                      </datalist>
+                                    </div>
+                                  )}
+                                </>
                               )
                             })()}
 
@@ -1975,7 +2379,7 @@ export default function AppointmentDetailsPage() {
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs bg-green-500 text-white hover:bg-green-600"
-                      onClick={handlePrintAnalyses}
+                      onClick={() => setShowAnalysePreview(true)}
                     >
                       <Print className="w-3 h-3 mr-1" />
                       Imprimer
@@ -1983,6 +2387,54 @@ export default function AppointmentDetailsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4">
+                  {/* Analysis-request tabs — one RDV can have several demandes d'analyses */}
+                  <div className="flex items-center gap-1.5 flex-wrap mb-3 pb-3 border-b">
+                    {analysesAll.map((list, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setActiveAnalyse(i)}
+                        className={cn(
+                          "group flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-semibold border transition-colors",
+                          activeAnalyse === i
+                            ? "border-blue-500 bg-blue-600 text-white"
+                            : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50",
+                        )}
+                      >
+                        <span>Demande {i + 1}</span>
+                        {list.length > 0 && (
+                          <span className={cn(
+                            "rounded-full px-1.5 text-[10px]",
+                            activeAnalyse === i ? "bg-white/25 text-white" : "bg-gray-100 text-gray-500",
+                          )}>{list.length}</span>
+                        )}
+                        {analysesAll.length > 1 && (
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => { e.stopPropagation(); removeAnalyseRequest(i) }}
+                            title="Supprimer cette demande"
+                            className={cn(
+                              "ml-0.5 rounded p-0.5 hover:bg-red-100 hover:text-red-600",
+                              activeAnalyse === i ? "text-white/80" : "text-gray-400",
+                            )}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs border-dashed"
+                      onClick={addAnalyseRequest}
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      Demande
+                    </Button>
+                  </div>
                   <div className="space-y-3">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -2180,9 +2632,23 @@ export default function AppointmentDetailsPage() {
           <p className="text-sm text-blue-700">Interface optimisée pour grand écran. Veuillez agrandir votre fenêtre.</p>
         </div>
 
-        <div className="flex justify-end space-x-4 mt-6 pb-8">
+        <div className="flex justify-end items-center space-x-4 mt-6 pb-8">
+          {/* Auto-save status — the doctor doesn't need to click to save. */}
+          <span className="text-xs text-gray-400 flex items-center gap-1.5" aria-live="polite">
+            {autoSaving ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Enregistrement automatique…
+              </>
+            ) : lastSavedAt ? (
+              <>
+                <Check className="w-3 h-3 text-green-500" />
+                Enregistré automatiquement
+              </>
+            ) : null}
+          </span>
           <Button type="button" variant="outline" onClick={() => router.push("/medecin")}>
-            Annuler
+            Retour
           </Button>
           <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={saving}>
             {saving ? (
@@ -2218,6 +2684,31 @@ export default function AppointmentDetailsPage() {
         medicationsHTML={medications.map(getMedicationHTML).join("")}
       />
 
+      {/* Analyses print preview — reuses the ordonnance preview with the analyses
+          layout (placement + show/hide) and the analyses list as its content. */}
+      <OrdonnancePrintPreview
+        open={showAnalysePreview}
+        onOpenChange={setShowAnalysePreview}
+        layout={(caseConfig as any).analyse_layout || (caseConfig as any).ordonnance_layout || null}
+        background={(caseConfig as any).analyse_background || (caseConfig as any).ordonnance_background || null}
+        patientName={
+          appointment?.patient?.last_name && appointment?.patient?.first_name
+            ? formatName(appointment.patient.first_name, appointment.patient.last_name)
+            : (appointment?.patient as any)?.name || "Patient"
+        }
+        dateStr={new Date(appointment?.appointment_date || Date.now()).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+        medicationsHTML={
+          `<div style="font-weight:bold;margin-bottom:6px;border-bottom:1px solid #000;padding-bottom:4px;">Prière de faire SVP</div>` +
+          (analyses.length > 0
+            ? analyses.map((a) => `<div style="margin-bottom:6px;">• ${a.name || "Analyse"}</div>`).join("")
+            : `<div style="color:#999;">Aucune analyse demandée</div>`)
+        }
+      />
+
       <FacturePrintPreview
         open={showFacturePreview}
         onOpenChange={setShowFacturePreview}
@@ -2235,11 +2726,9 @@ export default function AppointmentDetailsPage() {
         })}
         acts={selectedActs.map((name) => ({
           name,
-          price: medicalActs.find((a) => a.name === name)?.price ?? 0,
+          price: actPriceOf(name),
         }))}
         total={appointment?.payement ?? totalActsPrice}
-        credit={(appointment as any)?.credit ?? 0}
-        mutuelle={!!appointment?.mutuelle}
         header={{
           practiceName: (caseConfig as any).practice_name,
           specialization: (caseConfig as any).specialization,

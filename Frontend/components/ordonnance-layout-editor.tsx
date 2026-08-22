@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Save, Upload, Type, Calendar, List, ChevronUp, ChevronDown, Maximize2, Loader2 } from "lucide-react"
+import { Save, Upload, Type, Calendar, List, ChevronUp, ChevronDown, Maximize2, Loader2, Eye, EyeOff } from "lucide-react"
 import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 
@@ -16,6 +16,7 @@ interface LayoutElement {
     fontSize: number
     label: string
     icon: any
+    hidden?: boolean // when true, the element is not printed
 }
 
 interface PaperConfig {
@@ -30,13 +31,30 @@ const PAPER_SIZES: Record<string, PaperConfig> = {
     Custom: { type: 'Custom', width: 210, height: 297 },
 }
 
+// Which elements belong to which printed page.
+const PAGE1_IDS = ["patient_name", "date", "medications"]
+const PAGE2_IDS = ["medications_page2"]
+
 interface OrdonnanceLayoutEditorProps {
     initialBackground?: string
     initialLayout?: any
     onSave: (background: string, layout: any) => void
+    // Optional overrides so the same editor can drive other list documents (analyses).
+    uploadBackground?: (formData: FormData) => Promise<any>
+    listLabel?: string
+    page2Label?: string
+    sampleItems?: [string, string]
 }
 
-export default function OrdonnanceLayoutEditor({ initialBackground, initialLayout, onSave }: OrdonnanceLayoutEditorProps) {
+export default function OrdonnanceLayoutEditor({
+    initialBackground,
+    initialLayout,
+    onSave,
+    uploadBackground,
+    listLabel = "Liste Médicaments",
+    page2Label = "Médicaments (page 2)",
+    sampleItems = ["• Médicament Exemple 1", "• Médicament Exemple 2"],
+}: OrdonnanceLayoutEditorProps) {
     const { toast } = useToast()
     const [background, setBackground] = useState(initialBackground || "")
     const [imageLoaded, setImageLoaded] = useState(false)
@@ -44,9 +62,13 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
 
     // Default elements in percentages
     const [elements, setElements] = useState<LayoutElement[]>([
-        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type },
-        { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar },
-        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: "Liste Médicaments", icon: List },
+        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 15, fontSize: initialLayout?.patient_name?.fontSize ?? 18, label: "Nom Patient", icon: Type, hidden: initialLayout?.patient_name?.hidden ?? false },
+        { id: "date", x: initialLayout?.date?.x ?? 70, y: initialLayout?.date?.y ?? 15, fontSize: initialLayout?.date?.fontSize ?? 16, label: "Date", icon: Calendar, hidden: initialLayout?.date?.hidden ?? false },
+        { id: "medications", x: initialLayout?.medications?.x ?? 10, y: initialLayout?.medications?.y ?? 30, fontSize: initialLayout?.medications?.fontSize ?? 16, label: listLabel, icon: List, hidden: initialLayout?.medications?.hidden ?? false },
+        // Where the medication list resumes on page 2 (and beyond) when it overflows.
+        // Defaults near the top (page 2 usually needs less clearance than page 1)
+        // and offset from the page-1 marker so it can be grabbed separately.
+        { id: "medications_page2", x: initialLayout?.medications_page2?.x ?? (initialLayout?.medications?.x ?? 10), y: initialLayout?.medications_page2?.y ?? 15, fontSize: initialLayout?.medications_page2?.fontSize ?? (initialLayout?.medications?.fontSize ?? 16), label: page2Label, icon: List, hidden: initialLayout?.medications_page2?.hidden ?? false },
     ])
 
     const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -55,6 +77,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
     const [saving, setSaving] = useState(false)
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
+    const canvas2Ref = useRef<HTMLCanvasElement>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
     const elementsRef = useRef<LayoutElement[]>(elements)
     const requestRef = useRef<number>()
@@ -62,9 +85,8 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
     // Sync elementsRef when state changes from outside
     useEffect(() => { elementsRef.current = elements }, [elements])
 
-    // Performance-optimized draw logic using Refs for transient state
-    const drawCanvas = useCallback(() => {
-        const canvas = canvasRef.current
+    // Draw one page canvas, showing only the elements that belong to it.
+    const drawOne = useCallback((canvas: HTMLCanvasElement | null, ids: string[]) => {
         const ctx = canvas?.getContext("2d")
         if (!canvas || !ctx) return
 
@@ -72,18 +94,22 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         ctx.fillStyle = "white"
         ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+        // The letterhead is the same sheet on every page.
         if (background && imageLoaded && imgRef.current) {
             ctx.drawImage(imgRef.current, 0, 0, canvas.width, canvas.height)
         }
 
         elementsRef.current.forEach((el) => {
+            if (!ids.includes(el.id)) return
             const px = (el.x / 100) * canvas.width
             const py = (el.y / 100) * canvas.height
+            // Hidden elements are shown faded (still movable) but won't be printed.
+            ctx.globalAlpha = el.hidden ? 0.25 : 1
 
             ctx.font = `${selectedId === el.id ? 'bold ' : ''}${el.fontSize}px Arial`
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
 
-            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : "• Médicament Exemple 1\n• Médicament Exemple 2"
+            const text = el.id === "patient_name" ? "M. NOM DU PATIENT" : el.id === "date" ? "05 Mai 2026" : el.id === "medications_page2" ? sampleItems.map((s) => "↳ " + s.replace(/^[•↳]\s*/, "")).join("\n") : sampleItems.join("\n")
             const padding = 10
 
             if (selectedId === el.id) {
@@ -96,7 +122,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             }
 
             ctx.fillStyle = selectedId === el.id ? "#2563eb" : "black"
-            if (el.id === "medications") {
+            if (el.id === "medications" || el.id === "medications_page2") {
                 const lines = text.split('\n')
                 lines.forEach((line, index) => {
                     ctx.fillText(line, px, py + (index * (el.fontSize + 8)))
@@ -104,8 +130,14 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
             } else {
                 ctx.fillText(text, px, py)
             }
+            ctx.globalAlpha = 1
         })
     }, [background, imageLoaded, selectedId])
+
+    const drawCanvas = useCallback(() => {
+        drawOne(canvasRef.current, PAGE1_IDS)
+        drawOne(canvas2Ref.current, PAGE2_IDS)
+    }, [drawOne])
 
     // Animation loop for smooth dragging
     const animate = useCallback(() => {
@@ -113,14 +145,15 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         requestRef.current = requestAnimationFrame(animate)
     }, [drawCanvas])
 
-    // Update canvas size when paper format changes
+    // Update both canvas sizes when paper format changes
     useEffect(() => {
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const displayWidth = 600
         const ratio = paper.height / paper.width
-        canvas.width = displayWidth
-        canvas.height = displayWidth * ratio
+        const displayWidth = 600
+        for (const canvas of [canvasRef.current, canvas2Ref.current]) {
+            if (!canvas) continue
+            canvas.width = displayWidth
+            canvas.height = displayWidth * ratio
+        }
         drawCanvas()
     }, [paper, drawCanvas])
 
@@ -183,7 +216,7 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         const formData = new FormData()
         formData.append("background", e.target.files[0])
         try {
-            const response = await apiClient.uploadOrdonnanceBackground(formData)
+            const response = await (uploadBackground || apiClient.uploadOrdonnanceBackground)(formData)
             if (response.success && response.data?.url) {
                 const fullUrl = resolveDocumentBackgroundUrl(response.data.url)
                 setBackground(fullUrl)
@@ -196,21 +229,22 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         }
     }
 
-    const handleMouseDown = (e: React.MouseEvent) => {
-        const rect = canvasRef.current?.getBoundingClientRect()
-        if (!rect) return
+    const handleMouseDown = (e: React.MouseEvent, canvas: HTMLCanvasElement | null, ids: string[]) => {
+        const rect = canvas?.getBoundingClientRect()
+        if (!rect || !canvas) return
         const x = e.clientX - rect.left
         const y = e.clientY - rect.top
         const clickX = (x / rect.width) * 100
         const clickY = (y / rect.height) * 100
 
         const clickedEl = elementsRef.current.find(el => {
-            const ctx = canvasRef.current?.getContext("2d")
+            if (!ids.includes(el.id)) return false
+            const ctx = canvas.getContext("2d")
             if (!ctx) return false
             ctx.font = `${el.fontSize}px Arial`
             const metrics = ctx.measureText(el.label)
-            const widthPct = (metrics.width / canvasRef.current!.width) * 100
-            const heightPct = (el.fontSize / canvasRef.current!.height) * 100
+            const widthPct = (metrics.width / canvas.width) * 100
+            const heightPct = (el.fontSize / canvas.height) * 100
             return clickX >= el.x - 2 && clickX <= el.x + widthPct + 2 &&
                 clickY >= el.y - heightPct - 2 && clickY <= el.y + 2
         })
@@ -223,9 +257,9 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
         }
     }
 
-    const handleMouseMove = (e: React.MouseEvent) => {
+    const handleMouseMove = (e: React.MouseEvent, canvas: HTMLCanvasElement | null) => {
         if (!dragging || !selectedId) return
-        const rect = canvasRef.current?.getBoundingClientRect()
+        const rect = canvas?.getBoundingClientRect()
         if (!rect) return
 
         const x = e.clientX - rect.left
@@ -254,7 +288,8 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
                 paper,
                 patient_name: elements.find(e => e.id === "patient_name"),
                 date: elements.find(e => e.id === "date"),
-                medications: elements.find(e => e.id === "medications")
+                medications: elements.find(e => e.id === "medications"),
+                medications_page2: elements.find(e => e.id === "medications_page2")
             }
             await onSave(background, layout)
         } finally {
@@ -263,6 +298,9 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
     }
 
     const selectedElement = elements.find(el => el.id === selectedId)
+
+    const toggleHidden = (id: string) =>
+        setElements(prev => prev.map(el => el.id === id ? { ...el, hidden: !el.hidden } : el))
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -299,22 +337,53 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
                     </Button>
                 </div>
 
-                <div className="border rounded-xl bg-gray-100 overflow-hidden relative flex items-center justify-center p-4 min-h-[650px] select-none shadow-inner">
-                    <canvas
-                        ref={canvasRef}
-                        className={`border shadow-2xl bg-white max-w-full h-auto cursor-${dragging ? 'grabbing' : 'grab'} transition-all`}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                    />
-                    {!background && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-20">
-                            <Maximize2 className="w-16 h-16 mb-2" />
-                            <p className="text-lg font-bold">MODE PAPIER VIERGE ({paper.type})</p>
-                            <p className="text-sm">Positionnez vos éléments ici</p>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {/* Page 1 */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-1 rounded">Page 1</span>
+                            <span className="text-xs text-gray-500">Nom, date &amp; liste des médicaments</span>
                         </div>
-                    )}
+                        <div className="border rounded-xl bg-gray-100 overflow-hidden relative flex items-center justify-center p-4 min-h-[520px] select-none shadow-inner">
+                            <canvas
+                                ref={canvasRef}
+                                className={`border shadow-2xl bg-white max-w-full h-auto cursor-${dragging ? 'grabbing' : 'grab'} transition-all`}
+                                onMouseDown={(e) => handleMouseDown(e, canvasRef.current, PAGE1_IDS)}
+                                onMouseMove={(e) => handleMouseMove(e, canvasRef.current)}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                            />
+                            {!background && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-20">
+                                    <Maximize2 className="w-12 h-12 mb-2" />
+                                    <p className="text-md font-bold">PAPIER VIERGE ({paper.type})</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    {/* Page 2 */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2 py-1 rounded">Page 2+</span>
+                            <span className="text-xs text-gray-500">Suite des médicaments (débordement)</span>
+                        </div>
+                        <div className="border rounded-xl bg-gray-100 overflow-hidden relative flex items-center justify-center p-4 min-h-[520px] select-none shadow-inner">
+                            <canvas
+                                ref={canvas2Ref}
+                                className={`border shadow-2xl bg-white max-w-full h-auto cursor-${dragging ? 'grabbing' : 'grab'} transition-all`}
+                                onMouseDown={(e) => handleMouseDown(e, canvas2Ref.current, PAGE2_IDS)}
+                                onMouseMove={(e) => handleMouseMove(e, canvas2Ref.current)}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                            />
+                            {!background && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-20">
+                                    <Maximize2 className="w-12 h-12 mb-2" />
+                                    <p className="text-md font-bold">PAPIER VIERGE ({paper.type})</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -336,15 +405,23 @@ export default function OrdonnanceLayoutEditor({ initialBackground, initialLayou
                                     className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer
                                 ${selectedId === el.id ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'hover:bg-gray-50 border-gray-100'}`}
                                 >
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
                                         <div className={`p-2.5 rounded-lg ${selectedId === el.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                                             <el.icon className="w-4 h-4" />
                                         </div>
-                                        <div>
-                                            <span className="font-bold text-sm block tracking-tight">{el.label}</span>
+                                        <div className="min-w-0">
+                                            <span className={`font-bold text-sm block tracking-tight truncate ${el.hidden ? 'text-gray-400 line-through' : ''}`}>{el.label}</span>
                                             <span className="text-[10px] text-gray-400 font-mono">POS: {Math.round(el.x)}%, {Math.round(el.y)}%</span>
                                         </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleHidden(el.id) }}
+                                        title={el.hidden ? "Afficher (imprimé)" : "Masquer (non imprimé)"}
+                                        className={`flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 ${el.hidden ? 'text-gray-400' : 'text-blue-600'}`}
+                                    >
+                                        {el.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
                                 </div>
                             ))}
                         </div>

@@ -399,7 +399,15 @@ export default function PatientsPage() {
                                         <span className="font-medium">Nom complet:</span> {formatName(patient.first_name, patient.last_name)}
                                       </p>
                                       <p>
-                                        <span className="font-medium">CIN:</span> {patient.CIN}
+                                        {patient.CIN ? (
+                                          <>
+                                            <span className="font-medium">CIN:</span> {patient.CIN}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="font-medium">CIN (tuteur):</span> {patient.guardian_cin || "N/A"}
+                                          </>
+                                        )}
                                       </p>
                                       <p className="flex items-center gap-1">
                                         <Mail className="h-3 w-3" />

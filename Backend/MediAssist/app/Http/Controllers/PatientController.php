@@ -181,6 +181,7 @@ class PatientController extends Controller
                 $query->where('first_name', 'ILIKE', "%{$term}%")
                     ->orWhere('last_name', 'ILIKE', "%{$term}%")
                     ->orWhere('CIN', 'ILIKE', "%{$term}%")
+                    ->orWhere('guardian_cin', 'ILIKE', "%{$term}%")
                     ->orWhere('phone_num', 'ILIKE', "%{$term}%")
                     ->orWhere('email', 'ILIKE', "%{$term}%")
                     ->orWhere('notes', 'ILIKE', "%{$term}%");
@@ -192,6 +193,7 @@ class PatientController extends Controller
                 'last_name',
                 'birth_day',
                 'CIN',
+                'guardian_cin',
                 'phone_num',
                 'email',
                 'gender',
@@ -212,6 +214,7 @@ class PatientController extends Controller
                     'last_name' => $patient->last_name,
                     'cin' => $patient->CIN,
                     'CIN' => $patient->CIN,
+                    'guardian_cin' => $patient->guardian_cin,
                     'phone' => $patient->phone_num,
                     'phone_num' => $patient->phone_num,
                     'email' => $patient->email,
@@ -244,10 +247,13 @@ class PatientController extends Controller
             return response()->json([]);
         }
 
-        $patients = Patient::where('first_name', 'ILIKE', "%{$term}%")
-            ->orWhere('last_name', 'ILIKE', "%{$term}%")
-            ->orWhere('CIN', 'ILIKE', "%{$term}%")
-            ->where('archived', false)
+        $patients = Patient::where('archived', false)
+            ->where(function ($query) use ($term) {
+                $query->where('first_name', 'ILIKE', "%{$term}%")
+                    ->orWhere('last_name', 'ILIKE', "%{$term}%")
+                    ->orWhere('CIN', 'ILIKE', "%{$term}%")
+                    ->orWhere('guardian_cin', 'ILIKE', "%{$term}%");
+            })
             ->select('ID_patient as id', 'name')
             ->get();
 

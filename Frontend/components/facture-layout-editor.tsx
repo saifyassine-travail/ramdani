@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Save, Upload, Type, Calendar, Table2, Coins, AlignLeft, ChevronUp, ChevronDown, Maximize2, Loader2 } from "lucide-react"
+import { Save, Upload, Type, Calendar, Table2, Coins, AlignLeft, ChevronUp, ChevronDown, Maximize2, Loader2, Eye, EyeOff } from "lucide-react"
 import { apiClient, resolveDocumentBackgroundUrl } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { FACTURE_TEXT_DEFAULTS, type FactureTexts } from "@/components/facture-print-preview"
 
 interface LayoutElement {
     id: string
@@ -16,6 +17,7 @@ interface LayoutElement {
     fontSize: number
     label: string
     icon: any
+    hidden?: boolean // when true, the element is not printed
 }
 
 interface PaperConfig {
@@ -47,17 +49,19 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
 
     // Default elements in percentages
     const [elements, setElements] = useState<LayoutElement[]>([
-        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 24, fontSize: initialLayout?.patient_name?.fontSize ?? 16, label: "Nom Patient", icon: Type },
-        { id: "date", x: initialLayout?.date?.x ?? 68, y: initialLayout?.date?.y ?? 24, fontSize: initialLayout?.date?.fontSize ?? 14, label: "Date", icon: Calendar },
-        { id: "acts_table", x: initialLayout?.acts_table?.x ?? 10, y: initialLayout?.acts_table?.y ?? 34, fontSize: initialLayout?.acts_table?.fontSize ?? 14, label: "Tableau des Actes", icon: Table2 },
-        { id: "totals", x: initialLayout?.totals?.x ?? 55, y: initialLayout?.totals?.y ?? 70, fontSize: initialLayout?.totals?.fontSize ?? 14, label: "Total / Crédit / Mutuelle", icon: Coins },
-        { id: "footer", x: initialLayout?.footer?.x ?? 10, y: initialLayout?.footer?.y ?? 92, fontSize: initialLayout?.footer?.fontSize ?? 12, label: "Pied de page", icon: AlignLeft },
+        { id: "patient_name", x: initialLayout?.patient_name?.x ?? 10, y: initialLayout?.patient_name?.y ?? 24, fontSize: initialLayout?.patient_name?.fontSize ?? 16, label: "Nom Patient", icon: Type, hidden: initialLayout?.patient_name?.hidden ?? false },
+        { id: "date", x: initialLayout?.date?.x ?? 68, y: initialLayout?.date?.y ?? 24, fontSize: initialLayout?.date?.fontSize ?? 14, label: "Date", icon: Calendar, hidden: initialLayout?.date?.hidden ?? false },
+        { id: "acts_table", x: initialLayout?.acts_table?.x ?? 10, y: initialLayout?.acts_table?.y ?? 34, fontSize: initialLayout?.acts_table?.fontSize ?? 14, label: "Tableau des Actes", icon: Table2, hidden: initialLayout?.acts_table?.hidden ?? false },
+        { id: "totals", x: initialLayout?.totals?.x ?? 55, y: initialLayout?.totals?.y ?? 70, fontSize: initialLayout?.totals?.fontSize ?? 14, label: "Total (en lettres)", icon: Coins, hidden: initialLayout?.totals?.hidden ?? false },
+        { id: "footer", x: initialLayout?.footer?.x ?? 10, y: initialLayout?.footer?.y ?? 92, fontSize: initialLayout?.footer?.fontSize ?? 12, label: "Pied de page", icon: AlignLeft, hidden: initialLayout?.footer?.hidden ?? false },
     ])
 
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [dragging, setDragging] = useState(false)
     const [uploading, setUploading] = useState(false)
     const [saving, setSaving] = useState(false)
+    // Editable fixed texts, saved into layout.texts.
+    const [texts, setTexts] = useState<FactureTexts>({ ...FACTURE_TEXT_DEFAULTS, ...(initialLayout?.texts || {}) })
 
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
@@ -82,6 +86,8 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
             const px = (el.x / 100) * canvas.width
             const py = (el.y / 100) * canvas.height
             const isSel = selectedId === el.id
+            // Hidden elements are shown faded (still movable) but won't be printed.
+            ctx.globalAlpha = el.hidden ? 0.25 : 1
 
             ctx.font = `${isSel ? 'bold ' : ''}${el.fontSize}px Arial`
             ctx.fillStyle = isSel ? "#2563eb" : "black"
@@ -100,17 +106,19 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
             if (el.id === "acts_table") {
                 drawSampleTable(ctx, px, py, el.fontSize, canvas.width, isSel)
             } else if (el.id === "totals") {
-                const lines = ["Total : 650 DH", "Crédit restant : 0 DH", "Mutuelle : Non"]
+                const lines = [`${texts.intro} Six cent cinquante dirhams`]
                 lines.forEach((line, i) => ctx.fillText(line, px, py + i * (el.fontSize + 4)))
             } else {
+                const footerSample = texts.footer.split("{ville}").join("Casablanca").split("{date}").join("20/07/2026").replace(/^\s*—\s*/, "")
                 const text =
                     el.id === "patient_name" ? "M. NOM DU PATIENT" :
                     el.id === "date" ? "20 Juillet 2026" :
-                    "Cabinet — Facture établie le 20/07/2026"
+                    footerSample
                 ctx.fillText(text, px, py)
             }
+            ctx.globalAlpha = 1
         })
-    }, [background, imageLoaded, selectedId])
+    }, [background, imageLoaded, selectedId, texts])
 
     const animate = useCallback(() => {
         drawCanvas()
@@ -251,7 +259,7 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
     const handleSave = async () => {
         setSaving(true)
         try {
-            const layout: any = { paper }
+            const layout: any = { paper, texts }
             ELEMENT_IDS.forEach(id => { layout[id] = elements.find(e => e.id === id) })
             await onSave(background, layout)
         } finally {
@@ -260,6 +268,9 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
     }
 
     const selectedElement = elements.find(el => el.id === selectedId)
+
+    const toggleHidden = (id: string) =>
+        setElements(prev => prev.map(el => el.id === id ? { ...el, hidden: !el.hidden } : el))
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -333,15 +344,23 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
                                     className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer
                                 ${selectedId === el.id ? 'border-blue-500 bg-blue-50 shadow-md scale-[1.02]' : 'hover:bg-gray-50 border-gray-100'}`}
                                 >
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
                                         <div className={`p-2.5 rounded-lg ${selectedId === el.id ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                                             <el.icon className="w-4 h-4" />
                                         </div>
-                                        <div>
-                                            <span className="font-bold text-sm block tracking-tight">{el.label}</span>
+                                        <div className="min-w-0">
+                                            <span className={`font-bold text-sm block tracking-tight truncate ${el.hidden ? 'text-gray-400 line-through' : ''}`}>{el.label}</span>
                                             <span className="text-[10px] text-gray-400 font-mono">POS: {Math.round(el.x)}%, {Math.round(el.y)}%</span>
                                         </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleHidden(el.id) }}
+                                        title={el.hidden ? "Afficher (imprimé)" : "Masquer (non imprimé)"}
+                                        className={`flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 ${el.hidden ? 'text-gray-400' : 'text-blue-600'}`}
+                                    >
+                                        {el.hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
                                 </div>
                             ))}
                         </div>
@@ -373,6 +392,27 @@ export default function FactureLayoutEditor({ initialBackground, initialLayout, 
                                 </div>
                             </div>
                         )}
+
+                        {/* Editable fixed texts */}
+                        <div className="pt-4 border-t space-y-3">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-600">Textes fixes</h4>
+                            {([
+                                ["col_designation", "En-tête colonne 1"],
+                                ["col_prix", "En-tête colonne 2"],
+                                ["total_label", "Libellé Total"],
+                                ["intro", "Phrase du montant en lettres"],
+                                ["footer", "Pied de page ({ville}, {date})"],
+                            ] as [keyof FactureTexts, string][]).map(([key, label]) => (
+                                <div key={key} className="space-y-1">
+                                    <label className="text-[11px] font-medium text-gray-500">{label}</label>
+                                    <Input
+                                        value={texts[key]}
+                                        onChange={(e) => setTexts((prev) => ({ ...prev, [key]: e.target.value }))}
+                                        className="h-9 text-sm"
+                                    />
+                                </div>
+                            ))}
+                        </div>
 
                         <Button className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-md font-bold shadow-blue-200 shadow-xl" onClick={handleSave} disabled={saving}>
                             {saving

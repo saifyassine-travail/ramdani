@@ -19,7 +19,10 @@ class MedicamentController extends Controller
         return response()->json([]);
     }
 
+    $showArchived = $request->boolean('archived', false);
+
     $medicaments = Medicament::query()
+        ->where('archived', $showArchived)
         ->where(function ($query) use ($term) {
             $query->where('name', 'ILIKE', "%{$term}%")
                   ->orWhere('dosage', 'ILIKE', "%{$term}%")
@@ -27,9 +30,11 @@ class MedicamentController extends Controller
                   ->orWhere('type', 'ILIKE', "%{$term}%")
                   ->orWhere('type_category', 'ILIKE', "%{$term}%");
         })
-        ->selectRaw('DISTINCT ON (LOWER(name)) "ID_Medicament" as id, name, price, prix_hospitalier, dosage, composition, "Classe_thérapeutique", "Code_ATCv", type, type_category, laboratory, statut')
+        // Keep the real "ID_Medicament" (and archived/is_favorite) so the list can
+        // archive/restore and star searched rows.
+        ->selectRaw('DISTINCT ON (LOWER(name)) "ID_Medicament", name, price, prix_hospitalier, dosage, composition, "Classe_thérapeutique", "Code_ATCv", type, type_category, laboratory, statut, archived, is_favorite')
         ->orderByRaw('LOWER(name)')
-        ->limit(15)
+        ->limit(30)
         ->get();
 
     return response()->json($medicaments);

@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [settings, setSettings] = useState<any>(null)
+  const [activeCertModel, setActiveCertModel] = useState(0)
   const [users, setUsers] = useState<any[]>([])
   const [showUserDialog, setShowUserDialog] = useState(false)
   const [showPermissionsDialog, setShowPermissionsDialog] = useState(false)
@@ -163,11 +164,30 @@ export default function SettingsPage() {
           }
         }
 
+        // Parse analyse_layout if it's a string
+        if (typeof parsedData.analyse_layout === 'string') {
+          try {
+            parsedData.analyse_layout = JSON.parse(parsedData.analyse_layout)
+          } catch (e) {
+            parsedData.analyse_layout = null
+          }
+        }
+
+        // Parse certificate_models if it's a string
+        if (typeof parsedData.certificate_models === 'string') {
+          try {
+            parsedData.certificate_models = JSON.parse(parsedData.certificate_models)
+          } catch (e) {
+            parsedData.certificate_models = null
+          }
+        }
+
         // Resolve background image URLs to the configured backend host so they load
         // on every device (not just the server machine). See resolveDocumentBackgroundUrl.
         parsedData.ordonnance_background = resolveDocumentBackgroundUrl(parsedData.ordonnance_background)
         parsedData.facture_background = resolveDocumentBackgroundUrl(parsedData.facture_background)
         parsedData.certificate_background = resolveDocumentBackgroundUrl(parsedData.certificate_background)
+        parsedData.analyse_background = resolveDocumentBackgroundUrl(parsedData.analyse_background)
 
         localStorage.setItem("app_settings", JSON.stringify(parsedData))
         setSettings(parsedData)
@@ -1487,6 +1507,50 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Analyses */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-indigo-600" />
+                Configuration de l'Analyse
+              </CardTitle>
+              <CardDescription>
+                Personnalisez l'emplacement des éléments sur votre papier de demande d'analyses.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrdonnanceLayoutEditor
+                initialBackground={settings?.analyse_background}
+                initialLayout={settings?.analyse_layout}
+                uploadBackground={(fd) => apiClient.uploadAnalyseBackground(fd)}
+                listLabel="Liste des Analyses"
+                page2Label="Analyses (page 2)"
+                sampleItems={["• Analyse Exemple 1", "• Analyse Exemple 2"]}
+                onSave={async (background, layout) => {
+                  setSaving(true)
+                  try {
+                    const newSettings = {
+                      ...settings,
+                      analyse_background: background,
+                      analyse_layout: layout
+                    }
+                    const response = await apiClient.updateUserSettings(sanitizeSettings(newSettings))
+                    if (response.success) {
+                      await fetchSettings()
+                      toast({ title: "Succès", description: "Configuration de l'analyse enregistrée" })
+                    } else {
+                      toast({ title: "Erreur", description: response.message || "Échec de l'enregistrement", variant: "destructive" })
+                    }
+                  } catch (error: any) {
+                    toast({ title: "Erreur", description: error?.message || "Échec de l'enregistrement", variant: "destructive" })
+                  } finally {
+                    setSaving(false)
+                  }
+                }}
+              />
+            </CardContent>
+          </Card>
+
           {/* Facture */}
           <Card>
             <CardHeader>
@@ -1533,44 +1597,112 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ScrollText className="h-5 w-5 text-indigo-600" />
-                Certificat médical
+                Certificat médical — Modèles
               </CardTitle>
               <CardDescription>
-                Modèle utilisé lors de la création d'un certificat. Utilisez les variables ci-dessous ; elles seront
-                remplacées automatiquement.
+                Créez plusieurs modèles de certificat. À l'impression, vous choisirez le modèle à utiliser. Les
+                variables ci-dessous sont remplacées automatiquement.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {CERTIFICATE_VARIABLES.map((v) => (
-                  <span key={v.token} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[11px] text-indigo-700 border border-indigo-100">
-                    <code className="font-mono font-semibold">{v.token}</code>
-                    <span className="text-indigo-400">— {v.label}</span>
-                  </span>
-                ))}
-              </div>
-              <Textarea
-                rows={10}
-                className="font-mono text-sm"
-                value={settings?.certificate_template ?? ""}
-                placeholder={DEFAULT_CERTIFICATE_TEMPLATE}
-                onChange={(e) => setSettings({ ...settings, certificate_template: e.target.value })}
-              />
-              <div className="flex justify-between">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-gray-500"
-                  onClick={() => setSettings({ ...settings, certificate_template: DEFAULT_CERTIFICATE_TEMPLATE })}
-                >
-                  <RefreshCw className="w-3 h-3 mr-1" />
-                  Réinitialiser le modèle par défaut
-                </Button>
-                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSaveSettings} disabled={saving}>
-                  <Save className="w-3 h-3 mr-1" />
-                  Enregistrer
-                </Button>
-              </div>
+              {(() => {
+                // Working copy of the models list (falls back to the legacy single template).
+                const models: { name: string; template: string }[] =
+                  Array.isArray(settings?.certificate_models) && settings.certificate_models.length
+                    ? settings.certificate_models
+                    : [{ name: "Par défaut", template: settings?.certificate_template || DEFAULT_CERTIFICATE_TEMPLATE }]
+                const idx = Math.min(activeCertModel, models.length - 1)
+                const writeModels = (next: { name: string; template: string }[]) =>
+                  setSettings({ ...settings, certificate_models: next })
+                const updateActive = (patch: Partial<{ name: string; template: string }>) =>
+                  writeModels(models.map((m, i) => (i === idx ? { ...m, ...patch } : m)))
+                return (
+                  <>
+                    {/* Model tabs */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {models.map((m, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setActiveCertModel(i)}
+                          className={`h-8 px-3 rounded-md text-xs font-semibold border transition-colors ${idx === i ? "border-indigo-500 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+                        >
+                          {m.name || `Modèle ${i + 1}`}
+                        </button>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs border-dashed"
+                        onClick={() => {
+                          const next = [...models, { name: `Modèle ${models.length + 1}`, template: DEFAULT_CERTIFICATE_TEMPLATE }]
+                          writeModels(next)
+                          setActiveCertModel(next.length - 1)
+                        }}
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Modèle
+                      </Button>
+                    </div>
+
+                    {/* Active model name + delete */}
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={models[idx].name}
+                        onChange={(e) => updateActive({ name: e.target.value })}
+                        placeholder="Nom du modèle"
+                        className="h-9 text-sm max-w-xs"
+                      />
+                      {models.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            const next = models.filter((_, i) => i !== idx)
+                            writeModels(next)
+                            setActiveCertModel(Math.max(0, idx - 1))
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" /> Supprimer
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {CERTIFICATE_VARIABLES.map((v) => (
+                        <span key={v.token} className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-[11px] text-indigo-700 border border-indigo-100">
+                          <code className="font-mono font-semibold">{v.token}</code>
+                          <span className="text-indigo-400">— {v.label}</span>
+                        </span>
+                      ))}
+                    </div>
+                    <Textarea
+                      rows={10}
+                      className="font-mono text-sm"
+                      value={models[idx].template ?? ""}
+                      placeholder={DEFAULT_CERTIFICATE_TEMPLATE}
+                      onChange={(e) => updateActive({ template: e.target.value })}
+                    />
+                    <div className="flex justify-between">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-gray-500"
+                        onClick={() => updateActive({ template: DEFAULT_CERTIFICATE_TEMPLATE })}
+                      >
+                        <RefreshCw className="w-3 h-3 mr-1" />
+                        Réinitialiser ce modèle
+                      </Button>
+                      <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSaveSettings} disabled={saving}>
+                        <Save className="w-3 h-3 mr-1" />
+                        Enregistrer
+                      </Button>
+                    </div>
+                  </>
+                )
+              })()}
 
               <div className="pt-4 mt-2 border-t">
                 <p className="text-sm font-medium text-gray-700 mb-1">Mise en page du certificat</p>

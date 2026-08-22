@@ -152,6 +152,7 @@ export function usePatients(showArchived = false) {
                   birth_day: patient.birth_day,
                   gender: patient.gender,
                   CIN: patient.CIN || patient.cin,
+                  guardian_cin: patient.guardian_cin,
                   phone_num: patient.phone_num || patient.phone,
                   email: patient.email,
                   mutuelle: patient.mutuelle,

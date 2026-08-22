@@ -26,14 +26,14 @@ export function resolveDocumentBackgroundUrl(value?: string | null): string | nu
   if (!path.startsWith("/")) path = `/${path}`
 
   // Already the serve route: just prefix the correct host.
-  if (/\/api\/settings\/(ordonnance|facture|certificate)-background\//.test(path)) {
+  if (/\/api\/settings\/(ordonnance|facture|certificate|analyse)-background\//.test(path)) {
     return `${BACKEND_ORIGIN}${path}`
   }
 
   // Public storage path: map the folder to its serve-route type.
-  const m = path.match(/\/storage\/(ordonnances|factures|certificates)\/(.+)$/)
+  const m = path.match(/\/storage\/(ordonnances|factures|certificates|analyses)\/(.+)$/)
   if (m) {
-    const type = m[1] === "ordonnances" ? "ordonnance" : m[1] === "factures" ? "facture" : "certificate"
+    const type = m[1] === "ordonnances" ? "ordonnance" : m[1] === "factures" ? "facture" : m[1] === "analyses" ? "analyse" : "certificate"
     return `${BACKEND_ORIGIN}/api/settings/${type}-background/${m[2]}`
   }
 
@@ -403,7 +403,7 @@ class ApiClient {
     return this.request(`/appointments/${appointmentId}/last-info`, {}, true)
   }
 
-  async updatePrice(appointmentId: number, price: number, medicalActs?: string[]): Promise<ApiResponse<{ price: number; medical_acts?: string[] }>> {
+  async updatePrice(appointmentId: number, price: number, medicalActs?: Array<string | { name: string; price: number }>): Promise<ApiResponse<{ price: number; medical_acts?: Array<string | { name: string; price: number }> }>> {
     return this.request("/appointments/update-price", {
       method: "POST",
       headers: {
@@ -1295,6 +1295,10 @@ class ApiClient {
 
   async uploadFactureBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
     return this.post('/settings/upload-facture-background', formData);
+  }
+
+  async uploadAnalyseBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {
+    return this.post('/settings/upload-analyse-background', formData);
   }
 
   async uploadCertificateBackground(formData: FormData): Promise<ApiResponse<{ url: string }>> {

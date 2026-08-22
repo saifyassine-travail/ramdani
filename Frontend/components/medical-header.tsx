@@ -307,6 +307,20 @@ const MedicalHeader = () => {
         return
       }
 
+      // No appointments on Sundays.
+      if (appointmentFormData.appointment_date) {
+        const [sy, sm, sd] = appointmentFormData.appointment_date.split("-").map(Number)
+        if (new Date(sy, sm - 1, sd).getDay() === 0) {
+          setAppointmentFormError("Les rendez-vous ne peuvent pas être planifiés le dimanche.")
+          toast({
+            title: "Dimanche indisponible",
+            description: "Les rendez-vous ne peuvent pas être planifiés le dimanche.",
+            variant: "destructive",
+          })
+          return
+        }
+      }
+
       const appointmentDateTime = appointmentFormData.appointment_time
         ? `${appointmentFormData.appointment_date} ${appointmentFormData.appointment_time}:00`
         : `${appointmentFormData.appointment_date} 00:00:00`
@@ -614,9 +628,21 @@ const MedicalHeader = () => {
                           id="appointmentDate"
                           type="date"
                           value={appointmentFormData.appointment_date}
-                          onChange={(e) =>
-                            setAppointmentFormData({ ...appointmentFormData, appointment_date: e.target.value })
-                          }
+                          onChange={(e) => {
+                            const v = e.target.value
+                            if (v) {
+                              const [y, m, d] = v.split("-").map(Number)
+                              if (new Date(y, m - 1, d).getDay() === 0) {
+                                toast({
+                                  title: "Dimanche indisponible",
+                                  description: "Les rendez-vous ne peuvent pas être planifiés le dimanche.",
+                                  variant: "destructive",
+                                })
+                                return
+                              }
+                            }
+                            setAppointmentFormData({ ...appointmentFormData, appointment_date: v })
+                          }}
                           required
                         />
                       </div>

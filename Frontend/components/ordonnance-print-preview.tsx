@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Printer, X, Type, Calendar, List, ChevronUp, ChevronDown } from "lucide-react"
+import { Printer, X, Type, Calendar, List, ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react"
 
 const MM_TO_PX = 96 / 25.4
 const DISPLAY_W = 540 // on-screen width of the previewed page, in px
@@ -15,6 +15,7 @@ interface El {
   x: number // %
   y: number // %
   fontSize: number // px
+  hidden?: boolean
 }
 
 interface Paper {
@@ -58,7 +59,20 @@ function buildPrintHTML(
   patientName: string,
   dateStr: string,
   medicationsHTML: string,
+  page2X: number,
+  page2Y: number,
 ) {
+  // Vertical positions -> mm so they stay put once the sheet grows past one page.
+  const pnTop = ((els.patient_name.y / 100) * paper.height).toFixed(2)
+  const dtTop = ((els.date.y / 100) * paper.height).toFixed(2)
+  const mdTop = ((els.medications.y / 100) * paper.height).toFixed(2)
+  // Where the list resumes on page 2+ (customizable in settings) — position and width.
+  const page2Top = ((page2Y / 100) * paper.height).toFixed(2)
+  const page2Left = page2X
+  const page2Width = 100 - page2X - 5
+  const mdLeft = els.medications.x
+  const mdWidth = 100 - els.medications.x - 5
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -67,34 +81,73 @@ function buildPrintHTML(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     @page { size: ${paper.width}mm ${paper.height}mm; margin: 0; }
-    body { font-family: Arial, sans-serif; }
-    .page {
-      position: relative;
+    body { font-family: Arial, sans-serif; width: ${paper.width}mm; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Full-bleed letterhead, repeated on every page. */
+    .page-bg {
+      position: fixed; top: 0; left: 0;
       width: ${paper.width}mm; height: ${paper.height}mm;
-      background-color: #fff;
       background-image: ${background ? `url('${background}')` : "none"};
       background-size: cover; background-repeat: no-repeat; background-position: center;
-      overflow: hidden;
+      z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); color: #000; }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
+    /* Medication list starts below the letterhead header; a script inserts page
+       breaks so each overflow page also starts below the header (see paginate). */
+    #meds { margin-top: ${mdTop}mm; font-size: ${els.medications.fontSize}px; line-height: 1.5; }
+    #meds > div { margin-left: ${mdLeft}%; width: ${mdWidth}%; break-inside: avoid; page-break-inside: avoid; }
     @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; }
-      .page { box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    }
-    @media print {
-      html, body { width: ${paper.width}mm; height: ${paper.height}mm; }
+      body { background: #eee; }
+      .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="element" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>
-    <div class="element" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>
-    <div class="element meds-container" style="left:${els.medications.x}%; top:${els.medications.y}%; font-size:${els.medications.fontSize}px; line-height:1.5; width:${100 - els.medications.x - 5}%;">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>
-  </div>
+  ${background ? '<div class="page-bg"></div>' : ""}
+  ${els.patient_name.hidden ? "" : `<div class="element" style="left:${els.patient_name.x}%; top:${pnTop}mm; font-size:${els.patient_name.fontSize}px; white-space:nowrap;">${patientName}</div>`}
+  ${els.date.hidden ? "" : `<div class="element" style="left:${els.date.x}%; top:${dtTop}mm; font-size:${els.date.fontSize}px; white-space:nowrap;">${dateStr}</div>`}
+  ${els.medications.hidden ? "" : `<div id="meds">${medicationsHTML || '<div style="color:#999">Aucun médicament</div>'}</div>`}
+  ${paginationScript(paper.height, page2Top, page2Left, page2Width)}
 </body>
 </html>`
+}
+
+// Chrome will not repeat a tall table <thead> across pages, so instead of relying
+// on the browser to reserve the header zone we compute the page breaks ourselves:
+// any medication block that would cross a page boundary is pushed to the next page
+// with a spacer tall enough to also clear the letterhead header on that page.
+function paginationScript(paperHeightMm: number, headerMm: string, page2Left: number, page2Width: number) {
+  return `<script>
+  (function(){
+    function paginate(){
+      var mmToPx = 96/25.4, pageH = ${paperHeightMm}*mmToPx, header = ${headerMm}*mmToPx, safety = 2;
+      // Reserve some space at the bottom of each page too, but less than the top
+      // header zone that opens each following page.
+      var footer = Math.min(header * 0.5, 20 * mmToPx);
+      var p2Left = '${page2Left}%', p2W = '${page2Width}%';
+      var box = document.getElementById('meds');
+      if(!box) return;
+      var blocks = [].slice.call(box.children), pageIndex = 0;
+      for(var i=0;i<blocks.length;i++){
+        var b = blocks[i];
+        if(b.className === 'pgspacer') continue;
+        var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
+        if(bottom > pageBottom - footer - safety){
+          var gap = (pageBottom - top) + header;
+          var sp = document.createElement('div');
+          sp.className = 'pgspacer'; sp.style.height = gap + 'px'; sp.style.width = '1px';
+          // The spacer MUST be allowed to split across the page boundary, otherwise
+          // break-inside:avoid pushes it wholesale onto the next page.
+          sp.style.breakInside = 'auto'; sp.style.pageBreakInside = 'auto';
+          box.insertBefore(sp, b); pageIndex++;
+        }
+        // On page 2+, move medications to their customized position/width.
+        if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
+      }
+    }
+    if(document.readyState === 'complete') paginate();
+    else window.addEventListener('load', paginate);
+  })();
+  </script>`
 }
 
 export default function OrdonnancePrintPreview({
@@ -113,6 +166,10 @@ export default function OrdonnancePrintPreview({
   const [bgUrl, setBgUrl] = useState<string | null>(null)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
+  const medsRef = useRef<HTMLDivElement>(null)
+  // Height of the previewed sheet in px, rounded up to whole pages so the
+  // preview shows page 2 (and beyond) when the medication list overflows.
+  const [contentHpx, setContentHpx] = useState(0)
 
   // Seed temporary state from the saved layout each time the preview opens, so
   // edits made here never persist back to settings.
@@ -124,16 +181,19 @@ export default function OrdonnancePrintPreview({
         x: L.patient_name?.x ?? DEFAULTS.patient_name.x,
         y: L.patient_name?.y ?? DEFAULTS.patient_name.y,
         fontSize: L.patient_name?.fontSize ?? DEFAULTS.patient_name.fontSize,
+        hidden: L.patient_name?.hidden ?? false,
       },
       date: {
         x: L.date?.x ?? DEFAULTS.date.x,
         y: L.date?.y ?? DEFAULTS.date.y,
         fontSize: L.date?.fontSize ?? DEFAULTS.date.fontSize,
+        hidden: L.date?.hidden ?? false,
       },
       medications: {
         x: L.medications?.x ?? DEFAULTS.medications.x,
         y: L.medications?.y ?? DEFAULTS.medications.y,
         fontSize: L.medications?.fontSize ?? DEFAULTS.medications.fontSize,
+        hidden: L.medications?.hidden ?? false,
       },
     })
     setPaper(L.paper || { type: "A4", width: 210, height: 297 })
@@ -171,12 +231,32 @@ export default function OrdonnancePrintPreview({
   const pageHpx = paper.height * MM_TO_PX
   const scale = DISPLAY_W / pageWpx
 
+  // Measure the medication block and round the sheet up to whole pages, so the
+  // preview mirrors the paginated printout (medications continue on page 2).
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = medsRef.current
+      const topPx = (els.medications.y / 100) * pageHpx
+      const bottom = el ? topPx + el.offsetHeight : pageHpx
+      const pages = Math.max(1, Math.ceil(bottom / pageHpx - 0.01))
+      setContentHpx(pages * pageHpx)
+    }
+    const raf = requestAnimationFrame(measure)
+    return () => cancelAnimationFrame(raf)
+  }, [open, medicationsHTML, els.medications.x, els.medications.y, els.medications.fontSize, pageHpx])
+
+  const totalPages = pageHpx > 0 ? Math.max(1, Math.round((contentHpx || pageHpx) / pageHpx)) : 1
+  const sheetHpx = (contentHpx || pageHpx)
+
   const updateSelectedFromPointer = (clientX: number, clientY: number) => {
     if (!selectedId) return
     const rect = wrapperRef.current?.getBoundingClientRect()
     if (!rect) return
+    // Positions are expressed relative to a single page, even when the preview
+    // spans several pages, so dragging keeps anchoring elements to page 1.
+    const onePageH = pageHpx * scale
     const x = Math.min(100, Math.max(0, ((clientX - rect.left) / rect.width) * 100))
-    const y = Math.min(100, Math.max(0, ((clientY - rect.top) / rect.height) * 100))
+    const y = Math.min(100, Math.max(0, ((clientY - rect.top) / onePageH) * 100))
     setEls((prev) => ({ ...prev, [selectedId]: { ...prev[selectedId], x, y } }))
   }
 
@@ -194,13 +274,19 @@ export default function OrdonnancePrintPreview({
     }))
   }
 
+  // Show/hide an element for this print (e.g. the date).
+  const toggleHidden = (id: ElId) =>
+    setEls((prev) => ({ ...prev, [id]: { ...prev[id], hidden: !prev[id].hidden } }))
+
   const setFont = (value: number) => {
     if (!selectedId) return
     setEls((prev) => ({ ...prev, [selectedId]: { ...prev[selectedId], fontSize: Math.max(6, value || 6) } }))
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, patientName, dateStr, medicationsHTML)
+    const page2X = layout?.medications_page2?.x ?? els.medications.x
+    const page2Y = layout?.medications_page2?.y ?? els.medications.y
+    const html = buildPrintHTML(els, paper, bgUrl || background, patientName, dateStr, medicationsHTML, page2X, page2Y)
 
     // Print via a hidden iframe — reliable across browsers (no popup blockers,
     // no blank-window issues from writing into window.open).
@@ -238,11 +324,12 @@ export default function OrdonnancePrintPreview({
 
   const renderElement = (id: ElId) => {
     const el = els[id]
+    if (el.hidden) return null
     const selected = selectedId === id
     const common: React.CSSProperties = {
       position: "absolute",
       left: `${el.x}%`,
-      top: `${el.y}%`,
+      top: `${(el.y / 100) * pageHpx}px`,
       cursor: dragging && selected ? "grabbing" : "grab",
       outline: selected ? "2px solid #2563eb" : "1px dashed rgba(37,99,235,0.35)",
       outlineOffset: "2px",
@@ -251,6 +338,7 @@ export default function OrdonnancePrintPreview({
       return (
         <div
           key={id}
+          ref={medsRef}
           onMouseDown={startDrag(id)}
           style={{
             ...common,
@@ -302,19 +390,49 @@ export default function OrdonnancePrintPreview({
               }}
               onMouseUp={() => setDragging(false)}
               onMouseLeave={() => setDragging(false)}
-              style={{ width: DISPLAY_W, height: pageHpx * scale, position: "relative" }}
+              style={{ width: DISPLAY_W, height: sheetHpx * scale, position: "relative" }}
             >
               <div
                 style={{
                   width: pageWpx,
-                  height: pageHpx,
+                  height: sheetHpx,
                   transform: `scale(${scale})`,
                   transformOrigin: "top left",
                   position: "relative",
-                  background: bgUrl ? `#fff url('${bgUrl}') center/cover no-repeat` : "#fff",
+                  background: bgUrl ? `#fff url('${bgUrl}') top center / 100% ${pageHpx}px repeat-y` : "#fff",
                   boxShadow: "0 0 10px rgba(0,0,0,0.15)",
                 }}
               >
+                {/* Page-break guides so overflow onto page 2+ is visible */}
+                {Array.from({ length: Math.max(0, totalPages - 1) }).map((_, i) => (
+                  <div
+                    key={`pb-${i}`}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      right: 0,
+                      top: (i + 1) * pageHpx,
+                      borderTop: "2px dashed #ef4444",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: 8,
+                        top: 6,
+                        fontSize: 22,
+                        fontFamily: "Arial, sans-serif",
+                        color: "#ef4444",
+                        background: "rgba(255,255,255,0.85)",
+                        padding: "2px 10px",
+                        borderRadius: 6,
+                      }}
+                    >
+                      Page {i + 2}
+                    </span>
+                  </div>
+                ))}
                 {renderElement("patient_name")}
                 {renderElement("date")}
                 {renderElement("medications")}
@@ -326,28 +444,37 @@ export default function OrdonnancePrintPreview({
           <div className="lg:col-span-4 space-y-4">
             <div className="space-y-2">
               {ELEMENT_META.map(({ id, label, icon: Icon }) => (
-                <button
+                <div
                   key={id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedId(id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                     selectedId === id ? "border-blue-500 bg-blue-50 shadow-sm" : "hover:bg-gray-50 border-gray-100"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div
                       className={`p-2 rounded-lg ${selectedId === id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500"}`}
                     >
                       <Icon className="w-4 h-4" />
                     </div>
-                    <div className="text-left">
-                      <span className="font-semibold text-sm block">{label}</span>
+                    <div className="text-left min-w-0">
+                      <span className={`font-semibold text-sm block truncate ${els[id].hidden ? "text-gray-400 line-through" : ""}`}>{label}</span>
                       <span className="text-[10px] text-gray-400 font-mono">
                         {Math.round(els[id].x)}%, {Math.round(els[id].y)}% · {els[id].fontSize}px
                       </span>
                     </div>
                   </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleHidden(id) }}
+                    title={els[id].hidden ? "Afficher (imprimé)" : "Masquer (non imprimé)"}
+                    className={`flex-shrink-0 p-1.5 rounded-md hover:bg-gray-100 ${els[id].hidden ? "text-gray-400" : "text-blue-600"}`}
+                  >
+                    {els[id].hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               ))}
             </div>
 

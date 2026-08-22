@@ -22,7 +22,9 @@ import { isMinor } from "@/lib/age"
 import { useAuth } from "@/hooks/use-auth"
 import FacturePrintPreview from "@/components/facture-print-preview"
 import CertificatePrintPreview from "@/components/certificate-print-preview"
-import { renderCertificateTemplate } from "@/lib/certificate-template"
+import { renderCertificateTemplate, DEFAULT_CERTIFICATE_TEMPLATE } from "@/lib/certificate-template"
+import OrdonnancePrintPreview from "@/components/ordonnance-print-preview"
+import { getMedicationHTML, type OrdMed } from "@/lib/ordonnance-format"
 
 interface PatientDetails {
   ID_patient: number
@@ -68,6 +70,18 @@ interface PatientDetails {
   documents?: PatientDocument[]
 }
 
+// Background colour of a history row by appointment status.
+function statusRowClass(status?: string): string {
+  const s = (status || "").toLowerCase()
+  if (s.includes("termin")) return "bg-green-50 hover:bg-green-100"
+  if (s.includes("annul") || s.includes("cancel")) return "bg-red-50 hover:bg-red-100"
+  if (s.includes("programm")) return "bg-gray-100 hover:bg-gray-200"
+  if (s.includes("consultation")) return "bg-blue-50 hover:bg-blue-100"
+  if (s.includes("attente")) return "bg-amber-50 hover:bg-amber-100"
+  if (s.includes("prépar") || s.includes("prepar")) return "bg-orange-50 hover:bg-orange-100"
+  return "hover:bg-gray-50"
+}
+
 export default function PatientDetailsPage() {
   const router = useRouter()
   const params = useParams()
@@ -96,6 +110,13 @@ export default function PatientDetailsPage() {
   const [savingMutuelleId, setSavingMutuelleId] = useState<number | null>(null)
   const [savingCreditId, setSavingCreditId] = useState<number | null>(null)
   const [loadingMedicaments, setLoadingMedicaments] = useState(false)
+  const [ordPreview, setOrdPreview] = useState<{
+    open: boolean
+    layout: any
+    background: string | null
+    medicationsHTML: string
+    dateStr: string
+  }>({ open: false, layout: null, background: null, medicationsHTML: "", dateStr: "" })
   const [isControlModalOpen, setIsControlModalOpen] = useState(false)
   const [controlDays, setControlDays] = useState(90)
   const [controlDate, setControlDate] = useState("")
@@ -336,6 +357,11 @@ export default function PatientDetailsPage() {
           }
 
           setIsCertificateModalOpen(false)
+          // Immediately show the print preview (like the ordonnance flow).
+          if ((certificateData.content || "").trim()) {
+            setCertificateBody(certificateData.content.trim())
+            setCertificatePreviewOpen(true)
+          }
           toast({
             title: "Succès",
             description: "Certificat créé avec succès",
@@ -633,6 +659,9 @@ export default function PatientDetailsPage() {
       try { parsed.medical_acts = JSON.parse(parsed.medical_acts) } catch { parsed.medical_acts = [] }
     }
     if (!Array.isArray(parsed.medical_acts)) parsed.medical_acts = []
+    if (typeof parsed.certificate_models === "string") {
+      try { parsed.certificate_models = JSON.parse(parsed.certificate_models) } catch { parsed.certificate_models = null }
+    }
 
     parsed.facture_background = resolveDocumentBackgroundUrl(parsed.facture_background)
     parsed.certificate_background = resolveDocumentBackgroundUrl(parsed.certificate_background)
@@ -781,7 +810,6 @@ export default function PatientDetailsPage() {
         apiClient.getUserSettings(),
       ])
 
-      // Extract medications (handle both direct and nested response)
       const medData = (medResponse as any).data
       const rawMeds = medData?.medicaments ?? []
       if (!rawMeds.length) {
@@ -790,168 +818,38 @@ export default function PatientDetailsPage() {
       }
       const appointmentDate: string = medData?.date ?? ""
 
-      // Build medication list in the same pivot format used by the appointments page
-      const medications: Array<{ name: string; pivot: { dosage: string; frequence: string; duree: string } }> =
-        rawMeds.map((m: any) => ({
-          name: m.name || "Médicament",
-          pivot: { dosage: m.dosage || "", frequence: m.frequence || "", duree: m.duree || "" },
-        }))
-
-      // Load ordonnance settings — same as appointments page
       const settingsData = (settingsResponse as any).data?.data ?? (settingsResponse as any).data ?? {}
       const background: string | null = resolveDocumentBackgroundUrl(settingsData.ordonnance_background)
       const layout: any = typeof settingsData.ordonnance_layout === "string"
-        ? JSON.parse(settingsData.ordonnance_layout)
+        ? (() => { try { return JSON.parse(settingsData.ordonnance_layout) } catch { return null } })()
         : settingsData.ordonnance_layout || null
 
-      const patientName = patient?.first_name && patient?.last_name
-        ? formatName(patient.first_name, patient.last_name)
-        : "Patient"
+      // Same medication formatting as the appointment page (shared module).
+      const meds: OrdMed[] = rawMeds.map((m: any) => ({
+        name: m.name || "Médicament",
+        type: m.type,
+        type_category: m.type_category,
+        pivot: { frequence: m.frequence || "", duree: m.duree || "", dosage: m.dosage || "" },
+      }))
+      const medicationsHTML = meds.map((m, i) => getMedicationHTML(m, i)).join("")
 
-      const dateStr = new Date(appointmentDate || Date.now()).toLocaleDateString("fr-FR", {
-        day: "numeric", month: "long", year: "numeric",
+      // Open the same personalised preview used on the appointment page.
+      setOrdPreview({
+        open: true,
+        layout,
+        background,
+        medicationsHTML,
+        dateStr: new Date(appointmentDate || Date.now()).toLocaleDateString("fr-FR", {
+          day: "numeric", month: "long", year: "numeric",
+        }),
       })
-
-      // — Exact same helpers as appointments/[id]/page.tsx —
-      const parseMedDoses = (frequence: string) => {
-        if (!frequence) return []
-        return frequence.split(',').map(part => {
-          const colonIdx = part.indexOf(':')
-          if (colonIdx < 0) return { time: part.trim(), mealTiming: '' }
-          return { time: part.slice(0, colonIdx).trim(), mealTiming: part.slice(colonIdx + 1).trim() }
-        }).filter(d => d.time)
-      }
-
-      const getMedicationHTML = (med: { name: string; pivot: { dosage: string; frequence: string; duree: string } }) => {
-        const doses = parseMedDoses(med.pivot?.frequence || '')
-        const duration = med.pivot?.duree || ''
-        const name = med.name || 'Médicament'
-        let content = ''
-        if (doses.length > 0) {
-          const count = doses.length
-          const timesStr = doses.map(d => d.time.toLowerCase()).join(' et ')
-          const mealTimings = [...new Set(doses.map(d => d.mealTiming).filter(Boolean))]
-          const mealTimingStr = mealTimings[0] || ''
-          let doseLine = `1 cp * ${count}/j ${timesStr}`
-          if (mealTimingStr) {
-            doseLine += ` ,<span style="display:inline-block;width:50px;"></span>${mealTimingStr}`
-          }
-          content += `<div style="padding-left:30px;line-height:1.9;">${doseLine}</div>`
-        }
-        if (duration) {
-          content += `<div style="padding-left:30px;line-height:1.9;color:#444;">pendant ${duration}</div>`
-        }
-        return `<div style="margin-bottom:16px;"><div style="font-weight:bold;margin-bottom:1px;">${name} :</div>${content}</div>`
-      }
-
-      const printWindow = window.open("", "_blank")
-      if (!printWindow) {
-        toast({ title: "Erreur", description: "Impossible d'ouvrir la fenêtre d'impression", variant: "destructive" })
-        return
-      }
-
-      let ordonnanceHTML = ""
-
-      if (layout) {
-        // CUSTOM LAYOUT — identical to appointments page
-        const elements = layout as any
-        const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
-
-        ordonnanceHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Ordonnance - ${patientName}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    @page {
-      size: ${paper.width}mm ${paper.height}mm;
-      margin: 0;
-    }
-    body {
-      font-family: Arial, sans-serif;
-      width: ${paper.width}mm;
-      height: ${paper.height}mm;
-      overflow: hidden;
-    }
-    .page {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      background-image: ${background ? `url('${background}')` : 'none'};
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
-    }
-    .element { position: absolute; transform: translate(0, -50%); }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
-
-    @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
-      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${((elements.patient_name?.fontSize ?? 18) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${patientName}
-    </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${((elements.date?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; white-space: nowrap;">
-      ${dateStr}
-    </div>
-    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${((elements.medications?.fontSize ?? 16) * paper.width / 600).toFixed(2)}mm; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => getMedicationHTML(m)).join('')}
-    </div>
-  </div>
-  <script>
-    window.onload = () => {
-      setTimeout(() => { window.print(); }, 500);
-    };
-  </script>
-</body>
-</html>`
-      } else {
-        // FALLBACK simple list — identical to appointments page fallback
-        ordonnanceHTML = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <title>Ordonnance - ${patientName}</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: Arial, sans-serif; padding: 2cm; }
-      .header { text-align: right; margin-bottom: 1cm; font-size: 0.95rem; color: #555; }
-      .patient-info { margin-bottom: 1cm; font-size: 1.1rem; font-weight: bold; }
-      .meds-title { font-weight: bold; text-decoration: underline; margin-bottom: 0.5cm; }
-      .medication-list { display: flex; flex-direction: column; gap: 12px; }
-      .med-item { line-height: 1.5; }
-    </style>
-  </head>
-  <body>
-    <div class="header">${dateStr}</div>
-    <div class="patient-info">${patientName}</div>
-    <div class="meds-title">Ordonnance</div>
-    <div class="medication-list">
-      ${medications.map(m => getMedicationHTML(m)).join('')}
-    </div>
-    <script>window.onload = () => setTimeout(() => window.print(), 500);</script>
-  </body>
-</html>`
-      }
-
-      printWindow.document.write(ordonnanceHTML)
-      printWindow.document.close()
-      setTimeout(() => { printWindow.print() }, 250)
     } catch (err) {
-      console.error("[v0] Error printing ordonnance:", err)
-      toast({ title: "Erreur", description: "Une erreur s'est produite lors de l'impression", variant: "destructive" })
+      console.error("[v0] Error preparing ordonnance:", err)
+      toast({ title: "Erreur", description: "Une erreur s'est produite", variant: "destructive" })
     } finally {
       setLoadingMedicaments(false)
     }
-  }, [patientId, toast, patient])
+  }, [patientId, toast])
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -1330,7 +1228,7 @@ export default function PatientDetailsPage() {
                     {filteredAppointments.map((appointment: any) => (
                       <tr
                         key={appointment.ID_RV}
-                        className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        className={`transition-colors cursor-pointer ${statusRowClass(appointment.status)}`}
                         onClick={() => router.push(`/appointments/${appointment.ID_RV}`)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap">{formatDate(appointment.appointment_date)}</td>
@@ -1683,7 +1581,12 @@ export default function PatientDetailsPage() {
           <CertificateForm
             onSubmit={handleAddCertificate}
             onCancel={() => setIsCertificateModalOpen(false)}
-            buildContent={(jours, start, end) => {
+            models={
+              Array.isArray(docSettings?.certificate_models) && docSettings.certificate_models.length
+                ? docSettings.certificate_models
+                : [{ name: "Par défaut", template: docSettings?.certificate_template || DEFAULT_CERTIFICATE_TEMPLATE }]
+            }
+            renderContent={(template, jours, start, end) => {
               const patientName = patient?.first_name && patient?.last_name
                 ? formatName(patient.first_name, patient.last_name)
                 : "Patient"
@@ -1691,7 +1594,7 @@ export default function PatientDetailsPage() {
                 const date = new Date(d)
                 return isNaN(date.getTime()) ? d : date.toLocaleDateString("fr-FR")
               }
-              return renderCertificateTemplate(docSettings?.certificate_template, {
+              return renderCertificateTemplate(template, {
                 patient: patientName,
                 cin: patient?.CIN || patient?.guardian_cin || "[Numéro CIN]",
                 jours: String(jours),
@@ -1743,6 +1646,19 @@ export default function PatientDetailsPage() {
         layout={docSettings?.certificate_layout || null}
         background={docSettings?.certificate_background || null}
         body={certificateBody}
+        ville={docSettings?.practice_city || "Oujda"}
+        dateStr={new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+      />
+
+      {/* Last-ordonnance print — same personalised preview as the appointment page */}
+      <OrdonnancePrintPreview
+        open={ordPreview.open}
+        onOpenChange={(open) => setOrdPreview((p) => ({ ...p, open }))}
+        layout={ordPreview.layout}
+        background={ordPreview.background}
+        patientName={patient ? formatName(patient.first_name, patient.last_name) : "Patient"}
+        dateStr={ordPreview.dateStr}
+        medicationsHTML={ordPreview.medicationsHTML}
       />
 
       {/* Avatar Zoom Modal */}
@@ -2002,12 +1918,15 @@ function PatientForm({
 function CertificateForm({
   onSubmit,
   onCancel,
-  buildContent,
+  models,
+  renderContent,
 }: {
   onSubmit: (data: any) => void
   onCancel: () => void
-  // Renders the settings template for the given rest-day count + dates.
-  buildContent: (jours: number, start: string, end: string) => string
+  // Available certificate models to choose from.
+  models: { name: string; template: string }[]
+  // Renders a given template for the rest-day count + dates.
+  renderContent: (template: string, jours: number, start: string, end: string) => string
 }) {
   const calculateDays = (start: string, end: string) => {
     const startDate = new Date(start)
@@ -2015,6 +1934,11 @@ function CertificateForm({
     const timeDiff = endDate.getTime() - startDate.getTime()
     return Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
   }
+
+  const safeModels = models && models.length ? models : [{ name: "Par défaut", template: "" }]
+  const [modelIdx, setModelIdx] = useState(0)
+  const buildContent = (jours: number, start: string, end: string) =>
+    renderContent(safeModels[Math.min(modelIdx, safeModels.length - 1)].template, jours, start, end)
 
   const initialStart = new Date().toISOString().split("T")[0]
   const initialEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
@@ -2027,6 +1951,16 @@ function CertificateForm({
   const [contentTouched, setContentTouched] = useState(false)
 
   const daysCount = calculateDays(formData.start_date, formData.end_date)
+
+  const chooseModel = (i: number) => {
+    setModelIdx(i)
+    if (!contentTouched) {
+      setFormData((prev) => ({
+        ...prev,
+        content: renderContent(safeModels[i].template, calculateDays(prev.start_date, prev.end_date), prev.start_date, prev.end_date),
+      }))
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -2059,6 +1993,23 @@ function CertificateForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {safeModels.length > 1 && (
+        <div>
+          <Label>Modèle du certificat</Label>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {safeModels.map((m, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => chooseModel(i)}
+                className={`h-8 px-3 rounded-md text-xs font-semibold border transition-colors ${modelIdx === i ? "border-indigo-500 bg-indigo-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+              >
+                {m.name || `Modèle ${i + 1}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label htmlFor="start_date">Date de Début</Label>

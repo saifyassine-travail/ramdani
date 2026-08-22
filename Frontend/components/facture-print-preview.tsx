@@ -15,6 +15,7 @@ interface El {
   x: number
   y: number
   fontSize: number
+  hidden?: boolean
 }
 
 interface Paper {
@@ -31,6 +32,24 @@ export interface FactureHeaderInfo {
   city?: string
 }
 
+// Editable fixed texts. Stored in layout.texts; {date} and {ville} are expanded
+// in the footer.
+export interface FactureTexts {
+  col_designation: string
+  col_prix: string
+  total_label: string
+  intro: string
+  footer: string
+}
+
+export const FACTURE_TEXT_DEFAULTS: FactureTexts = {
+  col_designation: "Désignation",
+  col_prix: "Prix (DH)",
+  total_label: "Total",
+  intro: "Arrêtée la présente facture à la somme de :",
+  footer: "{ville} — Facture établie le {date}",
+}
+
 interface FacturePrintPreviewProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -40,8 +59,6 @@ interface FacturePrintPreviewProps {
   dateStr: string
   acts: { name: string; price: number }[]
   total: number
-  credit: number
-  mutuelle: boolean
   header: FactureHeaderInfo
 }
 
@@ -57,7 +74,7 @@ const ELEMENT_META: { id: ElId; label: string; icon: any }[] = [
   { id: "patient_name", label: "Nom Patient", icon: Type },
   { id: "date", label: "Date", icon: Calendar },
   { id: "acts_table", label: "Tableau des Actes", icon: Table2 },
-  { id: "totals", label: "Total / Crédit / Mutuelle", icon: Coins },
+  { id: "totals", label: "Total (en lettres)", icon: Coins },
   { id: "footer", label: "Pied de page", icon: AlignLeft },
 ]
 
@@ -68,37 +85,82 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
 }
 
-function actsTableHTML(acts: { name: string; price: number }[]): string {
-  const rows = acts.length
-    ? acts
+function actsTableHTML(acts: { name: string; price: number }[], total: number, texts: FactureTexts): string {
+  // Only bill acts that actually have a price — 0 DH acts are not shown.
+  const billable = acts.filter((a) => Number(a.price) > 0)
+  const rows = billable.length
+    ? billable
         .map(
           (a) =>
             `<tr><td style="border:1px solid #333;padding:4px 8px">${escapeHtml(a.name)}</td><td style="border:1px solid #333;padding:4px 8px;text-align:right">${a.price} DH</td></tr>`,
         )
         .join("")
     : `<tr><td colspan="2" style="border:1px solid #333;padding:4px 8px;color:#999">Aucun acte enregistré</td></tr>`
+  const totalRow = `<tr>
+      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">${escapeHtml(texts.total_label)}</td>
+      <td style="border:1px solid #333;padding:4px 8px;text-align:right;font-weight:bold;background:#f3f4f6">${total} DH</td>
+    </tr>`
   return `<table style="border-collapse:collapse;width:100%">
     <thead><tr>
-      <th style="border:1px solid #333;padding:4px 8px;text-align:left;background:#f3f4f6">Désignation</th>
-      <th style="border:1px solid #333;padding:4px 8px;text-align:right;background:#f3f4f6">Prix (DH)</th>
+      <th style="border:1px solid #333;padding:4px 8px;text-align:left;background:#f3f4f6">${escapeHtml(texts.col_designation)}</th>
+      <th style="border:1px solid #333;padding:4px 8px;text-align:right;background:#f3f4f6">${escapeHtml(texts.col_prix)}</th>
     </tr></thead>
-    <tbody>${rows}</tbody>
+    <tbody>${rows}${totalRow}</tbody>
   </table>`
 }
 
-function totalsHTML(total: number, credit: number, mutuelle: boolean): string {
-  return [
-    `<div><strong>Total : ${total} DH</strong></div>`,
-    credit > 0 ? `<div style="color:#dc2626">Crédit restant : ${credit} DH</div>` : "",
-    `<div>Mutuelle : ${mutuelle ? "Oui" : "Non"}</div>`,
-  ]
-    .filter(Boolean)
-    .join("")
+// Write an integer amount (0..999999) in French words, e.g. 250 -> "deux cent cinquante".
+function numberToFrenchWords(value: number): string {
+  let n = Math.floor(Math.abs(value))
+  if (n === 0) return "zéro"
+  const units = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix",
+    "onze", "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf"]
+  const tens = ["", "", "vingt", "trente", "quarante", "cinquante", "soixante", "soixante", "quatre-vingt", "quatre-vingt"]
+  const below100 = (x: number): string => {
+    if (x < 20) return units[x]
+    const t = Math.floor(x / 10)
+    const u = x % 10
+    if (t === 7 || t === 9) {
+      const base = t === 7 ? "soixante" : "quatre-vingt"
+      if (t === 7 && u === 1) return "soixante et onze"
+      return base + "-" + units[10 + u]
+    }
+    if (u === 0) return t === 8 ? "quatre-vingts" : tens[t]
+    if (u === 1 && t >= 2 && t <= 6) return tens[t] + " et un"
+    return tens[t] + "-" + units[u]
+  }
+  const below1000 = (x: number): string => {
+    const h = Math.floor(x / 100)
+    const r = x % 100
+    let s = ""
+    if (h > 0) {
+      s = (h > 1 ? units[h] + " " : "") + "cent"
+      if (h > 1 && r === 0) s += "s"
+    }
+    if (r > 0) s = (s ? s + " " : "") + below100(r)
+    return s
+  }
+  let result = ""
+  const thousands = Math.floor(n / 1000)
+  const rest = n % 1000
+  if (thousands > 0) result += (thousands > 1 ? below1000(thousands) + " mille" : "mille") + " "
+  if (rest > 0) result += below1000(rest)
+  return result.trim()
 }
 
-function footerHTML(header: FactureHeaderInfo, dateStr: string): string {
-  const city = header.city ? `${escapeHtml(header.city)} — ` : ""
-  return `<div>${city}Facture établie le ${escapeHtml(dateStr)}</div>`
+function totalsHTML(total: number, texts: FactureTexts): string {
+  const words = numberToFrenchWords(total)
+  const dh = total > 1 ? "dirhams" : "dirham"
+  return `<div>${escapeHtml(texts.intro)} <strong style="text-transform:capitalize">${escapeHtml(words)} ${dh}</strong></div>`
+}
+
+function footerHTML(header: FactureHeaderInfo, dateStr: string, texts: FactureTexts): string {
+  // Expand {ville} and {date} tokens; a leading "— " with no city is trimmed.
+  let out = texts.footer
+    .split("{ville}").join(header.city ? escapeHtml(header.city) : "")
+    .split("{date}").join(escapeHtml(dateStr))
+  out = out.replace(/^\s*—\s*/, "").trim()
+  return `<div>${out}</div>`
 }
 
 function buildPrintHTML(
@@ -109,9 +171,8 @@ function buildPrintHTML(
   dateStr: string,
   acts: { name: string; price: number }[],
   total: number,
-  credit: number,
-  mutuelle: boolean,
   header: FactureHeaderInfo,
+  texts: FactureTexts,
 ) {
   return `<!DOCTYPE html>
 <html>
@@ -143,11 +204,11 @@ function buildPrintHTML(
 </head>
 <body>
   <div class="page">
-    <div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;"><strong>Patient : </strong>${escapeHtml(patientName)}</div>
-    <div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>
-    <div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts)}</div>
-    <div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5;">${totalsHTML(total, credit, mutuelle)}</div>
-    <div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr)}</div>
+    ${els.patient_name.hidden ? "" : `<div class="element line" style="left:${els.patient_name.x}%; top:${els.patient_name.y}%; font-size:${els.patient_name.fontSize}px;">${escapeHtml(patientName)}</div>`}
+    ${els.date.hidden ? "" : `<div class="element line" style="left:${els.date.x}%; top:${els.date.y}%; font-size:${els.date.fontSize}px;">${escapeHtml(dateStr)}</div>`}
+    ${els.acts_table.hidden ? "" : `<div class="element" style="left:${els.acts_table.x}%; top:${els.acts_table.y}%; font-size:${els.acts_table.fontSize}px; width:${100 - els.acts_table.x - 8}%;">${actsTableHTML(acts, total, texts)}</div>`}
+    ${els.totals.hidden ? "" : `<div class="element" style="left:${els.totals.x}%; top:${els.totals.y}%; font-size:${els.totals.fontSize}px; line-height:1.5; width:${100 - els.totals.x - 8}%;">${totalsHTML(total, texts)}</div>`}
+    ${els.footer.hidden ? "" : `<div class="element" style="left:${els.footer.x}%; top:${els.footer.y}%; font-size:${els.footer.fontSize}px;">${footerHTML(header, dateStr, texts)}</div>`}
   </div>
 </body>
 </html>`
@@ -162,8 +223,6 @@ export default function FacturePrintPreview({
   dateStr,
   acts,
   total,
-  credit,
-  mutuelle,
   header,
 }: FacturePrintPreviewProps) {
   const [els, setEls] = useState<Record<ElId, El>>(DEFAULTS)
@@ -171,6 +230,9 @@ export default function FacturePrintPreview({
   const [selectedId, setSelectedId] = useState<ElId | null>(null)
   const [dragging, setDragging] = useState(false)
   const [bgUrl, setBgUrl] = useState<string | null>(null)
+
+  // Editable fixed texts saved with the layout (fall back to defaults).
+  const texts: FactureTexts = { ...FACTURE_TEXT_DEFAULTS, ...((layout && layout.texts) || {}) }
 
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -183,6 +245,7 @@ export default function FacturePrintPreview({
         x: L[id]?.x ?? DEFAULTS[id].x,
         y: L[id]?.y ?? DEFAULTS[id].y,
         fontSize: L[id]?.fontSize ?? DEFAULTS[id].fontSize,
+        hidden: L[id]?.hidden ?? false,
       }
     })
     setEls(seeded)
@@ -249,7 +312,7 @@ export default function FacturePrintPreview({
   }
 
   const handlePrint = () => {
-    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, credit, mutuelle, header)
+    const html = buildPrintHTML(els, paper, background, patientName, dateStr, acts, total, header, texts)
 
     const old = document.getElementById("facture-print-frame")
     if (old) old.remove()
@@ -284,6 +347,7 @@ export default function FacturePrintPreview({
 
   const renderElement = (id: ElId) => {
     const el = els[id]
+    if (el.hidden) return null
     const selected = selectedId === id
     const common: React.CSSProperties = {
       position: "absolute",
@@ -301,7 +365,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px`, width: `${100 - el.x - 8}%` }}
-          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts) }}
+          dangerouslySetInnerHTML={{ __html: actsTableHTML(acts, total, texts) }}
         />
       )
     }
@@ -310,8 +374,8 @@ export default function FacturePrintPreview({
         <div
           key={id}
           onMouseDown={startDrag(id)}
-          style={{ ...common, fontSize: `${el.fontSize}px`, lineHeight: 1.5 }}
-          dangerouslySetInnerHTML={{ __html: totalsHTML(total, credit, mutuelle) }}
+          style={{ ...common, fontSize: `${el.fontSize}px`, lineHeight: 1.5, width: `${100 - el.x - 8}%` }}
+          dangerouslySetInnerHTML={{ __html: totalsHTML(total, texts) }}
         />
       )
     }
@@ -321,7 +385,7 @@ export default function FacturePrintPreview({
           key={id}
           onMouseDown={startDrag(id)}
           style={{ ...common, fontSize: `${el.fontSize}px` }}
-          dangerouslySetInnerHTML={{ __html: footerHTML(header, dateStr) }}
+          dangerouslySetInnerHTML={{ __html: footerHTML(header, dateStr, texts) }}
         />
       )
     }
@@ -331,7 +395,7 @@ export default function FacturePrintPreview({
         onMouseDown={startDrag(id)}
         style={{ ...common, transform: "translate(0, -50%)", fontSize: `${el.fontSize}px`, whiteSpace: "nowrap" }}
       >
-        {id === "patient_name" ? `Patient : ${patientName}` : dateStr}
+        {id === "patient_name" ? patientName : dateStr}
       </div>
     )
   }

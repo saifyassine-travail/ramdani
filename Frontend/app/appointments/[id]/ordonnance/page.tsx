@@ -82,12 +82,14 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
     if (afterComma.includes('comprim')) return 'cp'
     if (afterComma.includes('sirop')) return 'sirop'
     if (afterComma.includes('gélule') || afterComma.includes('gelule') || afterComma.includes('capsule')) return 'gél'
+    if (afterComma.includes('gel')) return 'fois'
     if (afterComma.includes('inject')) return 'inj'
     return afterComma.split(' ')[0] || 'cp'
   }
   if (src.includes('comprim')) return 'cp'
   if (src.includes('sirop')) return 'sirop'
   if (src.includes('gelule') || src.includes('gélule') || src.includes('capsule')) return 'gél'
+  if (src.includes('gel')) return 'fois'
   if (src.includes('suspension injectable')) return 'susp inj'
   if (src.includes('injectable') || src.includes('injection')) return 'inj'
   if (src.includes('perfusion')) return 'perf'
@@ -103,9 +105,13 @@ function getMedTypeLabel(med: { type?: string; type_category?: string; name?: st
   return cat.split(' ')[0] || raw.split(' ')[0] || 'cp'
 }
 
-function isInjType(med: { type?: string; type_category?: string }): boolean {
-  const src = `${med.type_category || ''} ${med.type || ''}`.toLowerCase()
-  return src.includes('injectable') || src.includes('injection')
+function isInjType(med: { type?: string; type_category?: string; name?: string }): boolean {
+  const src = `${med.type_category || ''} ${med.type || ''} ${med.name || ''}`.toLowerCase()
+  // Insulins (tagged "[Ins]" in the catalog) and any injectable/parenteral form
+  // are dosed in international units (UI), not counted like tablets.
+  return src.includes('injectable') || src.includes('injection') ||
+    src.includes('parenteral') || src.includes('parentéral') ||
+    src.includes('insulin') || src.includes('[ins]')
 }
 
 // Parse the `frequence` field into per-time units + a single meal timing.
@@ -126,8 +132,12 @@ function parseMedFrequence(frequence: string): { doses: MedDose[]; mealTiming: s
       const seg = part.split(':')
       const time = (seg[0] || '').trim()
       let units = (seg[1] || '').trim()
-      // Legacy: a non-numeric second segment was actually the meal timing
-      if (units && isNaN(Number(units))) {
+      // A dose value may be a whole number (2), a decimal (1.5) or a fraction
+      // (1/2, 1/4, 3/4). Anything else is legacy meal-timing text.
+      // Accept whole numbers, decimals (incl. the partial "1." typed mid-entry) and
+      // fractions (1/2). Commas are normalized to dots before this runs.
+      const looksLikeDose = /^\d+(?:\.\d*)?$|^\d+\/\d*$/.test(units)
+      if (units && !looksLikeDose) {
         if (!mealTiming) mealTiming = units
         units = ''
       }
@@ -146,8 +156,52 @@ function buildMedFrequence(doses: MedDose[], mealTiming: string): string {
   return mealTiming ? `${dosePart};${mealTiming}` : dosePart
 }
 
+// The meal timing can carry an optional offset, stored/printed as "1h avant repas"
+// or "2h après repas". "pendant repas" never has an offset.
+function parseMealTiming(mealTiming: string): { base: string; offset: string } {
+  const mt = (mealTiming || '').trim()
+  if (!mt) return { base: '', offset: '' }
+  for (const base of MEAL_TIMINGS) {
+    if (mt === base) return { base, offset: '' }
+    if (mt.endsWith(base)) return { base, offset: mt.slice(0, mt.length - base.length).trim() }
+  }
+  return { base: mt, offset: '' }
+}
+
+function buildMealTiming(base: string, offset: string): string {
+  if (!base) return ''
+  const o = (offset || '').trim()
+  if (!o || base === 'pendant repas') return base
+  return `${o} ${base}`
+}
+
+// Render a dose quantity in French: 1.5 -> "1 et demi", 1/2 -> "un demi", etc.
+function formatDoseQty(raw: string): string {
+  const s = String(raw ?? "").trim()
+  if (!s) return "1"
+  let whole = 0
+  let frac = 0
+  const fr = s.match(/^(\d+)\/(\d+)$/)
+  if (fr) {
+    const den = Number(fr[2])
+    if (!den) return s
+    const val = Number(fr[1]) / den
+    whole = Math.floor(val)
+    frac = +(val - whole).toFixed(2)
+  } else {
+    const n = parseFloat(s.replace(",", "."))
+    if (isNaN(n)) return s
+    whole = Math.floor(n)
+    frac = +(n - whole).toFixed(2)
+  }
+  const word = frac === 0.5 ? "demi" : frac === 0.25 ? "quart" : frac === 0.75 ? "trois quarts" : null
+  if (!word) return s
+  if (whole === 0) return word === "trois quarts" ? "trois quarts" : `un ${word}`
+  return `${whole} et ${word}`
+}
+
 // One medication block for the ordonnance (2 lines: name + posology).
-function getMedicationHTML(med: MedicationForm): string {
+function getMedicationHTML(med: MedicationForm, index: number): string {
   const { doses, mealTiming } = parseMedFrequence(med.pivot?.frequence || '')
   const duration = med.pivot?.duree || ''
   const fullName = med.name || 'Médicament'
@@ -155,14 +209,14 @@ function getMedicationHTML(med: MedicationForm): string {
   const isInj = isInjType(med) || typeLabel === 'inj' || typeLabel === 'susp inj'
   const baseName = fullName.includes(',') ? fullName.split(',')[0].trim() : fullName
   const parts = doses.map((d) => {
-    const qty = d.units || '1'
+    const qty = formatDoseQty(d.units || '1')
     const label = isInj ? 'UI' : typeLabel
     return `${qty} ${label} ${d.time.toLowerCase()}`
   })
   if (mealTiming) parts.push(mealTiming)
   if (duration) parts.push(`pendant ${duration}`)
   const posology = parts.join(', ')
-  return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
+  return `<div style="margin-bottom:14px;"><div style="font-weight:bold;margin-bottom:2px;">${index + 1} - ${baseName} :</div><div style="padding-left:20px;line-height:1.8;">${posology}</div></div>`
 }
 
 export default function AppointmentDetailsPage() {
@@ -240,6 +294,24 @@ export default function AppointmentDetailsPage() {
         const elements = layout as any
         const paper = layout.paper || { width: 210, height: 297, type: 'A4' }
 
+        // Vertical positions -> mm so they stay put once the sheet grows past one
+        // page. The medication list flows inside a table whose repeating header
+        // reserves the top zone on EVERY page, so an overflowing list continues on
+        // page 2 below the letterhead instead of being clipped.
+        const pn = elements.patient_name || {}
+        const dt = elements.date || {}
+        const md = elements.medications || {}
+        const md2 = elements.medications_page2 || {}
+        const pnTop = (((pn.y ?? 0) / 100) * paper.height).toFixed(2)
+        const dtTop = (((dt.y ?? 0) / 100) * paper.height).toFixed(2)
+        const mdTop = (((md.y ?? 0) / 100) * paper.height).toFixed(2)
+        // Where the list resumes on page 2+; defaults to the page-1 start.
+        const page2Top = (((md2.y ?? md.y ?? 0) / 100) * paper.height).toFixed(2)
+        const page2Left = md2.x ?? md.x ?? 0
+        const page2Width = 100 - (md2.x ?? md.x ?? 0) - 5
+        const mdLeft = md.x ?? 0
+        const mdWidth = 100 - (md.x ?? 0) - 5
+
         ordonnanceHTML = `
 <!DOCTYPE html>
 <html>
@@ -248,53 +320,63 @@ export default function AppointmentDetailsPage() {
   <title>Ordonnance - ${patientName}</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    @page { 
-      size: ${paper.width}mm ${paper.height}mm; 
-      margin: 0; 
+    @page {
+      size: ${paper.width}mm ${paper.height}mm;
+      margin: 0;
     }
-    body { 
-      font-family: Arial, sans-serif; 
-      width: ${paper.width}mm; 
-      height: ${paper.height}mm;
-      overflow: hidden;
-    }
-    .page { 
-      position: relative; 
-      width: 100%; 
-      height: 100%;
+    body { font-family: Arial, sans-serif; width: ${paper.width}mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Full-bleed letterhead, repeated on every page. */
+    .page-bg {
+      position: fixed; top: 0; left: 0;
+      width: ${paper.width}mm; height: ${paper.height}mm;
       background-image: ${background ? `url('${background}')` : 'none'};
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
+      background-size: cover; background-repeat: no-repeat; background-position: center;
+      z-index: -1;
     }
     .element { position: absolute; transform: translate(0, -50%); }
-    .meds-container { display: flex; flex-direction: column; transform: none; }
-    
+    /* Medication list starts below the letterhead header; a script inserts page
+       breaks so each overflow page also starts below the header. */
+    #meds { margin-top: ${mdTop}mm; font-size: ${md.fontSize}%; line-height: 1.5; }
+    #meds > div { margin-left: ${mdLeft}%; width: ${mdWidth}%; break-inside: avoid; page-break-inside: avoid; }
     @media screen {
-      body { background: #eee; display: flex; justify-content: center; padding: 20px; height: auto; overflow: auto; }
-      .page { background-color: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: ${paper.width}mm; height: ${paper.height}mm; }
+      body { background: #eee; }
+      .page-bg { position: absolute; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <div class="element" style="left: ${elements.patient_name?.x}%; top: ${elements.patient_name?.y}%; font-size: ${elements.patient_name?.fontSize}px; white-space: nowrap;">
-      ${patientName}
-    </div>
-    <div class="element" style="left: ${elements.date?.x}%; top: ${elements.date?.y}%; font-size: ${elements.date?.fontSize}px; white-space: nowrap;">
-      ${dateStr}
-    </div>
-    <div class="element meds-container" style="left: ${elements.medications?.x}%; top: ${elements.medications?.y}%; font-size: ${elements.medications?.fontSize}%; line-height: 1.5; width: ${100 - (elements.medications?.x || 0) - 5}%">
-       ${medications.map(m => getMedicationHTML(m)).join('')}
-    </div>
+  ${background ? '<div class="page-bg"></div>' : ''}
+  <div class="element" style="left: ${pn.x}%; top: ${pnTop}mm; font-size: ${pn.fontSize}px; white-space: nowrap;">
+    ${patientName}
+  </div>
+  <div class="element" style="left: ${dt.x}%; top: ${dtTop}mm; font-size: ${dt.fontSize}px; white-space: nowrap;">
+    ${dateStr}
+  </div>
+  <div id="meds">
+    ${medications.map((m, i) => getMedicationHTML(m, i)).join('')}
   </div>
   <script>
-    window.onload = () => {
-      setTimeout(() => {
-        window.print();
-        // window.close();
-      }, 500);
-    };
+    (function(){
+      function paginate(){
+        var mmToPx = 96/25.4, pageH = ${paper.height}*mmToPx, header = ${page2Top}*mmToPx, safety = 2;
+        var footer = Math.min(header * 0.5, 20 * mmToPx);
+        var p2Left = '${page2Left}%', p2W = '${page2Width}%';
+        var box = document.getElementById('meds'); if(!box) return;
+        var blocks = [].slice.call(box.children), pageIndex = 0;
+        for(var i=0;i<blocks.length;i++){
+          var b = blocks[i]; if(b.className === 'pgspacer') continue;
+          var pageBottom = (pageIndex+1)*pageH, top = b.offsetTop, bottom = top + b.offsetHeight;
+          if(bottom > pageBottom - footer - safety){
+            var gap = (pageBottom - top) + header;
+            var sp = document.createElement('div'); sp.className='pgspacer'; sp.style.height = gap+'px'; sp.style.width='1px';
+            sp.style.breakInside='auto'; sp.style.pageBreakInside='auto';
+            box.insertBefore(sp, b); pageIndex++;
+          }
+          if(pageIndex >= 1){ b.style.marginLeft = p2Left; b.style.width = p2W; }
+        }
+      }
+      window.onload = () => { paginate(); setTimeout(() => window.print(), 300); };
+    })();
   </script>
 </body>
 </html>`
@@ -321,7 +403,7 @@ export default function AppointmentDetailsPage() {
   <body>
     <div class="print-container">
       <div class="medication-list">
-        ${medications.length > 0 ? medications.map(m => getMedicationHTML(m)).join("") : '<div style="color: #999;">Aucun médicament prescrit</div>'}
+        ${medications.length > 0 ? medications.map((m, i) => getMedicationHTML(m, i)).join("") : '<div style="color: #999;">Aucun médicament prescrit</div>'}
       </div>
     </div>
   </body>
@@ -547,7 +629,7 @@ export default function AppointmentDetailsPage() {
       pivot: {
         dosage: "",
         frequence: "",
-        duree: "",
+        duree: "3 mois",
       },
     }
     setMedications([...medications, newMedication])
@@ -965,12 +1047,21 @@ export default function AppointmentDetailsPage() {
                     const next = exists ? doses.filter(d => d.time !== time) : [...doses, { time, units: '' }]
                     updateMedication(index, 'frequence', buildMedFrequence(next, mealTiming))
                   }
-                  const setUnits = (time: string, units: string) => {
+                  const setUnits = (time: string, raw: string) => {
+                    // Comma is the internal dose separator, so use a dot for decimals (1,5 -> 1.5).
+                    const units = raw.replace(',', '.')
                     updateMedication(index, 'frequence', buildMedFrequence(doses.map(d => d.time === time ? { ...d, units } : d), mealTiming))
                   }
-                  const setMeal = (m: string) => {
-                    updateMedication(index, 'frequence', buildMedFrequence(doses, mealTiming === m ? '' : m))
+                  const { base: mealBase, offset: mealOffset } = parseMealTiming(mealTiming)
+                  const setMealBase = (m: string) => {
+                    const newBase = mealBase === m ? '' : m
+                    const newOffset = newBase === 'pendant repas' ? '' : mealOffset
+                    updateMedication(index, 'frequence', buildMedFrequence(doses, buildMealTiming(newBase, newOffset)))
                   }
+                  const setMealOffset = (o: string) => {
+                    updateMedication(index, 'frequence', buildMedFrequence(doses, buildMealTiming(mealBase, o)))
+                  }
+                  const showMealOffset = mealBase === 'avant repas' || mealBase === 'après repas'
                   return (
                     <div key={index} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm space-y-5">
                       {/* Medication name + remove */}
@@ -1036,13 +1127,24 @@ export default function AppointmentDetailsPage() {
                                 {active && (
                                   <div className="mt-3 flex items-center gap-1.5">
                                     <Input
-                                      type="number"
-                                      min="0"
+                                      type="text"
+                                      inputMode="decimal"
+                                      list={`dose-opts-${index}-${time}`}
                                       value={dose!.units}
                                       onChange={(e) => setUnits(time, e.target.value)}
                                       placeholder="1"
+                                      title="Nombre à prendre (ex : 1/4, 1/2, 3/4, 1, 2)"
                                       className="h-9 text-center text-sm"
                                     />
+                                    <datalist id={`dose-opts-${index}-${time}`}>
+                                      <option value="1/4" />
+                                      <option value="1/2" />
+                                      <option value="3/4" />
+                                      <option value="1" />
+                                      <option value="1.5" />
+                                      <option value="2" />
+                                      <option value="3" />
+                                    </datalist>
                                     <span className="whitespace-nowrap text-xs font-medium text-gray-500">{unitLabel}</span>
                                   </div>
                                 )}
@@ -1052,7 +1154,7 @@ export default function AppointmentDetailsPage() {
                         </div>
                       </div>
 
-                      {/* Meal timing (applies to all times) */}
+                      {/* Meal timing (applies to all times) + optional delay for avant/après */}
                       {doses.length > 0 && (
                         <div>
                           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Par rapport au repas</p>
@@ -1061,10 +1163,10 @@ export default function AppointmentDetailsPage() {
                               <button
                                 key={m}
                                 type="button"
-                                onClick={() => setMeal(m)}
+                                onClick={() => setMealBase(m)}
                                 className={cn(
                                   "rounded-xl border py-2.5 text-sm font-medium capitalize transition-all",
-                                  mealTiming === m
+                                  mealBase === m
                                     ? "border-blue-400 bg-blue-50/60 text-blue-700 shadow-sm"
                                     : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100",
                                 )}
@@ -1073,6 +1175,27 @@ export default function AppointmentDetailsPage() {
                               </button>
                             ))}
                           </div>
+                          {showMealOffset && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-600 whitespace-nowrap">
+                                Combien {mealBase === 'avant repas' ? 'avant' : 'après'} le repas ?
+                              </span>
+                              <Input
+                                type="text"
+                                list={`meal-offset-${index}`}
+                                value={mealOffset}
+                                onChange={(e) => setMealOffset(e.target.value)}
+                                placeholder="1h"
+                                title="Délai avant/après le repas (optionnel), ex : 1h, 2h, 30min"
+                                className="h-9 w-24 text-center text-sm"
+                              />
+                              <datalist id={`meal-offset-${index}`}>
+                                <option value="30min" />
+                                <option value="1h" />
+                                <option value="2h" />
+                              </datalist>
+                            </div>
+                          )}
                         </div>
                       )}
 
