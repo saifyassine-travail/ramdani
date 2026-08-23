@@ -27,13 +27,21 @@ def _parse_iso_date(value):
 
 
 def validate_cin_fields(data: dict) -> dict:
-    """Validate extracted CIN fields and return per-field validity booleans.
+    """Validate extracted CIN fields and return per-field validity info.
 
     Checks:
-        * ``cin_number``    matches ``^[A-Z]{1,2}\\d{5,7}$``.
+        * ``cin_number``    matches ``^[A-Z]{1,2}\\d{5,8}$``.
         * ``date_of_birth`` is a valid ISO (YYYY-MM-DD) date.
         * ``expiry_date``   is a valid ISO date **and** in the future.
         * ``full_name``     is non-empty and contains only letters and spaces.
+
+    Also returns ``expiry_status`` so the UI can tell an *expired* card apart
+    from one whose expiry couldn't be read (the ``expiry_date`` boolean is
+    false in both cases). This lets the app warn "card expired on <date>"
+    without blocking the scan — the fields are still parsed and returned:
+        * ``"valid"``   — expiry is a real date in the future.
+        * ``"expired"`` — expiry is a real date, but today or in the past.
+        * ``"unknown"`` — expiry was empty or unparseable.
     """
     cin_number = data.get("cin_number")
     full_name = data.get("full_name")
@@ -41,12 +49,20 @@ def validate_cin_fields(data: dict) -> dict:
     expiry = _parse_iso_date(data.get("expiry_date"))
     today = date.today()
 
+    if expiry is None:
+        expiry_status = "unknown"
+    elif expiry > today:
+        expiry_status = "valid"
+    else:
+        expiry_status = "expired"
+
     return {
         "cin_number": bool(
             isinstance(cin_number, str) and _CIN_RE.match(cin_number.strip())
         ),
         "date_of_birth": dob is not None,
         "expiry_date": bool(expiry is not None and expiry > today),
+        "expiry_status": expiry_status,
         "full_name": bool(
             isinstance(full_name, str)
             and full_name.strip()

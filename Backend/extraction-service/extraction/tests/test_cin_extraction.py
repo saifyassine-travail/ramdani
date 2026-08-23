@@ -19,6 +19,7 @@ EXTRACTED = {
     "date_of_birth": "1990-05-14",
     "place_of_birth": "Casablanca",
     "expiry_date": "2032-01-01",
+    "gender": "Male",
 }
 FACE_BYTES = b"\xff\xd8\xff\xe0fake-jpeg-face-bytes"
 
@@ -57,6 +58,7 @@ class ExtractCINViewTests(TestCase):
                 "cin_number": True,
                 "date_of_birth": True,
                 "expiry_date": True,
+                "expiry_status": "valid",
                 "full_name": True,
             },
         )

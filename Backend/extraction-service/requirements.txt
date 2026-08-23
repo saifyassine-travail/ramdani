@@ -6,5 +6,8 @@ opencv-python-headless>=4.9,<5.0
 numpy>=1.26
 python-dotenv>=1.0
 gunicorn>=21.2
+# pytesseract/Pillow: only used by the Tesseract FALLBACK OCR engine now
+# (tesseract_ocr.py) — the primary engine (ollama_ocr.py) talks to Ollama's
+# HTTP API directly via stdlib urllib, no extra package needed for that.
 pytesseract>=0.3.10
 Pillow>=10.0

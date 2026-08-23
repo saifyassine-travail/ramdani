@@ -5,3 +5,7 @@ __pycache__/
 .env
 .git
 .gitignore
+
+# Real personal ID photos (test/accuracy-validation set only) — never bake
+# these into an image layer, local dev use only.
+cin_data/

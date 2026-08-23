@@ -15,9 +15,12 @@ COPY . .
 
 EXPOSE 8100
 
-# Gunicorn (2 workers) — face detection + OCR can take a couple seconds on a
-# large image, so we want more than one worker and a generous timeout.
+# Gunicorn (2 workers). Timeout must cover the slowest leg of a CIN scan: a
+# cold Ollama model load (can exceed a minute on CPU for an 8B-class model)
+# plus inference — matches OLLAMA_TIMEOUT_S (ollama_ocr.py) and the Laravel
+# proxy / nginx timeouts upstream of this service, so a slow-but-successful
+# scan isn't killed here first.
 CMD ["gunicorn", "config.wsgi:application", \
      "--bind", "0.0.0.0:8100", \
      "--workers", "2", \
-     "--timeout", "120"]
+     "--timeout", "300"]

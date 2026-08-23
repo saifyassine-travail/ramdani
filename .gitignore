@@ -73,3 +73,9 @@ venv/
 **/.git
 **/.gitignore
 Frontend/nextjs.log
+
+# CIN extraction service — real personal ID card photos (test set) and the
+# local dev SQLite DB. Must NEVER be committed/pushed.
+Backend/extraction-service/cin_data/
+**/db.sqlite3
+Backend/extraction-service/.venv/

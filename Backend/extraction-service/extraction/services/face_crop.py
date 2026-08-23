@@ -35,23 +35,59 @@ def crop_face(image_bytes: bytes) -> bytes:
             f"Failed to load the Haar cascade classifier from {_CASCADE_PATH!r}."
         )
 
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = cascade.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(60, 60),
-    )
-
-    if len(faces) == 0:
+    # CIN photos come off a phone at any orientation. The Haar cascade only
+    # finds upright/near-upright frontal faces, so try all four 90° rotations
+    # and keep the first (largest) face found — this is what makes rotated
+    # cards work instead of failing with "No face was detected".
+    face = _detect_face_any_orientation(image, cascade)
+    if face is None:
         raise FaceNotFoundError("No face was detected in the uploaded image.")
-
-    # Pick the largest detection by area (width * height).
-    x, y, w, h = max(faces, key=lambda box: box[2] * box[3])
-    face = image[y : y + h, x : x + w]
 
     success, buffer = cv2.imencode(".jpg", face)
     if not success:
         raise ExtractionError("Failed to encode the cropped face as JPEG.")
 
     return buffer.tobytes()
+
+
+# (orientation, cv2 rotation code). None = as-is; the rest are the three 90°
+# steps. Order matters only for tie-breaking — we pick the largest face across
+# all orientations, preferring the upright reading when sizes tie.
+_ORIENTATIONS = (
+    (0, None),
+    (90, cv2.ROTATE_90_CLOCKWISE),
+    (180, cv2.ROTATE_180),
+    (270, cv2.ROTATE_90_COUNTERCLOCKWISE),
+)
+
+
+def _detect_face_any_orientation(image, cascade):
+    """Return the largest face crop across 0/90/180/270° rotations, or None.
+
+    Args:
+        image: BGR image (numpy array) as decoded by ``cv2.imdecode``.
+        cascade: a loaded, non-empty ``cv2.CascadeClassifier``.
+
+    Returns:
+        The cropped face region (BGR numpy array) from whichever orientation
+        gave the biggest detection, or ``None`` if no orientation yields a face.
+    """
+    best_face = None
+    best_area = 0
+
+    for _angle, rotation in _ORIENTATIONS:
+        rotated = image if rotation is None else cv2.rotate(image, rotation)
+        gray = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
+        faces = cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(60, 60),
+        )
+        for x, y, w, h in faces:
+            area = w * h
+            if area > best_area:
+                best_area = area
+                best_face = rotated[y : y + h, x : x + w]
+
+    return best_face

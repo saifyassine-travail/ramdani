@@ -9,7 +9,7 @@ How to hand this product off to a clinic/doctor as a finished, working product �
 - Patient data (CIN numbers, medical history, photos) stays physically at the clinic — no data-residency, hosting, or breach-liability questions for you as the vendor.
 - No recurring server/domain cost to pass on to the client.
 - The mobile app already talks to the backend over the clinic's own LAN (`192.168.x.x`), which only works if the backend lives on-site.
-- Nothing here needs the public internet except: Gemini API calls (CIN scanning) and Google Drive (optional backup sync).
+
 
 Cloud hosting (a VPS with a domain, HTTPS, and remote access) is a valid *upsell* for a client who wants multi-site or remote access, but it's a different, bigger product — reverse proxy, TLS, hardened Postgres, off-site backups — and shouldn't be the default. Don't build it speculatively; offer it only if a client asks.
 
@@ -29,7 +29,7 @@ A delivery is not "I copied the folder onto their PC." It's:
 - [ ] Tag a release commit (`git tag v1.0.0`) so you can always identify exactly what you shipped.
 - [ ] Decide and document the DB story for the target machine — **this project currently expects a native PostgreSQL 16 install on the host** (`docker-compose.yml` → `DB_HOST: host.docker.internal`), not a Dockerized `db` service. Don't discover this on-site like we did this session.
 - [ ] Fill in real secrets in a `.env.production` template (see §5) — never ship your dev `.env` with your personal API keys.
-- [ ] Decide who owns the Gemini API key billing (you or the client) — CIN scanning breaks silently without `GEMINI_API_KEY`.
+
 - [ ] Build and smoke-test the production Docker images once, end to end, before packing them up (`docker compose build && docker compose up -d`, then click through login → add patient → create appointment → complete it).
 - [ ] Remove/rotate any test data you don't want the client to see (this session left ~40 simulated patients tagged `[SIMULATION]` in the dev DB — don't ship a dev DB, ship a clean one).
 
@@ -133,3 +133,4 @@ The app already has backup endpoints (`/api/backup/*`) and a local `.db`/`.csv` 
 - [ ] Update procedure documented and tested once.
 - [ ] Support terms agreed (response time, what's covered).
 - [ ] Client has explicitly confirmed the app works for their real workflow.
+

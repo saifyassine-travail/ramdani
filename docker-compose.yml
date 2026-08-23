@@ -27,9 +27,20 @@ services:
       context: ./Backend/extraction-service
     container_name: mediassist_extraction
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DJANGO_DEBUG: "false"
       DJANGO_ALLOWED_HOSTS: "*"
+      # Local vision-model OCR (see Backend/extraction-service/extraction/services/
+      # ollama_ocr.py) — reaches Ollama running natively on the host. Falls back
+      # to Tesseract automatically if unreachable; OCR_ENGINE=tesseract to skip
+      # Ollama entirely.
+      OCR_ENGINE: ollama
+      OLLAMA_HOST: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen2.5vl:3b
+      OLLAMA_KEEP_ALIVE: 30m
+      OLLAMA_TIMEOUT_S: "300"
     # No published port: reached internally by the frontend as http://extraction:8100
 
   frontend:
