@@ -990,6 +990,28 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label>Heure d'envoi du rappel WhatsApp (veille du rendez-vous)</Label>
+                <Select
+                  value={String(settings?.whatsapp_reminder_hour ?? 11)}
+                  onValueChange={(value) => setSettings({ ...settings, whatsapp_reminder_hour: Number(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <SelectItem key={hour} value={String(hour)}>
+                        {String(hour).padStart(2, "0")}:00
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500">
+                  Les patients dont le rendez-vous est le lendemain reçoivent un rappel WhatsApp à cette heure.
+                </p>
+              </div>
             </CardContent>
           </Card>
 

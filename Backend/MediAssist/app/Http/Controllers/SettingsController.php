@@ -36,6 +36,7 @@ class SettingsController extends Controller
                     'time_format' => '24h',
                     'email_notifications' => true,
                     'sms_reminders' => true,
+                    'whatsapp_reminder_hour' => 11,
                     'custom_measures' => '[]',
                     'show_ddr' => true,
                     'case_autosuggest' => true,
@@ -91,7 +92,7 @@ class SettingsController extends Controller
             $allowed = [
                 'appointment_duration', 'working_hours_start', 'working_hours_end',
                 'working_days', 'max_appointments_per_day', 'allow_same_day_appointments',
-                'email_notifications', 'sms_reminders', 'reminder_timing', 'daily_summary_email',
+                'email_notifications', 'sms_reminders', 'reminder_timing', 'whatsapp_reminder_hour', 'daily_summary_email',
                 'language', 'date_format', 'time_format', 'dashboard_layout', 'default_view',
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
