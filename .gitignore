@@ -79,3 +79,8 @@ Frontend/nextjs.log
 Backend/extraction-service/cin_data/
 **/db.sqlite3
 Backend/extraction-service/.venv/
+
+# summary-lab — anonymized-but-still-real clinical text, and multi-GB model
+# outputs (LoRA adapters, merged models, GGUF files). Never commit either.
+summary-lab/data/
+summary-lab/outputs/
