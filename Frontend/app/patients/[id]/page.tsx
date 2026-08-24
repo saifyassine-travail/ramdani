@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
-import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp, Receipt } from 'lucide-react'
+import { ArrowLeft, Edit, User, Phone, Mail, FileText, AlertCircle, Heart, Calendar, CalendarCheck, History, Search, Zap, FileCheck, BarChart3, Clock, Plus, Save, Trash2, Printer, Shield, Check, Download, Upload, FileUp, Receipt, Sparkles } from 'lucide-react'
 import { apiClient, resolveDocumentBackgroundUrl, type PatientDocument } from "@/lib/api"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
@@ -110,6 +110,10 @@ export default function PatientDetailsPage() {
   const [savingMutuelleId, setSavingMutuelleId] = useState<number | null>(null)
   const [savingCreditId, setSavingCreditId] = useState<number | null>(null)
   const [loadingMedicaments, setLoadingMedicaments] = useState(false)
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  const [summaryText, setSummaryText] = useState<string | null>(null)
+  const [summaryError, setSummaryError] = useState<string | null>(null)
   const [ordPreview, setOrdPreview] = useState<{
     open: boolean
     layout: any
@@ -851,6 +855,27 @@ export default function PatientDetailsPage() {
     }
   }, [patientId, toast])
 
+  const handleGenerateSummary = useCallback(async () => {
+    setIsSummaryModalOpen(true)
+    setSummaryText(null)
+    setSummaryError(null)
+    setLoadingSummary(true)
+    try {
+      const response = await apiClient.getPatientSummary(patientId)
+      const data = (response as any).data
+      if (response.success && data?.summary) {
+        setSummaryText(data.summary)
+      } else {
+        setSummaryError(data?.message || response.message || "Impossible de générer le résumé.")
+      }
+    } catch (err) {
+      console.error("[v0] Error generating patient summary:", err)
+      setSummaryError("Une erreur s'est produite.")
+    } finally {
+      setLoadingSummary(false)
+    }
+  }, [patientId])
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -1364,6 +1389,16 @@ export default function PatientDetailsPage() {
                 </span>
                 <span>→</span>
               </Button>
+              <Button
+                onClick={handleGenerateSummary}
+                className="w-full flex items-center justify-between bg-purple-50 text-purple-600 hover:bg-purple-100 border-0"
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Résumé IA
+                </span>
+                <span>→</span>
+              </Button>
             </CardContent>
           </Card>
 
@@ -1561,6 +1596,27 @@ export default function PatientDetailsPage() {
           </Card>
         </div>
       </div>
+
+      {/* AI Summary Modal */}
+      <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-500" />
+              Résumé IA du dossier
+            </DialogTitle>
+          </DialogHeader>
+          {loadingSummary && (
+            <p className="text-sm text-gray-500 py-4">Génération du résumé en cours...</p>
+          )}
+          {!loadingSummary && summaryError && (
+            <p className="text-sm text-red-600 py-4">{summaryError}</p>
+          )}
+          {!loadingSummary && summaryText && (
+            <p className="text-sm text-gray-800 whitespace-pre-wrap py-2">{summaryText}</p>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Patient Modal */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>

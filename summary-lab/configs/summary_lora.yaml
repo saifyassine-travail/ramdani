@@ -1,0 +1,25 @@
+# Qwen2.5-3B: small enough for QLoRA (4-bit) on a 6GB GPU (RTX 2060), with
+# solid French support for clinic-language summaries. Swap to 1.5B if VRAM
+# is tight, or 7B if you later train on a bigger GPU.
+base_model: Qwen/Qwen2.5-3B-Instruct
+
+cases_file: data/real_cases.jsonl   # only rows with status == "approved" are used
+output_dir: outputs/lora-adapter
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+learning_rate: 0.0002
+num_train_epochs: 3
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+max_seq_length: 1024
+
+system_prompt: >
+  Tu es un assistant médical qui résume un dossier de consultation pour un
+  médecin généraliste/gynécologue, en français, de façon concise (4-6 lignes
+  maximum). Reste uniquement sur le contenu clinique. Structure: motif,
+  éléments cliniques marquants, conduite tenue (traitement/examens), suivi
+  recommandé si mentionné.

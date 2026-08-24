@@ -60,6 +60,8 @@ Route::prefix('patients')->group(function () {
     Route::patch('/{id}/archive', [PatientController::class, 'archive']); // PATCH archive/unarchive
     Route::get('/{id}/last-medicaments', [AppointmentController::class, 'getLastMedicamentsByPatient']);
     Route::get('/{patientId}/case-history', [AppointmentController::class, 'getCaseHistoryByPatient']);
+    // AI dossier summary (proxies to the internal patient-summary microservice)
+    Route::post('/{id}/summary', [App\Http\Controllers\PatientSummaryController::class, 'summarize']);
 
     // Patient Documents
     Route::prefix('{patientId}/documents')->group(function () {

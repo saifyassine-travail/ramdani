@@ -41,4 +41,9 @@ return [
         'url' => env('EXTRACTION_SERVICE_URL', 'http://extraction:8100'),
     ],
 
+    // Patient dossier AI summary microservice (Backend/patient-summary-service)
+    'summary' => [
+        'url' => env('SUMMARY_SERVICE_URL', 'http://patient-summary:8300'),
+    ],
+
 ];

@@ -1,0 +1,11 @@
+# GPU torch is installed separately (see Makefile `setup`), matching the
+# radiology-lab convention — this system has an RTX 2060 (6GB), driver
+# supports up to CUDA 12.8, so the cu128 index is used.
+transformers>=4.46
+peft>=0.13
+bitsandbytes>=0.44
+accelerate>=1.0
+trl>=0.11
+datasets>=3.0
+psycopg2-binary>=2.9
+pyyaml>=6.0

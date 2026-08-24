@@ -618,6 +618,10 @@ class ApiClient {
     return this.request(`/patients/${id}`)
   }
 
+  async getPatientSummary(id: number): Promise<ApiResponse<{ summary: string; visits_considered: number }>> {
+    return this.request(`/patients/${id}/summary`, { method: "POST" }, true)
+  }
+
   async createPatient(patientData: {
     first_name: string
     last_name: string
