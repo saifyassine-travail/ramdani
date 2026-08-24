@@ -20,13 +20,11 @@ def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
-    # CPU determinism: keep cudnn flags harmless even though we're CPU-only.
     torch.backends.cudnn.benchmark = False
 
 
 def get_device() -> torch.device:
-    """This lab is CPU-only by design (see README)."""
-    return torch.device("cpu")
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def ensure_dir(path) -> Path:
