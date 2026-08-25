@@ -225,6 +225,57 @@ class AppointmentController extends Controller
     }
 
     /**
+     * POST /api/appointments/toggle-free-consultation
+     * Body: { appointment_id }
+     */
+    public function toggleFreeConsultation(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'appointment_id' => 'required|integer|exists:appointments,ID_RV',
+            ]);
+
+            $appointment = Appointment::findOrFail($validated['appointment_id']);
+            $appointment->is_free_consultation = ! $appointment->is_free_consultation;
+
+            if ($appointment->is_free_consultation) {
+                // Turning ON: back up the real amount, then zero it. Backed up
+                // server-side (not recomputed from acts) so this is correct
+                // no matter how the price was originally set.
+                $appointment->pre_free_consultation_payment = $appointment->payement;
+                $appointment->payement = 0;
+            } else {
+                // Turning OFF: restore the exact amount that was backed up.
+                if ($appointment->pre_free_consultation_payment !== null) {
+                    $appointment->payement = $appointment->pre_free_consultation_payment;
+                }
+                $appointment->pre_free_consultation_payment = null;
+            }
+
+            $appointment->save();
+
+            return response()->json([
+                'success' => true,
+                'is_free_consultation' => $appointment->is_free_consultation,
+                'payement' => $appointment->payement,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error("toggleFreeConsultation error: " . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors du basculement de la consultation gratuite',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * PUT /api/appointments/{id}/details
      * Body: includes case_description, vital signs, medicaments, analyses, diagnostic, etc.
      */

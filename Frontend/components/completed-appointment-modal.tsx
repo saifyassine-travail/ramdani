@@ -31,10 +31,12 @@ export default function CompletedAppointmentModal({
   const [mutuelle, setMutuelle] = useState<boolean>(false)
   const [saving, setSaving] = useState(false)
 
+  const isFreeConsultation = Boolean(appointment?.is_free_consultation)
+
   // Seed from the appointment each time the modal opens.
   useEffect(() => {
     if (!open || !appointment) return
-    setPayement(appointment.payement != null ? String(appointment.payement) : "")
+    setPayement(appointment.is_free_consultation ? "0" : (appointment.payement != null ? String(appointment.payement) : ""))
     setCredit(appointment.credit != null ? String(appointment.credit) : "")
     setMutuelle(Boolean(appointment.mutuelle))
   }, [open, appointment])
@@ -89,15 +91,18 @@ export default function CompletedAppointmentModal({
             <Label className="flex items-center gap-1.5 text-sm text-gray-700">
               <Wallet className="h-4 w-4 text-gray-400" />
               Payé (DH)
+              {isFreeConsultation && <span className="text-xs font-normal text-gray-400">(consultation gratuite)</span>}
             </Label>
             <Input
               type="number"
               min={0}
               step="0.01"
-              value={payement}
+              value={isFreeConsultation ? 0 : payement}
               onChange={(e) => setPayement(e.target.value)}
-              className="focus-visible:ring-green-500"
+              className="focus-visible:ring-green-500 disabled:opacity-60 disabled:cursor-not-allowed"
               placeholder="0"
+              disabled={isFreeConsultation}
+              title={isFreeConsultation ? "Consultation gratuite — prix non modifiable" : undefined}
             />
           </div>
 

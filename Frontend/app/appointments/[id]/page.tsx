@@ -12,6 +12,7 @@ import { Textarea } from "../../../components/ui/textarea"
 import { AutocompleteTextarea } from "../../../components/autocomplete-textarea"
 import { COMMON_CASE_PHRASES } from "../../../lib/case-suggestions"
 import { Badge } from "../../../components/ui/badge"
+import { Checkbox } from "../../../components/ui/checkbox"
 import { Popover, PopoverTrigger, PopoverContent } from "../../../components/ui/popover"
 import {
   Command,
@@ -503,6 +504,7 @@ export default function AppointmentDetailsPage() {
   const [actPrices, setActPrices] = useState<Record<string, number>>({})
   const [totalActsPrice, setTotalActsPrice] = useState(0)
   const [savingPayment, setSavingPayment] = useState(false)
+  const [savingFreeConsultation, setSavingFreeConsultation] = useState(false)
 
   // Effective price of an act: the per-appointment override, else the catalog price.
   const actPriceOf = useCallback(
@@ -521,9 +523,12 @@ export default function AppointmentDetailsPage() {
       setSelectedActs(prev => prev.filter(a => a !== "Consultation"))
     }
 
-    const total = selectedActs.reduce((sum, actName) => sum + actPriceOf(actName), 0)
-    setTotalActsPrice(total)
-  }, [selectedActs, actPrices, appointment?.type, actPriceOf])
+    // "Consultation gratuite" forces the displayed/paid total to 0 without
+    // touching the underlying act prices, so un-checking it later restores
+    // the real amounts automatically.
+    const rawTotal = selectedActs.reduce((sum, actName) => sum + actPriceOf(actName), 0)
+    setTotalActsPrice(appointment?.is_free_consultation ? 0 : rawTotal)
+  }, [selectedActs, actPrices, appointment?.type, appointment?.is_free_consultation, actPriceOf])
 
   // Persist the selected acts + the paid amount. Replaces the old "Appliquer"
   // button: it's called immediately when an act is toggled and when the doctor
@@ -554,6 +559,36 @@ export default function AppointmentDetailsPage() {
     },
     [appointmentId, medicalActs, toast],
   )
+
+  const handleToggleFreeConsultation = useCallback(async () => {
+    if (!appointment) return
+    const previous = !!appointment.is_free_consultation
+    const previousPayement = appointment.payement
+    // Optimistic local update, same pattern as the act toggle above.
+    setAppointment((prev) => (prev ? { ...prev, is_free_consultation: !previous } : prev))
+    try {
+      setSavingFreeConsultation(true)
+      // The backend owns backing up / restoring the real amount (it isn't
+      // necessarily derivable from the currently-selected acts — payement
+      // can be set without acts, e.g. via the completion modal), so just
+      // trust its response rather than recomputing anything client-side.
+      const response = await apiClient.toggleFreeConsultation(Number(appointmentId))
+      if (response.success && response.data) {
+        const { is_free_consultation, payement } = response.data as any
+        setAppointment((prev) => (prev ? { ...prev, is_free_consultation: !!is_free_consultation, payement } : prev))
+      }
+    } catch (e) {
+      // Revert on failure.
+      setAppointment((prev) => (prev ? { ...prev, is_free_consultation: previous, payement: previousPayement } : prev))
+      toast({
+        title: "Erreur",
+        description: "Impossible de mettre à jour la consultation gratuite",
+        variant: "destructive",
+      })
+    } finally {
+      setSavingFreeConsultation(false)
+    }
+  }, [appointment, appointmentId, toast])
 
   const handleActToggle = (actName: string) => {
     if (appointment?.type === "Contrôle" && actName === "Consultation") {
@@ -1578,6 +1613,15 @@ export default function AppointmentDetailsPage() {
 
         {/* Medical Acts + Payment Section */}
         <div className="mt-4 md:mt-0 md:ml-auto mr-6 flex items-center gap-2">
+          <label className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 cursor-pointer select-none">
+            <Checkbox
+              checked={!!appointment.is_free_consultation}
+              onCheckedChange={handleToggleFreeConsultation}
+              disabled={savingFreeConsultation}
+            />
+            Consultation gratuite
+          </label>
+
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" className="border-pink-200 text-pink-700 hover:bg-pink-50 hover:text-pink-800 gap-2">
@@ -1627,10 +1671,12 @@ export default function AppointmentDetailsPage() {
                           type="number"
                           min="0"
                           inputMode="numeric"
-                          value={actPrices[act.name] ?? act.price}
+                          value={appointment?.is_free_consultation ? 0 : (actPrices[act.name] ?? act.price)}
                           onChange={(e) => handleActPriceChange(act.name, e.target.value)}
                           onBlur={handleActPriceBlur}
-                          className="h-7 w-24 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold"
+                          disabled={!!appointment?.is_free_consultation}
+                          title={appointment?.is_free_consultation ? "Consultation gratuite — prix non modifiable" : undefined}
+                          className="h-7 w-24 text-right text-sm border-pink-200 bg-white text-pink-800 font-semibold disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                         <span className="text-xs text-pink-600">DH</span>
                       </div>
@@ -1650,10 +1696,13 @@ export default function AppointmentDetailsPage() {
             </PopoverContent>
           </Popover>
 
-          {/* Paid amount = sum of the (editable) act prices. Not directly editable. */}
+          {/* Authoritative paid amount, as actually persisted server-side —
+              usually equal to the sum of selected act prices, but not always
+              (e.g. set directly via the completion modal), so this reads
+              appointment.payement rather than recomputing from acts. */}
           <div className="flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1">
             <span className="text-xs font-medium text-emerald-700 whitespace-nowrap">Payé</span>
-            <span className="text-emerald-800 font-semibold">{totalActsPrice} DH</span>
+            <span className="text-emerald-800 font-semibold">{appointment?.payement ?? totalActsPrice} DH</span>
             {savingPayment && <Loader2 className="h-3 w-3 animate-spin text-emerald-600" />}
           </div>
 
