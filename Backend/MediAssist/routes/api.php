@@ -13,6 +13,7 @@ use App\Http\Controllers\MedecinController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\StatisticsController;
+use App\Http\Controllers\ResearchCaseController;
 
 
 
@@ -71,6 +72,12 @@ Route::prefix('patients')->group(function () {
         Route::delete('/{documentId}', [App\Http\Controllers\PatientDocumentController::class, 'destroy']);
     });
 
+});
+
+// RESEARCH CASES (de-identified clinical case library — reference data, not patients)
+Route::prefix('research-cases')->group(function () {
+    Route::get('/', [ResearchCaseController::class, 'index']);
+    Route::get('/{id}', [ResearchCaseController::class, 'show']);
 });
 
 // CIN card OCR (proxies to the internal extraction microservice, single host for mobile clients)

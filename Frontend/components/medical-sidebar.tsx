@@ -16,6 +16,7 @@ import {
   Menu,
   ScanLine,
   Package,
+  BookOpen,
 } from "lucide-react"
 
 // Custom Logo Component (Kept as requested, it's the specific branding)
@@ -102,6 +103,13 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       icon: <ScanLine size={20} />,
       href: "/radiology",
       show: false, // hidden for this delivery — re-enable per-client if needed
+    },
+    {
+      id: "research",
+      label: "Recherche Clinique",
+      icon: <BookOpen size={20} />,
+      href: "/research",
+      show: user.role === "admin" || hasPermission("research"),
     },
     {
       id: "statistics",
