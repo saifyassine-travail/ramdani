@@ -30,10 +30,95 @@ class PatientController extends Controller
     {
         $showArchived = $request->boolean('archived', false);
 
-        $patients = Patient::with(['lastAppointment', 'nextAppointment'])
-            ->where('archived', $showArchived)
-            ->orderBy('first_name')
-            ->paginate(30);
+        // Whitelist of sortable columns -> actual SQL column. 'last_appointment_date'
+        // is handled separately below since it isn't a plain column (it comes from
+        // the lastAppointment hasOne relation).
+        $sortableColumns = [
+            'first_name' => 'first_name',
+            'birth_day' => 'birth_day',
+            'created_at' => 'created_at',
+        ];
+
+        $sortBy = $request->input('sort_by', 'first_name');
+        $sortDir = strtolower((string) $request->input('sort_dir', 'asc'));
+        if (!in_array($sortDir, ['asc', 'desc'], true)) {
+            $sortDir = 'asc';
+        }
+
+        $query = Patient::with(['lastAppointment', 'nextAppointment'])
+            ->where('archived', $showArchived);
+
+        if ($request->filled('gender') && in_array($request->input('gender'), ['Male', 'Female'], true)) {
+            $query->where('gender', $request->input('gender'));
+        }
+
+        if ($request->has('mutuelle')) {
+            if ($request->boolean('mutuelle')) {
+                $query->whereNotNull('mutuelle')->where('mutuelle', '!=', '');
+            } else {
+                $query->where(function ($q) {
+                    $q->whereNull('mutuelle')->orWhere('mutuelle', '');
+                });
+            }
+        }
+
+        $allowedBloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+        if ($request->filled('blood_type') && in_array($request->input('blood_type'), $allowedBloodTypes, true)) {
+            $query->where('blood_type', $request->input('blood_type'));
+        }
+
+        // "Reste" — only patients with at least one appointment carrying an
+        // outstanding (unpaid) balance.
+        if ($request->boolean('has_credit')) {
+            $query->whereHas('Appointment', function ($q) {
+                $q->where('credit', '>', 0);
+            });
+        }
+
+        // Age filters, computed from birth_day. Mirrors the age-bucket SQL used in
+        // StatisticsController::getDashboardStats() for consistency (pgsql age()).
+        if ($request->filled('min_age') || $request->filled('max_age')) {
+            $dbDriver = config('database.default');
+            $ageSql = $dbDriver === 'pgsql'
+                ? 'EXTRACT(YEAR FROM age(CURRENT_DATE, birth_day))'
+                : 'TIMESTAMPDIFF(YEAR, birth_day, CURDATE())';
+
+            $query->whereNotNull('birth_day');
+
+            if ($request->filled('min_age')) {
+                $query->whereRaw("{$ageSql} >= ?", [(int) $request->input('min_age')]);
+            }
+            if ($request->filled('max_age')) {
+                $query->whereRaw("{$ageSql} <= ?", [(int) $request->input('max_age')]);
+            }
+        }
+
+        if ($sortBy === 'last_appointment_date') {
+            // hasOne relation, not a plain column: sort via a correlated subquery
+            // that pulls the most recent past appointment date per patient.
+            $query->addSelect(['last_appointment_date_sort' => \App\Models\Appointment::selectRaw('MAX(appointment_date)')
+                ->whereColumn('appointments.ID_patient', 'patients.ID_patient')
+                ->where('appointment_date', '<=', now()),
+            ]);
+            // Patients with no past appointment (NULL) always sort last, regardless
+            // of direction — ORDER BY alone would otherwise put NULLs first on DESC
+            // (Postgres default), burying patients who actually have a last visit.
+            // Note: Postgres only allows a bare output-alias reference in ORDER BY
+            // (not the alias embedded inside another expression like CASE WHEN),
+            // so NULLS LAST is used instead of a CASE-based tiebreaker.
+            if (config('database.default') === 'pgsql') {
+                $query->orderByRaw("last_appointment_date_sort {$sortDir} NULLS LAST");
+            } else {
+                $query->orderByRaw('last_appointment_date_sort IS NULL')
+                    ->orderBy('last_appointment_date_sort', $sortDir);
+            }
+        } elseif (array_key_exists($sortBy, $sortableColumns)) {
+            $query->orderBy($sortableColumns[$sortBy], $sortDir);
+        } else {
+            $query->orderBy('first_name', $sortDir);
+        }
+
+        $patients = $query->paginate(30)->appends($request->query());
 
         return response()->json($patients);
     }

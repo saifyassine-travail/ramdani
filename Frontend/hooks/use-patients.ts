@@ -16,7 +16,18 @@ export interface PatientWithDetails extends Patient {
   }
 }
 
-export function usePatients(showArchived = false) {
+export interface PatientFilters {
+  sort_by?: "first_name" | "birth_day" | "created_at" | "last_appointment_date"
+  sort_dir?: "asc" | "desc"
+  gender?: "Male" | "Female"
+  mutuelle?: boolean
+  blood_type?: string
+  min_age?: number
+  max_age?: number
+  has_credit?: boolean
+}
+
+export function usePatients(showArchived = false, filters: PatientFilters = {}) {
   const [patients, setPatients] = useState<PatientWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -25,13 +36,18 @@ export function usePatients(showArchived = false) {
   const [totalPages, setTotalPages] = useState(1)
   const [perPage, setPerPage] = useState(10)
 
+  // Filters change fairly often (dropdowns, debounced inputs); serialize to a
+  // stable string so the fetchPatients callback identity only changes when the
+  // actual filter values change, not on every render.
+  const filtersKey = JSON.stringify(filters)
+
   const fetchPatients = useCallback(
     async (page = 1) => {
       try {
         setLoading(true)
         setError(null)
 
-        const response = await apiClient.getPatients(showArchived, page, perPage)
+        const response = await apiClient.getPatients(showArchived, page, perPage, JSON.parse(filtersKey))
 
         if (response && response.success && response.data) {
           let patientsArray = []
@@ -104,7 +120,7 @@ export function usePatients(showArchived = false) {
         setLoading(false)
       }
     },
-    [showArchived, perPage],
+    [showArchived, perPage, filtersKey],
   )
 
   const searchPatients = useCallback(

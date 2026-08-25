@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,11 +12,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { usePatients } from "@/hooks/use-patients"
-import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart, ScanLine } from "lucide-react"
+import { usePatients, type PatientFilters } from "@/hooks/use-patients"
+import { Search, Archive, Eye, Edit, Undo, Plus, User, Phone, FileText, AlertCircle, Loader2, UserCheck, Mail, Heart, ScanLine, ArrowUp, ArrowDown, ArrowUpDown, SlidersHorizontal, X } from "lucide-react"
 import { formatGlobalDate } from "@/lib/format-date"
 import { formatName } from "@/lib/utils"
 import { isMinor } from "@/lib/age"
+
+type SortField = "first_name" | "birth_day" | "last_appointment_date"
+
+const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -33,7 +37,81 @@ export default function PatientsPage() {
   const [expandedPatient, setExpandedPatient] = useState<number | null>(null)
   const [isSearching, setIsSearching] = useState(false)
 
+  // Filter / sort controls
+  const [genderFilter, setGenderFilter] = useState<string>("all")
+  const [mutuelleFilter, setMutuelleFilter] = useState<string>("all")
+  const [bloodTypeFilter, setBloodTypeFilter] = useState<string>("all")
+  const [hasCreditFilter, setHasCreditFilter] = useState<boolean>(false)
+  const [minAgeInput, setMinAgeInput] = useState<string>("")
+  const [maxAgeInput, setMaxAgeInput] = useState<string>("")
+  const [minAge, setMinAge] = useState<string>("")
+  const [maxAge, setMaxAge] = useState<string>("")
+  const [sortField, setSortField] = useState<SortField>("first_name")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+
   const debounceTimer = useRef<NodeJS.Timeout>()
+  const ageDebounceTimer = useRef<NodeJS.Timeout>()
+
+  // Debounce the age-range number inputs the same way the search box is
+  // debounced, so typing a digit at a time doesn't refetch on every keystroke.
+  useEffect(() => {
+    if (ageDebounceTimer.current) clearTimeout(ageDebounceTimer.current)
+    ageDebounceTimer.current = setTimeout(() => {
+      setMinAge(minAgeInput)
+      setMaxAge(maxAgeInput)
+    }, 300)
+    return () => {
+      if (ageDebounceTimer.current) clearTimeout(ageDebounceTimer.current)
+    }
+  }, [minAgeInput, maxAgeInput])
+
+  const filters: PatientFilters = useMemo(() => {
+    const f: PatientFilters = {
+      sort_by: sortField,
+      sort_dir: sortDir,
+    }
+    if (genderFilter !== "all") f.gender = genderFilter as "Male" | "Female"
+    if (mutuelleFilter !== "all") f.mutuelle = mutuelleFilter === "true"
+    if (bloodTypeFilter !== "all") f.blood_type = bloodTypeFilter
+    if (hasCreditFilter) f.has_credit = true
+    if (minAge.trim()) f.min_age = Number(minAge)
+    if (maxAge.trim()) f.max_age = Number(maxAge)
+    return f
+  }, [sortField, sortDir, genderFilter, mutuelleFilter, bloodTypeFilter, hasCreditFilter, minAge, maxAge])
+
+  const activeFilterCount =
+    (genderFilter !== "all" ? 1 : 0) +
+    (mutuelleFilter !== "all" ? 1 : 0) +
+    (bloodTypeFilter !== "all" ? 1 : 0) +
+    (hasCreditFilter ? 1 : 0) +
+    (minAge.trim() !== "" ? 1 : 0) +
+    (maxAge.trim() !== "" ? 1 : 0)
+  const hasActiveFilters = activeFilterCount > 0
+
+  const clearFilters = () => {
+    setGenderFilter("all")
+    setMutuelleFilter("all")
+    setBloodTypeFilter("all")
+    setHasCreditFilter(false)
+    setMinAgeInput("")
+    setMaxAgeInput("")
+    setMinAge("")
+    setMaxAge("")
+  }
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortField(field)
+      setSortDir("asc")
+    }
+  }
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 opacity-40" />
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+  }
 
   const {
     patients,
@@ -48,7 +126,7 @@ export default function PatientsPage() {
     createPatient,
     updatePatient,
     toggleArchiveStatus,
-  } = usePatients(showArchived)
+  } = usePatients(showArchived, filters)
 
   useEffect(() => {
     if (debounceTimer.current) {
@@ -253,6 +331,116 @@ export default function PatientsPage() {
           </div>
         </div>
 
+        {/* Filters */}
+        <Card className="shadow-sm border-0 mb-4 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <SlidersHorizontal className="h-4 w-4 text-gray-500" />
+              Filtres
+              {activeFilterCount > 0 && (
+                <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-0 rounded-full px-2">
+                  {activeFilterCount}
+                </Badge>
+              )}
+            </div>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 text-gray-500 hover:text-gray-700 gap-1">
+                <X className="h-3.5 w-3.5" />
+                Réinitialiser
+              </Button>
+            )}
+          </div>
+
+          <CardContent className="p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Sexe</Label>
+                <Select value={genderFilter} onValueChange={setGenderFilter}>
+                  <SelectTrigger className="h-9 bg-white">
+                    <SelectValue placeholder="Tous" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    <SelectItem value="Female">Femme</SelectItem>
+                    <SelectItem value="Male">Homme</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Mutuelle</Label>
+                <Select value={mutuelleFilter} onValueChange={setMutuelleFilter}>
+                  <SelectTrigger className="h-9 bg-white">
+                    <SelectValue placeholder="Toutes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    <SelectItem value="true">Avec mutuelle</SelectItem>
+                    <SelectItem value="false">Sans mutuelle</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Groupe sanguin</Label>
+                <Select value={bloodTypeFilter} onValueChange={setBloodTypeFilter}>
+                  <SelectTrigger className="h-9 bg-white">
+                    <SelectValue placeholder="Tous" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {BLOOD_TYPES.map((bt) => (
+                      <SelectItem key={bt} value={bt}>
+                        {bt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Âge min</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="0"
+                  value={minAgeInput}
+                  onChange={(e) => setMinAgeInput(e.target.value)}
+                  className="h-9 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Âge max</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="120"
+                  value={maxAgeInput}
+                  onChange={(e) => setMaxAgeInput(e.target.value)}
+                  className="h-9 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-gray-500">Solde</Label>
+                <button
+                  type="button"
+                  onClick={() => setHasCreditFilter((v) => !v)}
+                  className={`h-9 w-full rounded-md border px-3 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors ${
+                    hasCreditFilter
+                      ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+                      : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Avec reste
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Patients Table */}
         <Card className="shadow-sm border-0">
           <CardContent className="p-0">
@@ -261,17 +449,35 @@ export default function PatientsPage() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-12"></th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Patient
+                    <th
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900"
+                      onClick={() => toggleSort("first_name")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Patient
+                        <SortIcon field="first_name" />
+                      </span>
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-24">
-                      Âge
+                    <th
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-24 cursor-pointer select-none hover:text-gray-900"
+                      onClick={() => toggleSort("birth_day")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Âge
+                        <SortIcon field="birth_day" />
+                      </span>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
                       Statut
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Dernière visite
+                    <th
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider cursor-pointer select-none hover:text-gray-900"
+                      onClick={() => toggleSort("last_appointment_date")}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Dernière visite
+                        <SortIcon field="last_appointment_date" />
+                      </span>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
                       Prochaine visite

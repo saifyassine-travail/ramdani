@@ -237,6 +237,101 @@ class StatisticsController extends Controller
         }
     }
 
+    /**
+     * Paginated, filterable/sortable list of individual appointments for the
+     * statistics page's detail table (as opposed to the aggregate chart data
+     * above). Kept separate from getDashboardStats()/getChartData() so those
+     * cached/aggregate endpoints stay untouched.
+     */
+    public function getAppointmentsDetail(Request $request)
+    {
+        try {
+            // Whitelist of sortable columns -> actual SQL column reference.
+            // Never let raw user input reach orderBy() directly.
+            $sortableColumns = [
+                'appointment_date' => 'appointments.appointment_date',
+                'payement' => 'appointments.payement',
+                'credit' => 'appointments.credit',
+                'patient_name' => 'patients.first_name',
+            ];
+
+            $sortBy = $request->input('sort_by', 'appointment_date');
+            if (!array_key_exists($sortBy, $sortableColumns)) {
+                $sortBy = 'appointment_date';
+            }
+
+            $sortDir = strtolower((string) $request->input('sort_dir', 'desc'));
+            if (!in_array($sortDir, ['asc', 'desc'], true)) {
+                $sortDir = 'desc';
+            }
+
+            $perPage = (int) $request->input('per_page', 25);
+            if ($perPage < 1) {
+                $perPage = 25;
+            }
+            $perPage = min($perPage, 100); // cap to avoid abuse
+
+            $query = Appointment::query()
+                ->join('patients', 'patients.ID_patient', '=', 'appointments.ID_patient')
+                ->select([
+                    'appointments.ID_RV',
+                    'appointments.appointment_date',
+                    'appointments.type',
+                    'appointments.status',
+                    'appointments.diagnostic',
+                    'appointments.payement',
+                    'appointments.credit',
+                    'patients.ID_patient as patient_id',
+                    'patients.first_name as patient_first_name',
+                    'patients.last_name as patient_last_name',
+                ]);
+
+            if ($request->filled('date_from')) {
+                $query->whereDate('appointments.appointment_date', '>=', $request->input('date_from'));
+            }
+            if ($request->filled('date_to')) {
+                $query->whereDate('appointments.appointment_date', '<=', $request->input('date_to'));
+            }
+
+            // Same status enum as used by AppointmentController elsewhere.
+            $allowedStatuses = ['Programmé', 'Salle dattente', 'En préparation', 'En consultation', 'Terminé', 'Annulé'];
+            if ($request->filled('status') && in_array($request->input('status'), $allowedStatuses, true)) {
+                $query->where('appointments.status', $request->input('status'));
+            }
+
+            $allowedTypes = ['Consultation', 'Control'];
+            if ($request->filled('type') && in_array($request->input('type'), $allowedTypes, true)) {
+                $query->where('appointments.type', $request->input('type'));
+            }
+
+            if ($request->filled('search')) {
+                $search = $request->input('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('patients.first_name', 'ILIKE', "%{$search}%")
+                        ->orWhere('patients.last_name', 'ILIKE', "%{$search}%");
+                });
+            }
+
+            if ($sortBy === 'patient_name') {
+                $query->orderBy('patients.first_name', $sortDir)
+                    ->orderBy('patients.last_name', $sortDir);
+            } else {
+                $query->orderBy($sortableColumns[$sortBy], $sortDir);
+            }
+            // Stable tiebreaker so equal sort keys don't reorder between pages.
+            $query->orderBy('appointments.ID_RV', $sortDir);
+
+            $appointments = $query->paginate($perPage)->withQueryString();
+
+            return response()->json([
+                'success' => true,
+                'data' => $appointments,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
     public function getChartData(Request $request)
     {
         try {

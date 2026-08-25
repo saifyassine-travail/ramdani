@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { apiClient } from "@/lib/api"
-import { Loader2, TrendingUp, Users, Calendar, Activity, Zap, AlertCircle, DollarSign, BarChart3, Database, FileSpreadsheet, ChevronDown } from "lucide-react"
+import { Loader2, TrendingUp, Users, Calendar, Activity, Zap, AlertCircle, DollarSign, BarChart3, Database, FileSpreadsheet, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown, Search, ListFilter, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
@@ -29,6 +29,11 @@ import {
     AreaChart,
 } from "recharts"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import { formatGlobalDate } from "@/lib/format-date"
 
 interface StatsData {
     kpi: {
@@ -52,6 +57,32 @@ interface StatsData {
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444"]
+
+interface AppointmentDetailRow {
+    ID_RV: number
+    appointment_date: string
+    type: string
+    status: string
+    diagnostic: string | null
+    payement: number | null
+    credit: number | null
+    patient_id: number
+    patient_first_name: string
+    patient_last_name: string
+}
+
+// Same enum values as the appointments table's `status` column (matches how
+// AppointmentController/edit-appointment-modal already present them).
+const STATUS_OPTIONS = ["Programmé", "Salle dattente", "En préparation", "En consultation", "Terminé", "Annulé"]
+
+// Same raw type values stored in DB ("Control"), labeled the way
+// components/edit-appointment-modal.tsx already presents them ("Contrôle").
+const TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+    { value: "Consultation", label: "Consultation" },
+    { value: "Control", label: "Contrôle" },
+]
+
+type AppointmentSortField = "appointment_date" | "payement" | "credit" | "patient_name"
 
 export default function StatisticsPage() {
     const { toast } = useToast()
@@ -92,6 +123,117 @@ export default function StatisticsPage() {
 
     const [chartData, setChartData] = useState<Array<{ date: string; count: number; revenue: number; credit: number }>>([])
     const [chartLoading, setChartLoading] = useState(false)
+
+    // Appointments detail table: filters, sort, pagination
+    const [detailRows, setDetailRows] = useState<AppointmentDetailRow[]>([])
+    const [detailLoading, setDetailLoading] = useState(true)
+    const [detailTotal, setDetailTotal] = useState(0)
+    const [detailPage, setDetailPage] = useState(1)
+    const [detailLastPage, setDetailLastPage] = useState(1)
+    const [detailPerPage] = useState(25)
+
+    const [detailDateFrom, setDetailDateFrom] = useState("")
+    const [detailDateTo, setDetailDateTo] = useState("")
+    const [detailStatus, setDetailStatus] = useState("all")
+    const [detailType, setDetailType] = useState("all")
+    const [detailSearchInput, setDetailSearchInput] = useState("")
+    const [detailSearch, setDetailSearch] = useState("")
+    const [detailSortBy, setDetailSortBy] = useState<AppointmentSortField>("appointment_date")
+    const [detailSortDir, setDetailSortDir] = useState<"asc" | "desc">("desc")
+
+    const detailSearchDebounce = useRef<NodeJS.Timeout>()
+    useEffect(() => {
+        if (detailSearchDebounce.current) clearTimeout(detailSearchDebounce.current)
+        detailSearchDebounce.current = setTimeout(() => setDetailSearch(detailSearchInput), 300)
+        return () => {
+            if (detailSearchDebounce.current) clearTimeout(detailSearchDebounce.current)
+        }
+    }, [detailSearchInput])
+
+    const fetchDetailRows = useCallback(
+        async (page = 1) => {
+            setDetailLoading(true)
+            try {
+                const response = await apiClient.getAppointmentsDetail({
+                    date_from: detailDateFrom || undefined,
+                    date_to: detailDateTo || undefined,
+                    status: detailStatus !== "all" ? detailStatus : undefined,
+                    type: detailType !== "all" ? detailType : undefined,
+                    search: detailSearch || undefined,
+                    sort_by: detailSortBy,
+                    sort_dir: detailSortDir,
+                    page,
+                    per_page: detailPerPage,
+                })
+
+                if (response.success && response.data?.data) {
+                    const paginator = response.data.data
+                    setDetailRows(paginator.data || [])
+                    setDetailTotal(paginator.total || 0)
+                    setDetailPage(paginator.current_page || 1)
+                    setDetailLastPage(paginator.last_page || 1)
+                } else {
+                    setDetailRows([])
+                    setDetailTotal(0)
+                }
+            } catch (error) {
+                console.error("Error fetching appointments detail:", error)
+                setDetailRows([])
+            } finally {
+                setDetailLoading(false)
+            }
+        },
+        [detailDateFrom, detailDateTo, detailStatus, detailType, detailSearch, detailSortBy, detailSortDir, detailPerPage],
+    )
+
+    useEffect(() => {
+        fetchDetailRows(1)
+    }, [fetchDetailRows])
+
+    const toggleDetailSort = (field: AppointmentSortField) => {
+        if (detailSortBy === field) {
+            setDetailSortDir((d) => (d === "asc" ? "desc" : "asc"))
+        } else {
+            setDetailSortBy(field)
+            setDetailSortDir("desc")
+        }
+    }
+
+    const DetailSortIcon = ({ field }: { field: AppointmentSortField }) => {
+        if (detailSortBy !== field) return <ArrowUpDown className="h-3 w-3 opacity-40" />
+        return detailSortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+    }
+
+    const hasDetailFilters =
+        detailDateFrom !== "" || detailDateTo !== "" || detailStatus !== "all" || detailType !== "all" || detailSearch !== ""
+
+    const clearDetailFilters = () => {
+        setDetailDateFrom("")
+        setDetailDateTo("")
+        setDetailStatus("all")
+        setDetailType("all")
+        setDetailSearchInput("")
+        setDetailSearch("")
+    }
+
+    const statusBadgeClass = (status: string) => {
+        switch (status) {
+            case "Terminé":
+                return "bg-green-100 text-green-700 border-green-200"
+            case "Annulé":
+                return "bg-red-100 text-red-700 border-red-200"
+            case "En consultation":
+                return "bg-blue-100 text-blue-700 border-blue-200"
+            case "En préparation":
+                return "bg-purple-100 text-purple-700 border-purple-200"
+            case "Salle dattente":
+                return "bg-amber-100 text-amber-700 border-amber-200"
+            default:
+                return "bg-gray-100 text-gray-700 border-gray-200"
+        }
+    }
+
+    const typeLabel = (type: string) => TYPE_OPTIONS.find((t) => t.value === type)?.label || type
 
     useEffect(() => {
         const fetchInitialData = async () => {
@@ -553,6 +695,239 @@ export default function StatisticsPage() {
                     </Card>
                 </div>
             </div>
+
+            {/* Detail table: individual appointments, filterable/sortable/paginated */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <ListFilter className="w-5 h-5 text-blue-600" />
+                        Détail des Rendez-vous
+                    </CardTitle>
+                    <CardDescription>
+                        Liste complète et filtrable des rendez-vous ({detailTotal} au total)
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Filters */}
+                    <div className="flex flex-wrap items-end gap-3 bg-gray-50 p-4 rounded-lg border">
+                        <div className="w-40">
+                            <Label className="text-xs text-gray-500">Du</Label>
+                            <Input
+                                type="date"
+                                value={detailDateFrom}
+                                onChange={(e) => setDetailDateFrom(e.target.value)}
+                                className="h-9"
+                            />
+                        </div>
+                        <div className="w-40">
+                            <Label className="text-xs text-gray-500">Au</Label>
+                            <Input
+                                type="date"
+                                value={detailDateTo}
+                                onChange={(e) => setDetailDateTo(e.target.value)}
+                                className="h-9"
+                            />
+                        </div>
+                        <div className="w-44">
+                            <Label className="text-xs text-gray-500">Statut</Label>
+                            <Select value={detailStatus} onValueChange={setDetailStatus}>
+                                <SelectTrigger className="h-9">
+                                    <SelectValue placeholder="Tous" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Tous</SelectItem>
+                                    {STATUS_OPTIONS.map((s) => (
+                                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="w-40">
+                            <Label className="text-xs text-gray-500">Type</Label>
+                            <Select value={detailType} onValueChange={setDetailType}>
+                                <SelectTrigger className="h-9">
+                                    <SelectValue placeholder="Tous" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">Tous</SelectItem>
+                                    {TYPE_OPTIONS.map((t) => (
+                                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="relative flex-1 min-w-[200px]">
+                            <Label className="text-xs text-gray-500">Patient</Label>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                <Input
+                                    type="text"
+                                    placeholder="Rechercher un patient..."
+                                    value={detailSearchInput}
+                                    onChange={(e) => setDetailSearchInput(e.target.value)}
+                                    className="h-9 pl-9"
+                                    autoComplete="off"
+                                />
+                            </div>
+                        </div>
+                        {hasDetailFilters && (
+                            <Button variant="ghost" size="sm" onClick={clearDetailFilters} className="h-9 text-gray-500 gap-1">
+                                <X className="h-3.5 w-3.5" />
+                                Réinitialiser
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Table */}
+                    <div className="rounded-lg border overflow-hidden">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-gray-50">
+                                    <TableHead
+                                        className="cursor-pointer select-none hover:text-gray-900"
+                                        onClick={() => toggleDetailSort("appointment_date")}
+                                    >
+                                        <span className="inline-flex items-center gap-1">
+                                            Date
+                                            <DetailSortIcon field="appointment_date" />
+                                        </span>
+                                    </TableHead>
+                                    <TableHead
+                                        className="cursor-pointer select-none hover:text-gray-900"
+                                        onClick={() => toggleDetailSort("patient_name")}
+                                    >
+                                        <span className="inline-flex items-center gap-1">
+                                            Patient
+                                            <DetailSortIcon field="patient_name" />
+                                        </span>
+                                    </TableHead>
+                                    <TableHead>Type</TableHead>
+                                    <TableHead>Statut</TableHead>
+                                    <TableHead>Diagnostic</TableHead>
+                                    <TableHead
+                                        className="cursor-pointer select-none hover:text-gray-900 text-right"
+                                        onClick={() => toggleDetailSort("payement")}
+                                    >
+                                        <span className="inline-flex items-center gap-1 justify-end">
+                                            Paiement
+                                            <DetailSortIcon field="payement" />
+                                        </span>
+                                    </TableHead>
+                                    <TableHead
+                                        className="cursor-pointer select-none hover:text-gray-900 text-right"
+                                        onClick={() => toggleDetailSort("credit")}
+                                    >
+                                        <span className="inline-flex items-center gap-1 justify-end">
+                                            Crédit
+                                            <DetailSortIcon field="credit" />
+                                        </span>
+                                    </TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {detailLoading ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="text-center py-10">
+                                            <Loader2 className="h-6 w-6 animate-spin text-blue-600 mx-auto" />
+                                        </TableCell>
+                                    </TableRow>
+                                ) : detailRows.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="text-center py-10 text-gray-500">
+                                            Aucun rendez-vous trouvé pour ces filtres
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    detailRows.map((row) => (
+                                        <TableRow key={row.ID_RV}>
+                                            <TableCell className="whitespace-nowrap">{formatGlobalDate(row.appointment_date)}</TableCell>
+                                            <TableCell className="whitespace-nowrap font-medium text-gray-900">
+                                                {row.patient_first_name} {row.patient_last_name}
+                                            </TableCell>
+                                            <TableCell>{typeLabel(row.type)}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline" className={statusBadgeClass(row.status)}>
+                                                    {row.status}
+                                                </Badge>
+                                            </TableCell>
+                                            <TableCell className="max-w-xs truncate text-gray-600">
+                                                {row.diagnostic || "—"}
+                                            </TableCell>
+                                            <TableCell className="text-right whitespace-nowrap">
+                                                {row.payement ?? 0} DH
+                                            </TableCell>
+                                            <TableCell className="text-right whitespace-nowrap">
+                                                <span className={row.credit ? "text-red-600 font-medium" : "text-gray-500"}>
+                                                    {row.credit ?? 0} DH
+                                                </span>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    {detailLastPage > 1 && (
+                        <div className="flex items-center justify-between px-1">
+                            <div className="text-sm text-gray-700">
+                                Affichage de {(detailPage - 1) * detailPerPage + 1} à{" "}
+                                {Math.min(detailPage * detailPerPage, detailTotal)} sur {detailTotal} rendez-vous
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => fetchDetailRows(detailPage - 1)}
+                                    disabled={detailPage === 1 || detailLoading}
+                                >
+                                    Précédent
+                                </Button>
+                                <div className="flex items-center space-x-1">
+                                    {Array.from({ length: Math.min(5, detailLastPage) }, (_, i) => {
+                                        const page = i + 1
+                                        return (
+                                            <Button
+                                                key={page}
+                                                variant={detailPage === page ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => fetchDetailRows(page)}
+                                                disabled={detailLoading}
+                                                className="w-8 h-8 p-0"
+                                            >
+                                                {page}
+                                            </Button>
+                                        )
+                                    })}
+                                    {detailLastPage > 5 && (
+                                        <>
+                                            <span className="text-gray-500">...</span>
+                                            <Button
+                                                variant={detailPage === detailLastPage ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => fetchDetailRows(detailLastPage)}
+                                                disabled={detailLoading}
+                                                className="w-8 h-8 p-0"
+                                            >
+                                                {detailLastPage}
+                                            </Button>
+                                        </>
+                                    )}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => fetchDetailRows(detailPage + 1)}
+                                    disabled={detailPage === detailLastPage || detailLoading}
+                                >
+                                    Suivant
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     )
 }
