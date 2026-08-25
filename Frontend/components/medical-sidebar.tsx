@@ -17,6 +17,7 @@ import {
   ScanLine,
   Package,
   BookOpen,
+  NotebookPen,
 } from "lucide-react"
 
 // Custom Logo Component (Kept as requested, it's the specific branding)
@@ -110,6 +111,13 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       icon: <BookOpen size={20} />,
       href: "/research",
       show: user.role === "admin" || hasPermission("research"),
+    },
+    {
+      id: "letters",
+      label: "Lettres",
+      icon: <NotebookPen size={20} />,
+      href: "/letters",
+      show: user.role === "admin" || hasPermission("letters"),
     },
     {
       id: "statistics",

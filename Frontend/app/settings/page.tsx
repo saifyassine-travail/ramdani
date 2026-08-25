@@ -408,6 +408,7 @@ export default function SettingsPage() {
     { id: "stock", label: "Stock" },
     { id: "analyses", label: "Analyses" },
     { id: "research", label: "Recherche Clinique" },
+    { id: "letters", label: "Lettres" },
     { id: "statistics", label: "Statistiques" },
     { id: "settings", label: "Paramètres" },
   ]
