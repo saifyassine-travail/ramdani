@@ -91,6 +91,7 @@ export interface Appointment {
   end_time?: string | null
   diagnostic?: string
   mutuelle: boolean | number // Can be 0/1 from Laravel or boolean from frontend
+  is_free_consultation?: boolean | number
   payement?: number
   total_fee?: number
   credit?: number
@@ -192,6 +193,17 @@ export interface ApiResponse<T> {
     per_page: number
     [key: string]: any
   }
+}
+
+// A "Lettres" document: free-text content, never linked to a patient. There
+// is no title field in the editor UI — the backend derives one from the
+// content when it isn't supplied.
+interface CustomDocumentRecord {
+  id: number
+  title: string
+  content: string
+  created_at?: string
+  updated_at?: string
 }
 
 class ApiClient {
@@ -337,6 +349,20 @@ class ApiClient {
 
   async toggleMutuelle(appointmentId: number): Promise<ApiResponse<{ mutuelle: number | boolean }>> {
     return this.request("/appointments/toggle-mutuelle", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        appointment_id: appointmentId,
+      }),
+    })
+  }
+
+  async toggleFreeConsultation(
+    appointmentId: number,
+  ): Promise<ApiResponse<{ is_free_consultation: number | boolean; payement: number }>> {
+    return this.request("/appointments/toggle-free-consultation", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -595,12 +621,102 @@ class ApiClient {
     })
   }
 
+  // Custom document ("Lettres" — free-text documents, never linked to a
+  // patient) management endpoints. There is no title field in the editor
+  // UI: the backend derives one from the content when it isn't supplied.
+  async getAllCustomDocuments(skipCache = false): Promise<
+    ApiResponse<{
+      success: boolean
+      customDocuments: CustomDocumentRecord[]
+    }>
+  > {
+    return this.request(`/custom-documents`, {}, skipCache)
+  }
+
+  async getCustomDocument(customDocumentId: number, skipCache = false): Promise<
+    ApiResponse<{
+      success: boolean
+      customDocument: CustomDocumentRecord
+    }>
+  > {
+    return this.request(`/custom-documents/${customDocumentId}`, {}, skipCache)
+  }
+
+  async createCustomDocument(documentData: {
+    content: string
+    title?: string
+  }): Promise<
+    ApiResponse<{
+      success: boolean
+      message?: string
+      customDocument: CustomDocumentRecord
+    }>
+  > {
+    return this.request("/custom-documents", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(documentData),
+    })
+  }
+
+  async updateCustomDocument(
+    customDocumentId: number,
+    documentData: {
+      content: string
+      title?: string
+    },
+  ): Promise<
+    ApiResponse<{
+      success: boolean
+      message?: string
+      customDocument: CustomDocumentRecord
+    }>
+  > {
+    return this.request(`/custom-documents/${customDocumentId}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(documentData),
+    })
+  }
+
+  async deleteCustomDocument(customDocumentId: number): Promise<ApiResponse<{ message: string }>> {
+    return this.request(`/custom-documents/${customDocumentId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+  }
+
   // Patient management endpoints
-  async getPatients(showArchived = false, page = 1, perPage = 10): Promise<ApiResponse<any>> {
+  async getPatients(
+    showArchived = false,
+    page = 1,
+    perPage = 10,
+    filters: {
+      sort_by?: "first_name" | "birth_day" | "created_at" | "last_appointment_date"
+      sort_dir?: "asc" | "desc"
+      gender?: "Male" | "Female"
+      mutuelle?: boolean
+      blood_type?: string
+      min_age?: number
+      max_age?: number
+      has_credit?: boolean
+    } = {},
+  ): Promise<ApiResponse<any>> {
     const params = new URLSearchParams()
     if (showArchived) params.append("archived", "true")
     params.append("page", page.toString())
     params.append("per_page", perPage.toString())
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        params.append(key, String(value))
+      }
+    })
 
     const endpoint = `/patients?${params.toString()}`
 
@@ -1261,6 +1377,32 @@ class ApiClient {
     params.append("view", view)
     params.append("target", target)
     return this.request(`/medecin/statistics/chart-data?${params.toString()}`)
+  }
+
+  async getAppointmentsDetail(filters: {
+    date_from?: string
+    date_to?: string
+    status?: string
+    type?: string
+    search?: string
+    sort_by?: "appointment_date" | "payement" | "credit" | "patient_name"
+    sort_dir?: "asc" | "desc"
+    page?: number
+    per_page?: number
+  } = {}): Promise<ApiResponse<any>> {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        params.append(key, String(value))
+      }
+    })
+
+    const endpoint = `/medecin/statistics/appointments-detail?${params.toString()}`
+    // Always fetch fresh: filters/pagination change constantly here.
+    const cacheKey = `${this.baseURL}${endpoint}`
+    requestCache.delete(cacheKey)
+
+    return this.request(endpoint)
   }
 
   // Settings endpoints

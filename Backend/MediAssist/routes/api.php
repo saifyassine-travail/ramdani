@@ -12,6 +12,7 @@ use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\MedecinController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CertificateController;
+use App\Http\Controllers\CustomDocumentController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\ResearchCaseController;
 
@@ -26,6 +27,7 @@ Route::middleware('api')->group(function () {
         Route::get('/monthly-counts/{yearMonth}', [AppointmentController::class, 'monthlyCounts']);
         Route::post('/update-status', [AppointmentController::class, 'updateStatus']);
         Route::post('/toggle-mutuelle', [AppointmentController::class, 'toggleMutuelle']);
+        Route::post('/toggle-free-consultation', [AppointmentController::class, 'toggleFreeConsultation']);
         Route::put('/{id}/details', [AppointmentController::class, 'editAppointmentDetails']);
         Route::get('/{id}/last-info', [AppointmentController::class, 'getLastAppointmentInfo']);
         Route::post('/update-price', [AppointmentController::class, 'updatePrice']);
@@ -144,6 +146,7 @@ Route::prefix('medecin')->group(function () {
     Route::get('/statistics', [StatisticsController::class, 'getDashboardStats']);
     Route::get('/statistics/chart-data', [StatisticsController::class, 'getChartData']);
     Route::get('/statistics/range', [StatisticsController::class, 'getAvailableRange']);
+    Route::get('/statistics/appointments-detail', [StatisticsController::class, 'getAppointmentsDetail']);
 });
 
 
@@ -162,6 +165,14 @@ Route::prefix('certificates')->group(function () {
     Route::get('/{certificate}', [CertificateController::class, 'show']);
     Route::post('/', [CertificateController::class, 'store']);
     Route::delete('/{certificate}', [CertificateController::class, 'destroy']);
+});
+
+Route::prefix('custom-documents')->group(function () {
+    Route::get('/', [CustomDocumentController::class, 'indexAll']);
+    Route::get('/{customDocument}', [CustomDocumentController::class, 'show']);
+    Route::post('/', [CustomDocumentController::class, 'store']);
+    Route::put('/{customDocument}', [CustomDocumentController::class, 'update']);
+    Route::delete('/{customDocument}', [CustomDocumentController::class, 'destroy']);
 });
 
 // SETTINGS
