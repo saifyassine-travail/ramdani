@@ -73,13 +73,13 @@ interface PatientDetails {
 // Background colour of a history row by appointment status.
 function statusRowClass(status?: string): string {
   const s = (status || "").toLowerCase()
-  if (s.includes("termin")) return "bg-green-50 hover:bg-green-100"
-  if (s.includes("annul") || s.includes("cancel")) return "bg-red-50 hover:bg-red-100"
-  if (s.includes("programm")) return "bg-gray-100 hover:bg-gray-200"
-  if (s.includes("consultation")) return "bg-blue-50 hover:bg-blue-100"
-  if (s.includes("attente")) return "bg-amber-50 hover:bg-amber-100"
-  if (s.includes("prépar") || s.includes("prepar")) return "bg-orange-50 hover:bg-orange-100"
-  return "hover:bg-gray-50"
+  if (s.includes("termin")) return "bg-green-100 hover:bg-green-200"
+  if (s.includes("annul") || s.includes("cancel")) return "bg-red-100 hover:bg-red-200"
+  if (s.includes("programm")) return "bg-gray-200 hover:bg-gray-300"
+  if (s.includes("consultation")) return "bg-blue-100 hover:bg-blue-200"
+  if (s.includes("attente")) return "bg-amber-100 hover:bg-amber-200"
+  if (s.includes("prépar") || s.includes("prepar")) return "bg-orange-100 hover:bg-orange-200"
+  return "hover:bg-gray-100"
 }
 
 export default function PatientDetailsPage() {
@@ -427,6 +427,11 @@ export default function PatientDetailsPage() {
     },
     [toast],
   )
+
+  // Custom documents are now authored on the standalone "Lettres" rich text
+  // editor (/letters/new?patientId=...) rather than through a modal here —
+  // this page re-fetches the list on mount, so a document created there
+  // shows up here once the doctor navigates back.
 
   const handlePriceChange = useCallback(
     (appointmentId: number, newPrice: number) => {
@@ -1058,6 +1063,150 @@ export default function PatientDetailsPage() {
       <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Visit History Section */}
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="bg-green-50 border-b">
+              <div className="flex flex-col md:flex-row md:items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-lg text-green-800 mb-3 md:mb-0">
+                  <History className="h-5 w-5 text-green-600" />
+                  Historique des Visites
+                </CardTitle>
+                <div className="w-full md:w-64">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Rechercher par date..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 border-green-300 focus:ring-green-100"
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Coût
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Mutuelle
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reste
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Facture
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredAppointments.map((appointment: any) => (
+                      <tr
+                        key={appointment.ID_RV}
+                        className={`transition-colors cursor-pointer ${statusRowClass(appointment.status)}`}
+                        onClick={() => router.push(`/appointments/${appointment.ID_RV}`)}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(appointment.appointment_date)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {appointment.type && <Badge className="bg-blue-100 text-blue-800">{appointment.type}</Badge>}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={appointment.is_free_consultation ? 0 : (appointment.payement || "")}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                const newPrice = Number.parseFloat(e.target.value) || 0
+                                handlePriceChange(appointment.ID_RV, newPrice)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-24 text-right disabled:opacity-60 disabled:cursor-not-allowed"
+                              placeholder="0"
+                              disabled={savingAppointmentId === appointment.ID_RV || appointment.is_free_consultation}
+                              title={appointment.is_free_consultation ? "Consultation gratuite — prix non modifiable" : undefined}
+                            />
+                            <span className="text-sm text-gray-500">DH</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <label
+                            className="relative inline-flex items-center cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={appointment.mutuelle || false}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                handleToggleMutuelle(appointment.ID_RV)
+                              }}
+                              disabled={savingMutuelleId === appointment.ID_RV}
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+                          </label>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={appointment.credit !== undefined && appointment.credit !== null ? appointment.credit : ""}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                const newCredit = Number.parseFloat(e.target.value) || 0
+                                handleCreditChange(appointment.ID_RV, newCredit)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`w-24 text-right ${(appointment.credit || 0) > 0 ? "text-red-600 font-bold border-red-300 focus:ring-red-100" : ""}`}
+                              placeholder="0"
+                              disabled={savingCreditId === appointment.ID_RV}
+                            />
+                            <span className="text-sm text-gray-500">DH</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
+                            title={
+                              (!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement
+                                ? "Aucun acte ou montant pour ce rendez-vous"
+                                : "Imprimer la facture"
+                            }
+                            disabled={(!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenFacture(appointment)
+                            }}
+                          >
+                            <Receipt className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Patient Information Card */}
           <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="bg-gray-50 border-b">
@@ -1199,149 +1348,6 @@ export default function PatientDetailsPage() {
                   <p>Aucune consultation enregistrée</p>
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Visit History Section */}
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
-            <CardHeader className="bg-green-50 border-b">
-              <div className="flex flex-col md:flex-row md:items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-lg text-green-800 mb-3 md:mb-0">
-                  <History className="h-5 w-5 text-green-600" />
-                  Historique des Visites
-                </CardTitle>
-                <div className="w-full md:w-64">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      type="text"
-                      placeholder="Rechercher par date..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 border-green-300 focus:ring-green-100"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Coût
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Mutuelle
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Reste
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Facture
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredAppointments.map((appointment: any) => (
-                      <tr
-                        key={appointment.ID_RV}
-                        className={`transition-colors cursor-pointer ${statusRowClass(appointment.status)}`}
-                        onClick={() => router.push(`/appointments/${appointment.ID_RV}`)}
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap">{formatDate(appointment.appointment_date)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {appointment.type && <Badge className="bg-blue-100 text-blue-800">{appointment.type}</Badge>}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center space-x-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={appointment.payement || ""}
-                              onChange={(e) => {
-                                e.stopPropagation()
-                                const newPrice = Number.parseFloat(e.target.value) || 0
-                                handlePriceChange(appointment.ID_RV, newPrice)
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-24 text-right"
-                              placeholder="0"
-                              disabled={savingAppointmentId === appointment.ID_RV}
-                            />
-                            <span className="text-sm text-gray-500">DH</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <label
-                            className="relative inline-flex items-center cursor-pointer"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              className="sr-only peer"
-                              checked={appointment.mutuelle || false}
-                              onChange={(e) => {
-                                e.stopPropagation()
-                                handleToggleMutuelle(appointment.ID_RV)
-                              }}
-                              disabled={savingMutuelleId === appointment.ID_RV}
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
-                          </label>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center space-x-2">
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={appointment.credit !== undefined && appointment.credit !== null ? appointment.credit : ""}
-                              onChange={(e) => {
-                                e.stopPropagation()
-                                const newCredit = Number.parseFloat(e.target.value) || 0
-                                handleCreditChange(appointment.ID_RV, newCredit)
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className={`w-24 text-right ${(appointment.credit || 0) > 0 ? "text-red-600 font-bold border-red-300 focus:ring-red-100" : ""}`}
-                              placeholder="0"
-                              disabled={savingCreditId === appointment.ID_RV}
-                            />
-                            <span className="text-sm text-gray-500">DH</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
-                            title={
-                              (!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement
-                                ? "Aucun acte ou montant pour ce rendez-vous"
-                                : "Imprimer la facture"
-                            }
-                            disabled={(!appointment.medical_acts || appointment.medical_acts.length === 0) && !appointment.payement}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleOpenFacture(appointment)
-                            }}
-                          >
-                            <Receipt className="h-4 w-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </CardContent>
           </Card>
 
@@ -1665,6 +1671,7 @@ export default function PatientDetailsPage() {
         </DialogContent>
       </Dialog>
 
+
       {/* Plan Control Appointment */}
       <PlanControlModal
         open={confirmControlOpen}
@@ -1743,6 +1750,26 @@ export default function PatientDetailsPage() {
           </div>
         )
       }
+
+      {/* Minimal styling for the rich text HTML rendered via dangerouslySetInnerHTML
+          in the custom documents preview (Tailwind's preflight otherwise strips
+          list markers and heading sizes). */}
+      <style jsx global>{`
+        .custom-doc-preview h1,
+        .custom-doc-preview h2,
+        .custom-doc-preview h3 {
+          font-size: 0.875rem;
+          font-weight: 700;
+        }
+        .custom-doc-preview ul {
+          list-style: disc;
+          padding-left: 1.25rem;
+        }
+        .custom-doc-preview ol {
+          list-style: decimal;
+          padding-left: 1.25rem;
+        }
+      `}</style>
     </div >
   )
 }
@@ -2134,3 +2161,6 @@ function CertificateForm({
     </form>
   )
 }
+
+// Simple "compose your own" document: a free-text title + body, no date range
+// or template placeholders — the doctor types both directly.
