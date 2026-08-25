@@ -70,6 +70,41 @@ make export-ollama                     # -> `ollama run mediassist-summary`
 file, so already-reviewed rows (draft/approved/rejected) are preserved,
 only new completed appointments get added as new "pending" rows.
 
+## Installing an already-trained model on another machine
+
+The GGUF file (`outputs/mediassist-summary.gguf`, ~3.3GB) and everything
+under `outputs/`/`data/` is gitignored on purpose — git isn't the right way
+to move a multi-GB binary around, and GitHub rejects anything over 100MB
+without LFS anyway. If you already have a trained `mediassist-summary.gguf`
+from another machine (copied via USB drive, shared folder, cloud upload,
+etc. — that transfer is on you), installing it on a new machine needs no
+GPU and takes a minute:
+
+```bash
+# 1. Verify the copy arrived intact (matches the source machine's checksum):
+sha256sum mediassist-summary.gguf
+# current build's checksum: 943e7d4edbc6a0b3632b4548766a3ad7ab7f09fc4ed5fbbcb248b86e7d66144c
+
+# 2. Register it with the local Ollama:
+cat > Modelfile <<'EOF'
+FROM /absolute/path/to/mediassist-summary.gguf
+SYSTEM "Tu es un assistant médical qui résume un dossier de consultation pour un médecin généraliste/gynécologue, en français, de façon concise (4-6 lignes maximum). Reste uniquement sur le contenu clinique. Structure: motif, éléments cliniques marquants, conduite tenue (traitement/examens), suivi recommandé si mentionné."
+EOF
+ollama create mediassist-summary -f Modelfile
+```
+
+(Use an **absolute** path in `FROM` — a relative one is resolved against
+the Modelfile's own directory, not your shell's cwd, and silently fails
+with a confusing "pull model manifest: file does not exist" otherwise.)
+
+Then point the app at it — add to the repo root's `.env` (gitignored,
+per-machine) and restart the service:
+
+```bash
+echo "SUMMARY_MODEL=mediassist-summary" >> ../.env
+docker compose up -d patient-summary
+```
+
 ## What's NOT built yet
 
 - **Serving endpoint**: this only produces a fine-tuned model registered
