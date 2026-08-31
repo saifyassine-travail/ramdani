@@ -87,8 +87,12 @@ export interface Appointment {
   appointment_date: string
   type: string
   status: string
+  /** Waiting-room ticket, handed out when the patient leaves "Programmé". */
+  queue_number?: number | null
   start_time?: string | null
   end_time?: string | null
+  consultation_started_at?: string | null
+  consultation_ended_at?: string | null
   diagnostic?: string
   mutuelle: boolean | number // Can be 0/1 from Laravel or boolean from frontend
   is_free_consultation?: boolean | number
@@ -117,9 +121,112 @@ export interface CaseDescription {
   notes?: string
 }
 
+/** Prise en charge par un régime AMO, telle que publiée par l'organisme. */
+export interface RemboursementRegime {
+  regime: "CNSS" | "CNOPS"
+  ean13: string
+  nom: string
+  dci: string | null
+  presentation: string | null
+  categorie: string | null
+  remboursable: number
+  ppv: string | number | null
+  base: string | number | null
+  taux: string | number | null
+  montant_rembourse: string | number | null
+  reste_a_charge: string | number | null
+  montant_rembourse_ald: string | number | null
+  reste_a_charge_ald: string | number | null
+  taux_ald: string | number | null
+  code_groupe: string | null
+  match_score: string | number
+  match_method: string
+}
+
+/** État d.une source lors du dernier relevé. */
+export interface NewsSourceStatus {
+  ok: boolean
+  count: number
+  label: string
+  kind?: string
+  home?: string
+}
+
+/** Article d.actualité médicale, normalisé quelle que soit la source. */
+export interface MedicalNewsItem {
+  source: string
+  source_label: string
+  source_home: string
+  /** « Officiel », « Presse », « Spécialisé » — sert à regrouper les filtres. */
+  source_kind?: string
+  title: string
+  url: string
+  summary: string | null
+  published_at: string | null
+  category: string | null
+  image: string | null
+}
+
+/** Prise en charge résumée, par régime, pour l.affichage en liste. */
+export type RegimeCoverage = Partial<
+  Record<"CNSS" | "CNOPS", { remboursable: boolean; taux: number | null; base: number | null }>
+>
+
+/** Membre du groupe de substitution officiel CNOPS. */
+export interface EquivalentOfficiel {
+  ean13: string
+  nom: string
+  dosage: string | null
+  forme: string | null
+  type: string | null
+  ppv: string | number | null
+  base: string | number | null
+  economie: string | number | null
+  economie_pct: string | number | null
+  code_groupe: string | null
+}
+
+/** Équivalent issu du catalogue national (même DCI, ou substituable). */
+export interface EquivalentCatalogue {
+  id: number
+  nom: string
+  forme: string | null
+  dosage: string | null
+  presentation?: string | null
+  pack_size?: number | null
+  ppv: string | number | null
+  ppv_unitaire?: string | number | null
+  unite_conditionnement?: string | null
+  is_princeps: number
+  laboratoire: string | null
+  economie_pct?: string | number | null
+}
+
+/** Fiche de la base nationale, avant import dans le catalogue du cabinet. */
+export interface ReferenceMedicament {
+  id: number
+  name: string
+  brand: string | null
+  form: string | null
+  dosage: string | null
+  presentation: string | null
+  ppv: string | number | null
+  prix_hospitalier: string | number | null
+  composition: string | null
+  atc_code: string | null
+  is_princeps: number
+  laboratoire: string | null
+  classe_therapeutique: string | null
+  remboursable: boolean
+}
+
 export interface Medicament {
   ID_Medicament: number
   id?: number
+  /** Identifiant dans la base nationale, quand le produit en provient. */
+  ref_id?: number | null
+  /** Nom de marque sans le dosage (« AMOXIL » pour « AMOXIL 1 G »). */
+  brand?: string | null
   name: string
   price: number | null
   prix_hospitalier?: number | null
@@ -302,6 +409,15 @@ class ApiClient {
   > {
     const endpoint = date ? `/appointments/${date}` : "/appointments"
     return this.request(endpoint, {}, skipCache)
+  }
+
+  /** Renumber the waiting-room queue: `ids` is the new order, tickets become 1..N. */
+  async reorderQueue(ids: number[]): Promise<ApiResponse<null>> {
+    return this.request("/appointments/reorder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
   }
 
   async getMonthlyCounts(yearMonth: string): Promise<ApiResponse<Record<string, number>>> {
@@ -897,6 +1013,130 @@ class ApiClient {
       error: response.error,
       data: []
     } as ApiResponse<Medicament[]>
+  }
+
+  // ── Base de référence nationale (schéma med_ref) ──────────────────────
+  // Alimentée par scripts/med-scraper. Absente, ces routes répondent
+  // `available: false` et l'interface masque simplement les sections.
+
+  // `request()` renvoie toujours { success, data: <corps de la réponse> } :
+  // ces méthodes déballent `data` pour livrer directement le corps envoyé par
+  // l'API, sans quoi les clés de premier niveau (coverage, regimes…) sont
+  // silencieusement perdues.
+
+  /** Prise en charge CNSS et CNOPS pour un médicament du catalogue. */
+  async getMedicamentRemboursement(id: number): Promise<{
+    available: boolean
+    matched?: boolean
+    regimes: RemboursementRegime[]
+  }> {
+    const r = await this.request<{
+      available?: boolean
+      matched?: boolean
+      regimes?: RemboursementRegime[]
+    }>(`/medicaments/${id}/remboursement`)
+    const b = r.data
+    return {
+      available: r.success && b?.available !== false,
+      matched: b?.matched,
+      regimes: b?.regimes ?? [],
+    }
+  }
+
+  /** Équivalents : groupe officiel CNOPS, substituables, et même DCI. */
+  async getMedicamentEquivalents(id: number): Promise<{
+    available: boolean
+    matched?: boolean
+    officiels: EquivalentOfficiel[]
+    substituables: EquivalentCatalogue[]
+    meme_dci: EquivalentCatalogue[]
+  }> {
+    const r = await this.request<{
+      available?: boolean
+      matched?: boolean
+      officiels?: EquivalentOfficiel[]
+      substituables?: EquivalentCatalogue[]
+      meme_dci?: EquivalentCatalogue[]
+    }>(`/medicaments/${id}/equivalents`)
+    const b = r.data
+    return {
+      available: r.success && b?.available !== false,
+      matched: b?.matched,
+      officiels: b?.officiels ?? [],
+      substituables: b?.substituables ?? [],
+      meme_dci: b?.meme_dci ?? [],
+    }
+  }
+
+  /**
+   * Prise en charge de toute une page du catalogue en une requête.
+   * Renvoie { [ID_Medicament]: { CNSS?: {...}, CNOPS?: {...} } }.
+   */
+  async getMedicamentCoverage(
+    ids: number[],
+  ): Promise<{ available: boolean; coverage: Record<string, RegimeCoverage> }> {
+    if (ids.length === 0) return { available: true, coverage: {} }
+    const r = await this.request<{
+      available?: boolean
+      coverage?: Record<string, RegimeCoverage>
+    }>(`/medicaments/reference/coverage?ids=${ids.join(",")}`)
+    const b = r.data
+    return {
+      available: r.success && b?.available !== false,
+      coverage: b?.coverage ?? {},
+    }
+  }
+
+  /**
+   * Actualites medicales marocaines, agregees cote serveur depuis les
+   * sources officielles (ANAM, CNSS, medicament.ma) et mises en cache 30 min.
+   */
+  async getMedicalNews(refresh = false): Promise<{
+    items: MedicalNewsItem[]
+    sources: Record<string, NewsSourceStatus>
+    fetched_at: string | null
+  }> {
+    const r = await this.request<{
+      items?: MedicalNewsItem[]
+      sources?: Record<string, NewsSourceStatus>
+      fetched_at?: string
+    }>(`/news`, {}, refresh)
+    return {
+      items: r.data?.items ?? [],
+      sources: r.data?.sources ?? {},
+      fetched_at: r.data?.fetched_at ?? null,
+    }
+  }
+
+  /** Recherche dans la base nationale, pour importer dans le catalogue. */
+  async searchMedicamentReference(
+    q: string,
+  ): Promise<{ available: boolean; results: ReferenceMedicament[] }> {
+    const r = await this.request<{ available?: boolean; results?: ReferenceMedicament[] }>(
+      `/medicaments/reference/search?q=${encodeURIComponent(q)}`,
+    )
+    const b = r.data
+    return { available: r.success && b?.available !== false, results: b?.results ?? [] }
+  }
+
+  /** Copie des produits de la base nationale vers le catalogue du cabinet. */
+  async importMedicamentReference(
+    refIds: number[],
+  ): Promise<{ success: boolean; created: number; updated: number; message?: string }> {
+    const r = await this.request<{ created?: number; updated?: number; message?: string }>(
+      "/medicaments/reference/import",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref_ids: refIds }),
+      },
+    )
+    return {
+      success: r.success,
+      created: r.data?.created ?? 0,
+      updated: r.data?.updated ?? 0,
+      message: r.data?.message ?? r.message,
+    }
   }
 
   async createMedicament(medicamentData: {

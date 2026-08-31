@@ -106,10 +106,13 @@ export default function MedicalSidebar({ currentPage, user }: MedicalSidebarProp
       show: false, // hidden for this delivery — re-enable per-client if needed
     },
     {
-      id: "research",
-      label: "Recherche Clinique",
+      // Remplace « Recherche Clinique » : agrège les actualités des sources
+      // officielles marocaines (ANAM, CNSS, medicament.ma). La permission
+      // « research » reste la clé d'accès, pour ne pas rouvrir des droits.
+      id: "news",
+      label: "Actualités",
       icon: <BookOpen size={20} />,
-      href: "/research",
+      href: "/news",
       show: user.role === "admin" || hasPermission("research"),
     },
     {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { apiClient, type Appointment } from "@/lib/api"
 import { formatName } from "@/lib/utils"
@@ -54,15 +54,64 @@ interface DashboardData {
   patientHistory: Appointment[]
 }
 
+/** « 12 min », « 1 h 05 » — depuis le début de la consultation. */
+const elapsedSince = (iso?: string | null) => {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return null
+  const mins = Math.max(0, Math.floor((Date.now() - t) / 60000))
+  if (mins < 60) return `${mins} min`
+  return `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`
+}
+
+const ageOf = (birth?: string | null) => {
+  if (!birth) return null
+  const d = new Date(birth)
+  return Number.isNaN(d.getTime())
+    ? null
+    : Math.floor((Date.now() - d.getTime()) / 3.15576e10)
+}
+
+/** Petite étiquette d'information : libellé au-dessus, valeur en dessous. */
+const InfoChip = ({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string
+  value: React.ReactNode
+  tone?: "neutral" | "alert" | "accent"
+}) => {
+  const tones = {
+    neutral: "bg-gray-50 border-gray-200 text-gray-900",
+    alert: "bg-red-50 border-red-200 text-red-900",
+    accent: "bg-blue-50 border-blue-200 text-blue-900",
+  }
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${tones[tone]}`}>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.07em] opacity-60">{label}</div>
+      <div className="mt-0.5 truncate text-[13.5px] font-medium">{value || "—"}</div>
+    </div>
+  )
+}
+
 const DoctorDashboard = () => {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<DashboardData | null>(null)
+  // Fait avancer le chrono de consultation sans dépendre du rafraîchissement API.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchDashboardData()
-    const interval = setInterval(() => fetchDashboardData(true), 1000) // Refresh every 1s for near real-time
+    // 1 s relançait le rendu (et donc les animations) en permanence ; 5 s reste
+    // temps réel pour une salle d.attente et laisse l.interface respirer.
+    const interval = setInterval(() => fetchDashboardData(true), 5000)
     return () => clearInterval(interval)
   }, [])
 
@@ -295,10 +344,10 @@ const DoctorDashboard = () => {
   if (!data) return null
 
   return (
-    <div className="min-h-screen bg-gray-50/50 p-6 space-y-6">
+    <div className="md-page flex h-full flex-col gap-4 overflow-hidden bg-gray-50/50 p-5">
       {/* Header Stats Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="flex flex-row items-center p-4 space-x-4 shadow-sm hover:shadow-md transition-shadow">
+      <div className="grid flex-none grid-cols-1 gap-4 md:grid-cols-4">
+        <Card className="md-stat flex flex-row items-center space-x-4 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
           <div className="p-3 bg-blue-100 rounded-full">
             <Users className="w-6 h-6 text-blue-600" />
           </div>
@@ -308,7 +357,7 @@ const DoctorDashboard = () => {
           </div>
         </Card>
 
-        <Card className="flex flex-row items-center p-4 space-x-4 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="md-stat flex flex-row items-center space-x-4 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
           <div className="p-3 bg-green-100 rounded-full">
             <CreditCard className="w-6 h-6 text-green-600" />
           </div>
@@ -318,7 +367,7 @@ const DoctorDashboard = () => {
           </div>
         </Card>
 
-        <Card className="flex flex-row items-center p-4 space-x-4 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="md-stat flex flex-row items-center space-x-4 p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
           <div className="p-3 bg-orange-100 rounded-full">
             <Clock className="w-6 h-6 text-orange-600" />
           </div>
@@ -328,7 +377,7 @@ const DoctorDashboard = () => {
           </div>
         </Card>
 
-        <Card className="items-center justify-between p-4 bg-primary text-primary-foreground shadow-md hidden md:flex">
+        <Card className="md-stat hidden items-center justify-between bg-primary p-4 text-primary-foreground shadow-md transition-all hover:-translate-y-0.5 md:flex">
           <div>
             <p className="text-sm font-medium opacity-90">Salle d'attente</p>
             <h3 className="text-3xl font-bold">{data.waitingPatients.length}</h3>
@@ -337,47 +386,109 @@ const DoctorDashboard = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-180px)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 lg:grid-cols-12">
         {/* Main Focus: Active Consultation (Left Column) */}
-        <div className="lg:col-span-8 flex flex-col space-y-6">
-          <Card className="flex-1 border-primary/20 shadow-md relative overflow-hidden flex flex-col">
+        <div className="md-stagger flex min-h-0 flex-col lg:col-span-8">
+          <Card className="relative flex min-h-0 flex-1 flex-col overflow-hidden border-primary/20 shadow-md">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-primary to-blue-400" />
 
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <div>
-                  <Badge variant="outline" className="mb-2 bg-primary/10 text-primary border-primary/20">
-                    <Activity className="w-3 h-3 mr-1 animate-pulse" />
-                    Consultation en cours
-                  </Badge>
-                  <CardTitle className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                    {data.currentPatient ? (
-                      <>
-                        {data.currentPatient.patient.gender === "Female" ? "Mme." : "M."} {formatName(data.currentPatient.patient.first_name, data.currentPatient.patient.last_name)}
-                      </>
-                    ) : (
-                      "Aucun patient en consultation"
-                    )}
-                  </CardTitle>
-                  <CardDescription className="text-lg mt-1">
-                    {data.currentPatient ? (
-                      <span className="flex items-center gap-2">
-                        {new Date().getFullYear() - new Date(data.currentPatient.patient.birth_day!).getFullYear()} ans
-                        • {data.currentPatient.type}
-                      </span>
-                    ) : (
-                      "Veuillez sélectionner un patient dans la file d'attente ou appeler le suivant."
-                    )}
-                  </CardDescription>
-                </div>
+            <CardHeader className="flex-none pb-3">
+              <div className="flex items-start gap-4">
                 {data.currentPatient && (
-                  <Avatar className="w-20 h-20 border-4 border-white shadow-sm font-bold text-2xl">
+                  <Avatar className="md-avatar h-14 w-14 flex-none border-2 border-white text-lg font-bold shadow-sm">
                     <AvatarFallback className="bg-primary/10 text-primary">
                       {getInitials(data.currentPatient.patient.first_name, data.currentPatient.patient.last_name)}
                     </AvatarFallback>
                   </Avatar>
                 )}
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
+                      <span className="md-live-dot mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                      Consultation en cours
+                    </Badge>
+                    {/* Le chrono répond à « depuis combien de temps ce patient
+                        est-il avec moi ? » — l'information la plus utile ici. */}
+                    {data.currentPatient?.consultation_started_at && (
+                      <Badge variant="outline" className="border-orange-200 bg-orange-50 font-mono text-orange-700">
+                        <Clock className="mr-1 h-3 w-3" />
+                        {elapsedSince(data.currentPatient.consultation_started_at)}
+                      </Badge>
+                    )}
+                    {data.currentPatient?.mutuelle ? (
+                      <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                        Mutuelle
+                      </Badge>
+                    ) : null}
+                  </div>
+
+                  <CardTitle className="mt-1.5 truncate text-2xl font-bold text-gray-900">
+                    {data.currentPatient ? (
+                      <>
+                        {data.currentPatient.patient.gender === "Female" ? "Mme." : "M."}{" "}
+                        {formatName(
+                          data.currentPatient.patient.first_name,
+                          data.currentPatient.patient.last_name,
+                        )}
+                      </>
+                    ) : (
+                      "Aucun patient en consultation"
+                    )}
+                  </CardTitle>
+
+                  <CardDescription className="mt-0.5 text-sm">
+                    {data.currentPatient ? (
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {ageOf(data.currentPatient.patient.birth_day) != null && (
+                          <span>{ageOf(data.currentPatient.patient.birth_day)} ans</span>
+                        )}
+                        <span className="text-gray-300">·</span>
+                        <span>{data.currentPatient.type}</span>
+                        {data.currentPatient.patient.phone_num && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Phone className="h-3 w-3 text-gray-400" />
+                              {data.currentPatient.patient.phone_num}
+                            </span>
+                          </>
+                        )}
+                        {data.currentPatient.patient.blood_type && (
+                          <>
+                            <span className="text-gray-300">·</span>
+                            <span className="font-medium text-red-600">
+                              {data.currentPatient.patient.blood_type}
+                            </span>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      "Sélectionnez un patient dans la file d'attente ou appelez le suivant."
+                    )}
+                  </CardDescription>
+                </div>
               </div>
+
+              {/* Les contre-indications se lisent avant tout le reste. */}
+              {data.currentPatient &&
+                (data.currentPatient.patient.allergies ||
+                  data.currentPatient.patient.chronic_conditions) && (
+                  <div className="md-alert mt-3 flex flex-wrap gap-2">
+                    {data.currentPatient.patient.allergies && (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[12.5px] font-medium text-red-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Allergie : {data.currentPatient.patient.allergies}
+                      </span>
+                    )}
+                    {data.currentPatient.patient.chronic_conditions && (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12.5px] font-medium text-amber-800">
+                        <Activity className="h-3.5 w-3.5" />
+                        {data.currentPatient.patient.chronic_conditions}
+                      </span>
+                    )}
+                  </div>
+                )}
             </CardHeader>
 
             <CardContent className="flex-1 overflow-auto">
@@ -389,65 +500,91 @@ const DoctorDashboard = () => {
                   </TabsList>
 
                   <div className="flex-1 overflow-y-auto pr-2">
-                    <TabsContent value="details" className="mt-0 space-y-6">
-                      <div className="grid grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                            <User className="w-4 h-4" /> Personnel
-                          </h4>
-                          <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                            <div className="flex justify-between border-b pb-2 border-dashed border-gray-200">
-                              <span className="text-gray-500">CIN</span>
-                              <span className="font-medium">{data.currentPatient.patient.CIN || "N/A"}</span>
+                    <TabsContent value="details" className="md-stagger mt-0 space-y-4">
+                      {/* Constantes : ce qu'on regarde en premier pendant l'examen. */}
+                      {(() => {
+                        const cd: any = data.currentPatient!.caseDescription || {}
+                        const vitals = [
+                          ["Tension", cd.blood_pressure],
+                          ["Pouls", cd.pulse ? `${cd.pulse} bpm` : null],
+                          ["Temp.", cd.temperature ? `${cd.temperature} °C` : null],
+                          ["SpO₂", cd.spo2 ? `${cd.spo2} %` : null],
+                          ["Poids", cd.weight ? `${cd.weight} kg` : null],
+                          ["Taille", cd.tall ? `${cd.tall} m` : null],
+                        ].filter(([, v]) => v) as [string, string][]
+                        if (vitals.length === 0) {
+                          return (
+                            <div className="rounded-lg border border-dashed border-gray-200 px-4 py-3 text-[13px] text-gray-400">
+                              Aucune constante saisie pour cette consultation.
                             </div>
-                            <div className="flex justify-between border-b pb-2 border-dashed border-gray-200">
-                              <span className="text-gray-500">Téléphone</span>
-                              <span className="font-medium flex items-center gap-1">
-                                <Phone className="w-3 h-3 text-gray-400" />
-                                {data.currentPatient.patient.phone_num || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between border-b pb-2 border-dashed border-gray-200">
-                              <span className="text-gray-500">Mutuelle</span>
-                              <span className="font-medium text-blue-600">{data.currentPatient.patient.mutuelle || "N/A"}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4" /> Alertes Médicales
-                          </h4>
-                          <div className="bg-red-50 p-4 rounded-lg space-y-3 border border-red-100">
-                            <div className="space-y-1">
-                              <span className="text-xs font-semibold text-red-500 uppercase">Allergies</span>
-                              <p className="font-medium text-gray-800">{data.currentPatient.patient.allergies || "Aucune"}</p>
-                            </div>
-                            <div className="space-y-1 pt-2 border-t border-red-100/50">
-                              <span className="text-xs font-semibold text-red-500 uppercase">Maladies Chroniques</span>
-                              <p className="font-medium text-gray-800">{data.currentPatient.patient.chronic_conditions || "Aucune"}</p>
+                          )
+                        }
+                        return (
+                          <div>
+                            <h4 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                              <Activity className="h-3.5 w-3.5" /> Constantes
+                            </h4>
+                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                              {vitals.map(([label, value]) => (
+                                <div key={label} className="rounded-lg bg-gray-50 px-2.5 py-2 text-center">
+                                  <div className="text-[10px] font-medium uppercase tracking-[0.05em] text-gray-400">
+                                    {label}
+                                  </div>
+                                  <div className="mt-0.5 font-mono text-[15px] font-bold tabular-nums text-gray-800">
+                                    {value}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                        </div>
-                      </div>
+                        )
+                      })()}
 
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">
-                          <Stethoscope className="w-4 h-4" /> Motif de consultation & Observations
+                      {/* Motif : le texte le plus long, donc le plus de largeur. */}
+                      <div>
+                        <h4 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                          <Stethoscope className="h-3.5 w-3.5" /> Motif &amp; observations
                         </h4>
-                        <div className="bg-blue-50/50 p-6 rounded-lg border border-blue-100">
-                          <p className="text-base text-gray-700 whitespace-pre-wrap">
-                            {data.currentPatient.caseDescription?.case_description || data.currentPatient.Diagnostic || data.currentPatient.notes || "Aucun motif spécifié."}
+                        <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+                          <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-gray-700">
+                            {data.currentPatient.caseDescription?.case_description ||
+                              data.currentPatient.diagnostic ||
+                              data.currentPatient.notes ||
+                              "Aucun motif spécifié."}
                           </p>
                           {data.currentPatient.caseDescription?.notes && (
-                            <div className="mt-4 pt-4 border-t border-blue-100">
-                              <span className="text-xs font-semibold text-blue-500 uppercase mb-1 block">Notes complémentaires</span>
-                              <p className="text-sm text-gray-600">{data.currentPatient.caseDescription.notes}</p>
+                            <div className="mt-3 border-t border-blue-100 pt-3">
+                              <span className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.06em] text-blue-500">
+                                Notes complémentaires
+                              </span>
+                              <p className="text-[13px] text-gray-600">
+                                {data.currentPatient.caseDescription.notes}
+                              </p>
                             </div>
                           )}
                         </div>
                       </div>
 
+                      {/* Administratif : utile mais secondaire, donc compact. */}
+                      <div>
+                        <h4 className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
+                          <User className="h-3.5 w-3.5" /> Dossier
+                        </h4>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          <InfoChip label="CIN" value={data.currentPatient.patient.CIN} />
+                          <InfoChip label="Téléphone" value={data.currentPatient.patient.phone_num} />
+                          <InfoChip
+                            label="Mutuelle"
+                            value={data.currentPatient.patient.mutuelle}
+                            tone={data.currentPatient.patient.mutuelle ? "accent" : "neutral"}
+                          />
+                          <InfoChip
+                            label="Groupe sanguin"
+                            value={data.currentPatient.patient.blood_type}
+                            tone={data.currentPatient.patient.blood_type ? "alert" : "neutral"}
+                          />
+                        </div>
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="history" className="mt-0">

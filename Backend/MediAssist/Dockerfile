@@ -14,7 +14,14 @@ WORKDIR /var/www
 
 COPY . .
 
-RUN composer install --no-dev --optimize-autoloader
+ENV COMPOSER_PROCESS_TIMEOUT=0
+ENV COMPOSER_MAX_PARALLEL_HTTP=2
+# Retry: composer caches completed downloads, so a re-run only fetches what a
+# flaky connection dropped (e.g. the large google/apiclient-services zip).
+RUN for i in 1 2 3 4 5; do \
+      composer install --no-dev --optimize-autoloader --no-interaction && break; \
+      echo "composer install attempt $i failed, retrying..."; sleep 10; \
+    done
 
 RUN php artisan config:clear \
     && php artisan route:clear \

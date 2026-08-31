@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AppointmentController;
 use App\Http\Controllers\PatientController;
 use App\Http\Controllers\MedicamentController;
+use App\Http\Controllers\MedicamentReferenceController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\SetupController;
@@ -26,6 +27,7 @@ Route::middleware('api')->group(function () {
         Route::get('/{date?}', [AppointmentController::class, 'index']);
         Route::get('/monthly-counts/{yearMonth}', [AppointmentController::class, 'monthlyCounts']);
         Route::post('/update-status', [AppointmentController::class, 'updateStatus']);
+        Route::post('/reorder', [AppointmentController::class, 'reorder']);
         Route::post('/toggle-mutuelle', [AppointmentController::class, 'toggleMutuelle']);
         Route::post('/toggle-free-consultation', [AppointmentController::class, 'toggleFreeConsultation']);
         Route::put('/{id}/details', [AppointmentController::class, 'editAppointmentDetails']);
@@ -86,14 +88,26 @@ Route::prefix('research-cases')->group(function () {
 Route::post('/extract-cin', [App\Http\Controllers\CinExtractionController::class, 'extract']);
 
 // MEDICAMENTS
-Route::prefix('medicaments')->controller(MedicamentController::class)->group(function () {
-    Route::get('/search', 'search');          // put search FIRST
+Route::prefix("medicaments")->controller(MedicamentController::class)->group(function () {
+    Route::get("/search", "search");          // put search FIRST
     Route::get('/', 'index');
     Route::post('/', 'store');
     Route::put('{id}', 'update');             // keep this AFTER search
     Route::patch('{id}/archive', 'archive');
     Route::patch('{id}/restore', 'restore');
     Route::patch('{id}/favorite', 'toggleFavorite');
+});
+
+// MEDICAMENTS — base de référence nationale
+// (schéma PostgreSQL med_ref : catalogue medicament.ma + listes CNSS / CNOPS).
+// Chargée par scripts/med-scraper/load_postgres.sh ; absente, ces routes
+// répondent « non disponible » sans casser le catalogue du cabinet.
+Route::prefix('medicaments')->controller(MedicamentReferenceController::class)->group(function () {
+    Route::get('/reference/search', 'search');
+    Route::get('/reference/coverage', 'coverage');
+    Route::post('/reference/import', 'import');
+    Route::get('{id}/remboursement', 'remboursement');
+    Route::get('{id}/equivalents', 'equivalents');
 });
 
 
@@ -222,3 +236,7 @@ Route::prefix('backup')->middleware('auth:sanctum')->group(function () {
     Route::get('/history', [App\Http\Controllers\BackupController::class, 'backupHistory']);
 });
 
+
+// ACTUALITÉS MÉDICALES — agrégation des sources officielles marocaines
+// (ANAM, CNSS, medicament.ma). Mise en cache 30 min côté serveur.
+Route::get('/news', [App\Http\Controllers\NewsController::class, 'index']);

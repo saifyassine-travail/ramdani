@@ -13,7 +13,7 @@ class Medicament extends Model
     protected $primaryKey = 'ID_Medicament';
 
     protected $fillable = [
-        'name', 'price', 'prix_hospitalier', 'dosage', 'composition',
+        'ref_id', 'name', 'brand', 'price', 'prix_hospitalier', 'dosage', 'composition',
         'Classe_thérapeutique', 'Code_ATCv',
         'type', 'type_category', 'laboratory', 'statut',
         'archived', 'is_favorite',

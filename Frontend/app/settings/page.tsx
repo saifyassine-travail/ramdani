@@ -1040,6 +1040,33 @@ export default function SettingsPage() {
 
               <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
                 <div>
+                  <Label>Séparer le dosage du nom de marque</Label>
+                  <p className="text-sm text-gray-500">
+                    Afficher « AMOXIL » et « 1 G » dans deux colonnes distinctes plutôt que
+                    « AMOXIL 1 G » sur une seule ligne
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.separate_dosage ?? false}
+                  onCheckedChange={(checked) => setSettings({ ...settings, separate_dosage: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
+                <div>
+                  <Label>Afficher le remboursement CNSS / CNOPS</Label>
+                  <p className="text-sm text-gray-500">
+                    Montrer la prise en charge et la base de remboursement dans la liste des médicaments
+                  </p>
+                </div>
+                <Switch
+                  checked={settings?.show_reimbursement ?? true}
+                  onCheckedChange={(checked) => setSettings({ ...settings, show_reimbursement: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-50 transition-colors">
+                <div>
                   <Label>Suggestions automatiques (Description du cas)</Label>
                   <p className="text-sm text-gray-500">
                     Proposer une complétion en gris pendant la saisie ; appuyez sur Tab pour l'accepter

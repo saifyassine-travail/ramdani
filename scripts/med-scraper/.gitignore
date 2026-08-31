@@ -1,0 +1,12 @@
+# Données brutes du scrape : volumineuses et entièrement régénérables par
+# ./run_all.sh. Seul l'artefact final versionné compte (dist/).
+data/*.jsonl
+data/*.json
+data/*.txt
+data/*.pdf
+
+# Sorties de build : la base est publiée compressée dans dist/.
+out/
+
+__pycache__/
+*.pyc

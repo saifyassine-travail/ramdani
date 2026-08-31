@@ -97,6 +97,7 @@ class SettingsController extends Controller
                 'practice_name', 'specialization', 'license_number', 'address', 'phone',
                 'practice_email', 'session_timeout', 'two_factor_enabled', 'custom_measures',
                 'ordonnance_background', 'ordonnance_layout', 'show_ddr', 'case_autosuggest',
+                'separate_dosage', 'show_reimbursement',
                 'default_consultation_price', 'default_control_price', 'default_control_days', 'medical_acts',
                 'facture_background', 'facture_layout', 'certificate_template', 'practice_city',
                 'case_description_cumulative', 'certificate_background', 'certificate_layout',

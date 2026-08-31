@@ -137,47 +137,48 @@ class MedecinController extends Controller
     }
 
 
+    /**
+     * Duree moyenne d'une consultation, en minutes.
+     *
+     * Carbon 3 renvoie une difference *signee* : `$fin->diffInMinutes($debut)`
+     * vaut -25 et non 25. L'ancien code testait `> 0` sur cette valeur, si bien
+     * qu'aucune consultation n'etait jamais comptee et que la moyenne affichait
+     * toujours 0. On mesure donc du debut vers la fin, avec abs() comme
+     * garde-fou si les deux horodatages sont inverses en base.
+     */
     private function computeAverageConsultationTime($appointments)
     {
-        if ($appointments->isEmpty()) return 0;
+        if ($appointments->isEmpty()) {
+            return 0;
+        }
 
+        // Au-dela de 4 h il s'agit d'un statut oublie, pas d'une vraie duree.
+        $maxMinutes = 240;
         $totalMinutes = 0;
         $count = 0;
 
         foreach ($appointments as $appointment) {
-            // Priority 1: Use specific consultation timestamps
+            $minutes = null;
+
+            // 1. Les horodatages dedies, quand la consultation a ete suivie.
             if ($appointment->consultation_started_at && $appointment->consultation_ended_at) {
-                $start = Carbon::parse($appointment->consultation_started_at);
-                $end = Carbon::parse($appointment->consultation_ended_at);
-                
-                $minutes = $end->diffInMinutes($start);
-                
-                // Only count reasonable durations (e.g. < 4 hours and > 0)
-                if ($minutes > 0 && $minutes < 240) {
-                    $totalMinutes += $minutes;
-                    $count++;
-                    continue;
-                }
+                $minutes = abs(Carbon::parse($appointment->consultation_started_at)
+                    ->diffInMinutes(Carbon::parse($appointment->consultation_ended_at)));
             }
 
-            // Priority 2: Fallback to updated_at - created_at (Old Logic but Safer)
-            // Only if timestamps are missing or invalid
-            $start = $appointment->created_at;
-            $end = $appointment->updated_at;
+            // 2. Sinon, l'ecart creation -> derniere modification de la fiche.
+            if (($minutes === null || $minutes <= 0) && $appointment->created_at && $appointment->updated_at) {
+                $minutes = abs(Carbon::parse($appointment->created_at)
+                    ->diffInMinutes(Carbon::parse($appointment->updated_at)));
+            }
 
-            // Ensure start is before end
-            if ($start && $end && $end->gt($start)) {
-                 $minutes = $end->diffInMinutes($start);
-                 // Filter out extremely long durations (e.g. created days ago) which might skew data
-                 // Only count if it's within the same day logic roughly (e.g. < 4 hours)
-                 if ($minutes > 0 && $minutes < 240) {
-                    $totalMinutes += $minutes;
-                    $count++;
-                 }
+            if ($minutes !== null && $minutes > 0 && $minutes < $maxMinutes) {
+                $totalMinutes += $minutes;
+                $count++;
             }
         }
 
-        return $count > 0 ? round($totalMinutes / $count) : 0;
+        return $count > 0 ? (int) round($totalMinutes / $count) : 0;
     }
 
     public function updateStatus(\Illuminate\Http\Request $request)

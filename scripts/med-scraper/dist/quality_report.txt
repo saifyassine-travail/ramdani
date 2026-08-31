@@ -1,0 +1,76 @@
+==============================================================================
+RAPPORT QUALITE - base medicaments Maroc
+  catalogue     : medicament.ma
+  remboursement : CNSS (www.cnss.ma) + CNOPS (www.cnops.org.ma)
+==============================================================================
+medicaments (catalogue)   : 5030
+lignes CNSS              :   7791  dont remboursables 5261
+lignes CNOPS             :  10103  dont remboursables 5196
+medicaments rattaches     :   3688  (73.3%)
+
+--- couverture des champs (catalogue) ---
+  brand                    5030 / 5030    100.0%
+  form                     5007 / 5030     99.5%
+  dosage                   4497 / 5030     89.4%
+  presentation             5001 / 5030     99.4%
+  composition              4890 / 5030     97.2%
+  atc_code                 4397 / 5030     87.4%
+  laboratory_id            5007 / 5030     99.5%
+  therapeutic_class_id     4494 / 5030     89.3%
+  ppv                      4536 / 5030     90.2%
+  prix_hospitalier         4478 / 5030     89.0%
+  pack_size                4988 / 5030     99.2%
+  ppv_unitaire             3332 / 5030     66.2%
+  indications              4211 / 5030     83.7%
+  posologie                  25 / 5030      0.5%
+  tableau                  4825 / 5030     95.9%
+  nature                   3682 / 5030     73.2%
+  date_maj                 5030 / 5030    100.0%
+
+--- remboursement ---
+  produits rembourses CNSS               5261
+  produits rembourses CNOPS              5196
+  base connue CNSS                       5261
+  base connue CNOPS                      5196
+  lignes v_remboursement_officiel       10457
+  lignes v_remboursement (catalogue)     3968
+  EAN presents dans les 2 regimes        7661
+
+--- rapprochement catalogue <-> listes officielles ---
+  CNOPS  nom+dosage+conditionnement+ppv         2560
+  CNSS   nom+dosage+conditionnement+ppv         2517
+  CNOPS  nom+conditionnement+ppv                 819
+  CNSS   nom+conditionnement+ppv                 819
+  CNSS   nom                                      88
+  CNSS   nom+conditionnement                      87
+  CNOPS  nom                                      80
+  CNOPS  nom+conditionnement                      77
+  CNSS   nom+dosage+conditionnement               76
+  CNOPS  nom+dosage+conditionnement               60
+  medicaments rattaches dosage+conditionnement concordants : 2641
+
+--- capacite d'equivalence ---
+  cle DCI renseignee                        4890
+  cle substituable renseignee               4472
+  groupes DCI (>1 produit)                   632
+  groupes substituables (>1 produit)         652
+  groupes ATC niveau 4                       329
+  groupes officiels CNOPS (>1 produit)      1683
+  paires d'equivalents officiels           33252
+
+--- exemples : remboursement officiel ---
+  CNOPS  AMOXIL                         PPV     61.20  base     56.90   70%  ->      39.83  reste    21.37
+  CNOPS  AMOXIL                         PPV     51.40  base     51.40   70%  ->      35.98  reste    15.42
+  CNOPS  AMOXIL                         PPV     14.10  base     14.10   70%  ->       9.87  reste     4.23
+  CNOPS  AMOXIL                         PPV     47.75  base     32.30   70%  ->      22.61  reste    25.14
+  CNOPS  AMOXIL                         PPV     45.00  base     38.10   70%  ->      26.67  reste    18.33
+  CNOPS  AMOXIL                         PPV     65.00  base     52.10   70%  ->      36.47  reste    28.53
+  CNOPS  AMOXIL                         PPV     84.45  base     56.90   70%  ->      39.83  reste    44.62
+  CNOPS  AMOXIL                         PPV     11.40  base     11.40   70%  ->       7.98  reste     3.42
+
+--- exemples : equivalents officiels CNOPS (meme groupe) ---
+  SUTENT                          38480.00 dh  ->  SOVIDEX 50 MG                   19439.00 dh   (-19041.00)
+  SUTENT                          38480.00 dh  ->  JOSUNI 50 MG                    19439.00 dh   (-19041.00)
+  IBRANCE 75 MG                   24024.00 dh  ->  PAPILLIO                        12212.00 dh   (-11812.00)
+  IBRANCE 100 MG                  24024.00 dh  ->  PAPILLIO                        12212.00 dh   (-11812.00)
+  IBRANCE 125 MG                  24024.00 dh  ->  PAPILLIO                        12212.00 dh   (-11812.00)

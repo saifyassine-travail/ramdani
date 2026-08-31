@@ -60,6 +60,35 @@ class AppointmentController extends Controller
     }
 
     /**
+     * POST /api/appointments/reorder
+     * Body: { ids: [ID_RV, ...] }  — the waiting-room queue in its new order.
+     * Renumbers those tickets 1..N (they must all belong to the same day), so
+     * dragging a card to a new position really changes who is called next.
+     */
+    public function reorder(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'ids'   => 'required|array|min:1',
+                'ids.*' => 'integer|exists:appointments,ID_RV',
+            ]);
+
+            DB::transaction(function () use ($validated) {
+                foreach (array_values($validated['ids']) as $i => $id) {
+                    Appointment::where('ID_RV', $id)->update(['queue_number' => $i + 1]);
+                }
+            });
+
+            return response()->json(['success' => true]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['success' => false, 'message' => 'Validation failed', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            Log::error('AppointmentController@reorder error: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Impossible de réordonner la file'], 500);
+        }
+    }
+
+    /**
      * GET /api/appointments/monthly-counts/{yearMonth}
      * Example: yearMonth = "2025-09"
      */
@@ -146,9 +175,23 @@ class AppointmentController extends Controller
                 $appointment->consultation_ended_at = now();
             }
 
+            // Waiting-room ticket: handed out when the patient leaves "Programmé"
+            // and enters the flow, then kept until the visit is over. Cleared if
+            // they go back to scheduled or get cancelled, so the number is only
+            // ever held by someone actually in the queue.
+            $inFlow = in_array($validated['status'], ['waiting', 'preparing', 'consulting', 'completed'], true);
+            if ($inFlow) {
+                if ($appointment->queue_number === null) {
+                    $appointment->queue_number = (int) Appointment::whereDate('appointment_date', $appointment->appointment_date)
+                        ->max('queue_number') + 1;
+                }
+            } else {
+                $appointment->queue_number = null;
+            }
+
             $appointment->status = $statusMapping[$validated['status']];
             $appointment->save();
-            
+
             // Clear statistics cache if status changed to/from 'Terminé'
             \Illuminate\Support\Facades\Cache::forget('dashboard_stats_v1');
 
@@ -167,6 +210,7 @@ class AppointmentController extends Controller
             return response()->json([
                 'success' => true,
                 'status' => $appointment->status,
+                'queue_number' => $appointment->queue_number,
                 'colors' => [
                     'bg' => $colorClasses[0] ?? null,
                     'border' => $colorClasses[1] ?? null,

@@ -4,7 +4,8 @@ import type React from "react"
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { useMedicaments } from "@/hooks/use-medicaments"
 import { useToast } from "@/hooks/use-toast"
-import type { Medicament } from "@/lib/api"
+import { apiClient, type Medicament, type RegimeCoverage } from "@/lib/api"
+import MedicamentReferencePanel, { RegimeTag } from "@/components/medicament-reference-panel"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2, Star, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Plus, Edit, Archive, RotateCcw, X, Save, Pill as Pills, CheckCircle, Loader2, Star, ChevronLeft, ChevronRight, SlidersHorizontal, Rows3, Rows4 } from "lucide-react"
 
 export default function MedicamentsPage() {
   const { toast } = useToast()
@@ -87,17 +88,156 @@ export default function MedicamentsPage() {
     fetchMedicaments(1)
   }, [debouncedSearchQuery, searchMedicaments, fetchMedicaments])
 
+  // ── Colonnes configurables ──────────────────────────────────────────
+  // Le tableau sert à des usages très différents (prescrire, comparer un prix,
+  // vérifier une prise en charge) : chaque praticien choisit ce qu'il affiche.
+  const COLUMNS = useMemo(
+    () => [
+      { key: "code", label: "Code", always: false },
+      { key: "name", label: "Nom", always: true },
+      { key: "dosage", label: "Dosage", always: false },
+      { key: "form", label: "Forme", always: false },
+      { key: "composition", label: "Composition (DCI)", always: false },
+      { key: "laboratory", label: "Laboratoire", always: false },
+      { key: "classe", label: "Classe thérapeutique", always: false },
+      { key: "price", label: "PPV", always: false },
+      { key: "ph", label: "Prix hospitalier", always: false },
+      { key: "remb", label: "Remboursement", always: false },
+    ] as const,
+    [],
+  )
+  type ColKey = (typeof COLUMNS)[number]["key"]
+
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>({
+    code: false, name: true, dosage: true, form: true, composition: true,
+    laboratory: false, classe: false, price: true, ph: false, remb: true,
+  })
+  const [colsOpen, setColsOpen] = useState(false)
+  const [density, setDensity] = useState<"comfortable" | "compact">("comfortable")
+  const [sort, setSort] = useState<{ key: ColKey | "favorite"; dir: 1 | -1 }>({
+    key: "favorite", dir: 1,
+  })
+
+  // Préférences praticien (Réglages → Affichage)
+  const [prefs, setPrefs] = useState({ separate_dosage: false, show_reimbursement: true })
+  useEffect(() => {
+    apiClient
+      .getUserSettings?.()
+      .then((r: any) => {
+        const s = r?.data ?? r?.settings ?? r
+        if (s) {
+          setPrefs({
+            separate_dosage: !!s.separate_dosage,
+            show_reimbursement: s.show_reimbursement !== false,
+          })
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  /**
+   * « AMOXIL 1 G » → { brand: "AMOXIL", dosage: "1 G" }.
+   * Le nom de marque vient de la base nationale quand il est connu ; sinon on
+   * retire le dosage du libellé, ce qui couvre les produits saisis à la main.
+   */
+  const splitName = useCallback((m: Medicament) => {
+    const label = (m.name || "").replace(/,\s*[^,]*$/, "").trim()
+    const brand =
+      m.brand?.trim() ||
+      label.replace(/\s+\d[\d.,]*\s*(MG|G|UG|µG|MCG|ML|UI|%).*$/i, "").trim() ||
+      label
+    const dosage = m.dosage?.trim() || label.slice(brand.length).trim()
+    return { brand, dosage }
+  }, [])
+
+  const sortValue = useCallback(
+    (m: Medicament, key: ColKey | "favorite") => {
+      switch (key) {
+        case "favorite": return m.is_favorite ? 1 : 0
+        case "code": return m.ID_Medicament
+        case "name": return splitName(m).brand.toLowerCase()
+        case "dosage": return splitName(m).dosage.toLowerCase()
+        case "form": return (m.type || "").toLowerCase()
+        case "composition": return (m.composition || "").toLowerCase()
+        case "laboratory": return (m.laboratory || "").toLowerCase()
+        case "classe": return (m["Classe_thérapeutique"] || "").toLowerCase()
+        case "price": return m.price == null ? -1 : Number(m.price)
+        case "ph": return m.prix_hospitalier == null ? -1 : Number(m.prix_hospitalier)
+        default: return 0
+      }
+    },
+    [splitName],
+  )
+
   const filteredMedicaments = useMemo(() => {
     let list = medicaments.filter((medicament) => (showArchived ? medicament.archived : !medicament.archived))
     if (debouncedSearchQuery.trim()) {
-      list = list.filter((m) => m.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()))
+      const q = debouncedSearchQuery.toLowerCase()
+      list = list.filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          (m.composition || "").toLowerCase().includes(q) ||
+          (m.laboratory || "").toLowerCase().includes(q) ||
+          (m["Classe_thérapeutique"] || "").toLowerCase().includes(q),
+      )
     }
     return [...list].sort((a, b) => {
-      const aFav = a.is_favorite ? 1 : 0
-      const bFav = b.is_favorite ? 1 : 0
-      return bFav - aFav
+      // Les favoris restent en tête quel que soit le tri demandé.
+      const fav = (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0)
+      if (sort.key !== "favorite" && fav !== 0) return fav
+      const x = sortValue(a, sort.key)
+      const y = sortValue(b, sort.key)
+      if (typeof x === "number" && typeof y === "number") return (x - y) * sort.dir
+      return String(x).localeCompare(String(y), "fr", { numeric: true }) * sort.dir
     })
-  }, [medicaments, debouncedSearchQuery, showArchived])
+  }, [medicaments, debouncedSearchQuery, showArchived, sort, sortValue])
+
+  const toggleSort = useCallback((key: ColKey) => {
+    setSort((s) => (s.key === key ? { key, dir: (s.dir === 1 ? -1 : 1) as 1 | -1 } : { key, dir: 1 }))
+  }, [])
+
+  const shownCols = useMemo(
+    () => COLUMNS.filter((c) => c.always || visibleCols[c.key]),
+    [COLUMNS, visibleCols],
+  )
+  const cellPad = density === "compact" ? "py-1.5" : "py-3"
+
+  // Prise en charge de la page affichée, en une seule requête.
+  const [coverage, setCoverage] = useState<Record<string, RegimeCoverage>>({})
+  const [refAvailable, setRefAvailable] = useState(true)
+  useEffect(() => {
+    if (!prefs.show_reimbursement || filteredMedicaments.length === 0) return
+    let alive = true
+    apiClient
+      .getMedicamentCoverage(filteredMedicaments.map((m) => m.ID_Medicament))
+      .then((r) => {
+        if (!alive) return
+        setRefAvailable(r.available !== false)
+        setCoverage(r.coverage || {})
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [filteredMedicaments, prefs.show_reimbursement])
+
+  const SortMark = ({ dir }: { dir: 1 | -1 }) => (
+    <span className="ml-1 text-blue-500">{dir === 1 ? "▲" : "▼"}</span>
+  )
+
+  /** Pastilles CNSS / CNOPS d'une ligne, depuis la prise en charge déjà chargée. */
+  const RemboursementCell = ({ id }: { id: number }) => {
+    const c = coverage[String(id)]
+    if (!refAvailable) return <span className="text-xs text-gray-400">—</span>
+    if (!c) return <span className="text-xs text-gray-300">Non listé</span>
+    return (
+      <div className="flex flex-wrap gap-1">
+        {(["CNSS", "CNOPS"] as const).map((r) =>
+          c[r] ? (
+            <RegimeTag key={r} regime={r} remboursable={!!c[r]?.remboursable} taux={c[r]?.taux} />
+          ) : null,
+        )}
+      </div>
+    )
+  }
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query)
@@ -259,15 +399,116 @@ export default function MedicamentsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      {/* Barre d'outils du tableau : colonnes affichées et densité. */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setColsOpen((o) => !o)}
+            className="gap-1.5"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Colonnes
+            <span className="ml-1 rounded bg-gray-100 px-1.5 text-[11px] font-semibold text-gray-600">
+              {shownCols.length}
+            </span>
+          </Button>
+          {colsOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setColsOpen(false)} />
+              <div className="absolute left-0 top-10 z-20 w-60 rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                {COLUMNS.map((c) => (
+                  <label
+                    key={c.key}
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-gray-50 ${
+                      c.always ? "opacity-50" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={c.always}
+                      checked={c.always || !!visibleCols[c.key]}
+                      onChange={(e) =>
+                        setVisibleCols((v) => ({ ...v, [c.key]: e.target.checked }))
+                      }
+                      className="accent-blue-600"
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setDensity((d) => (d === "compact" ? "comfortable" : "compact"))}
+          className="gap-1.5"
+          title="Densité des lignes"
+        >
+          {density === "compact" ? <Rows4 className="h-3.5 w-3.5" /> : <Rows3 className="h-3.5 w-3.5" />}
+          {density === "compact" ? "Compact" : "Confortable"}
+        </Button>
+
+        {sort.key !== "favorite" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSort({ key: "favorite", dir: 1 })}
+            className="text-gray-500"
+          >
+            Réinitialiser le tri
+          </Button>
+        )}
+
+        <span className="ml-auto text-xs text-gray-500">
+          {filteredMedicaments.length} sur {total ?? filteredMedicaments.length}
+        </span>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50">
               <TableHead className="text-blue-700 font-bold w-8"></TableHead>
-              <TableHead className="text-blue-700 font-bold">Code</TableHead>
-              <TableHead className="text-blue-700 font-bold">Nom</TableHead>
-              <TableHead className="text-blue-700 font-bold">Type</TableHead>
-              <TableHead className="text-blue-700 font-bold">Prix (DH)</TableHead>
+              {shownCols.map((c) => {
+                // Le nom se dédouble en « Marque » + « Dosage » quand le
+                // praticien l'a demandé dans Réglages → Affichage.
+                if (c.key === "name" && prefs.separate_dosage) {
+                  return (
+                    <React.Fragment key="name-split">
+                      <TableHead
+                        className="cursor-pointer select-none font-bold text-blue-700"
+                        onClick={() => toggleSort("name")}
+                      >
+                        Marque{sort.key === "name" && <SortMark dir={sort.dir} />}
+                      </TableHead>
+                      <TableHead
+                        className="cursor-pointer select-none font-bold text-blue-700"
+                        onClick={() => toggleSort("dosage")}
+                      >
+                        Dosage{sort.key === "dosage" && <SortMark dir={sort.dir} />}
+                      </TableHead>
+                    </React.Fragment>
+                  )
+                }
+                if (c.key === "dosage" && prefs.separate_dosage) return null
+                return (
+                  <TableHead
+                    key={c.key}
+                    className={`cursor-pointer select-none font-bold text-blue-700 ${
+                      c.key === "price" || c.key === "ph" ? "text-right" : ""
+                    }`}
+                    onClick={() => c.key !== "remb" && toggleSort(c.key)}
+                  >
+                    {c.label}
+                    {sort.key === c.key && <SortMark dir={sort.dir} />}
+                  </TableHead>
+                )
+              })}
               {showArchived && <TableHead className="text-blue-700 font-bold">Statut</TableHead>}
               <TableHead className="text-blue-700 font-bold">Actions</TableHead>
             </TableRow>
@@ -275,7 +516,7 @@ export default function MedicamentsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 7 : 6} className="text-center py-8">
+                <TableCell colSpan={shownCols.length + (prefs.separate_dosage ? 1 : 0) + (showArchived ? 3 : 2)} className="text-center py-8">
                   <div className="flex items-center justify-center">
                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
                     <span className="ml-2">Chargement des médicaments...</span>
@@ -284,7 +525,7 @@ export default function MedicamentsPage() {
               </TableRow>
             ) : filteredMedicaments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showArchived ? 7 : 6} className="text-center py-8">
+                <TableCell colSpan={shownCols.length + (prefs.separate_dosage ? 1 : 0) + (showArchived ? 3 : 2)} className="text-center py-8">
                   <div className="flex flex-col items-center justify-center">
                     <Pills className="w-12 h-12 text-blue-300 mb-2" />
                     <p className="text-gray-500">Aucun médicament {showArchived ? "archivé" : ""} trouvé</p>
@@ -313,22 +554,98 @@ export default function MedicamentsPage() {
                       <Star className={`w-4 h-4 ${medicament.is_favorite ? "fill-yellow-400 text-yellow-400" : "text-gray-300 hover:text-yellow-300"}`} />
                     </button>
                   </TableCell>
-                  <TableCell>{medicament.ID_Medicament}</TableCell>
-                  <TableCell className="font-medium">{medicament.name}</TableCell>
-                  <TableCell>
-                    {medicament.type_category ? (
-                      <Badge variant="outline" className="text-xs text-blue-700 border-blue-200 bg-blue-50">
-                        {medicament.type_category}
-                      </Badge>
-                    ) : medicament.type ? (
-                      <Badge variant="outline" className="text-xs text-gray-600 border-gray-200">
-                        {medicament.type}
-                      </Badge>
-                    ) : (
-                      <span className="text-gray-400 text-xs">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>{medicament.price != null ? Number(medicament.price).toFixed(2) : "—"}</TableCell>
+                  {shownCols.map((c) => {
+                    const { brand, dosage } = splitName(medicament)
+                    if (c.key === "name" && prefs.separate_dosage) {
+                      return (
+                        <React.Fragment key="name-split">
+                          <TableCell className={`${cellPad} font-medium`}>{brand}</TableCell>
+                          <TableCell className={`${cellPad} whitespace-nowrap text-gray-600`}>
+                            {dosage || <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        </React.Fragment>
+                      )
+                    }
+                    if (c.key === "dosage" && prefs.separate_dosage) return null
+
+                    switch (c.key) {
+                      case "code":
+                        return <TableCell key={c.key} className={`${cellPad} text-gray-500`}>{medicament.ID_Medicament}</TableCell>
+                      case "name":
+                        return <TableCell key={c.key} className={`${cellPad} font-medium`}>{medicament.name}</TableCell>
+                      case "dosage":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} whitespace-nowrap text-gray-600`}>
+                            {medicament.dosage || <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        )
+                      case "form":
+                        return (
+                          <TableCell key={c.key} className={cellPad}>
+                            {medicament.type_category ? (
+                              <Badge variant="outline" className="border-blue-200 bg-blue-50 text-xs text-blue-700">
+                                {medicament.type_category}
+                              </Badge>
+                            ) : medicament.type ? (
+                              <Badge variant="outline" className="border-gray-200 text-xs text-gray-600">
+                                {medicament.type}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        )
+                      case "composition":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} max-w-[220px] truncate text-gray-600`}
+                            title={medicament.composition || ""}>
+                            {medicament.composition?.split("|").map((s) => s.trim()).join(" + ") || (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </TableCell>
+                        )
+                      case "laboratory":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} max-w-[180px] truncate text-gray-600`}
+                            title={medicament.laboratory || ""}>
+                            {medicament.laboratory || <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        )
+                      case "classe":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} max-w-[220px] truncate text-gray-600`}
+                            title={medicament["Classe_thérapeutique"] || ""}>
+                            {medicament["Classe_thérapeutique"] || <span className="text-gray-300">—</span>}
+                          </TableCell>
+                        )
+                      case "price":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} text-right font-mono tabular-nums`}>
+                            {medicament.price != null ? Number(medicament.price).toFixed(2) : "—"}
+                          </TableCell>
+                        )
+                      case "ph":
+                        return (
+                          <TableCell key={c.key} className={`${cellPad} text-right font-mono tabular-nums text-gray-600`}>
+                            {medicament.prix_hospitalier != null
+                              ? Number(medicament.prix_hospitalier).toFixed(2)
+                              : "—"}
+                          </TableCell>
+                        )
+                      case "remb":
+                        return (
+                          <TableCell key={c.key} className={cellPad}>
+                            {prefs.show_reimbursement ? (
+                              <RemboursementCell id={medicament.ID_Medicament} />
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                        )
+                      default:
+                        return null
+                    }
+                  })}
                   {showArchived && (
                     <TableCell>
                       <Badge variant={medicament.archived ? "secondary" : "default"}>
@@ -559,7 +876,7 @@ export default function MedicamentsPage() {
       </Dialog>
 
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-blue-600 leading-tight">{selectedMedicament?.name}</DialogTitle>
             <div className="flex items-center gap-3 mt-1">
@@ -651,6 +968,20 @@ export default function MedicamentsPage() {
               </tbody>
             </table>
           </div>
+          {/* Prise en charge CNSS / CNOPS et équivalents, depuis la base
+              nationale. Rien ne s'affiche si elle n'est pas installée. */}
+          {selectedMedicament && (
+            <div className="pt-4">
+              <MedicamentReferencePanel
+                medicament={selectedMedicament}
+                onOpenEquivalent={(name) => {
+                  setIsDetailsModalOpen(false)
+                  setSearchQuery(name)
+                }}
+              />
+            </div>
+          )}
+
           <div className="flex justify-end pt-2">
             <Button variant="outline" onClick={() => setIsDetailsModalOpen(false)}>
               <X className="w-4 h-4 mr-2" />
