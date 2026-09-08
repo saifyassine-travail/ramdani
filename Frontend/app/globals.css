@@ -266,3 +266,46 @@
 .nw-scroll::-webkit-scrollbar-thumb { background: #d3d8dd; border-radius: 99px }
 
 @media (prefers-reduced-motion: reduce) { .nw-card, .nw-skel { animation: none !important } }
+
+/* ── Transitions de page (toutes les pages sauf « Paramètres ») ─────────── */
+/* Le conteneur ne fait qu'un fondu : pas de `transform`, sinon il devient
+   le bloc conteneur des enfants `position: fixed` (toasts, overlays). */
+@keyframes pg-fade { from { opacity: 0 } to { opacity: 1 } }
+.pg-route { animation: pg-fade .26s ease-out both; }
+
+/* Cascade d'entrée appliquée au conteneur principal d'une page : chaque
+   section arrive avec un léger décalage, du haut vers le bas. */
+@keyframes pg-rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+.pg-stagger > * { animation: pg-rise .44s cubic-bezier(.22,.78,.24,1) both; }
+.pg-stagger > *:nth-child(1)  { animation-delay: 20ms }
+.pg-stagger > *:nth-child(2)  { animation-delay: 70ms }
+.pg-stagger > *:nth-child(3)  { animation-delay: 120ms }
+.pg-stagger > *:nth-child(4)  { animation-delay: 170ms }
+.pg-stagger > *:nth-child(5)  { animation-delay: 210ms }
+.pg-stagger > *:nth-child(6)  { animation-delay: 250ms }
+.pg-stagger > *:nth-child(7)  { animation-delay: 285ms }
+.pg-stagger > *:nth-child(8)  { animation-delay: 315ms }
+.pg-stagger > *:nth-child(n+9) { animation-delay: 340ms }
+
+/* Lignes de tableau : entrée en cascade courte, plafonnée pour que les
+   longues listes ne mettent pas une seconde à s'afficher. */
+.pg-rows > * { animation: pg-rise .34s cubic-bezier(.22,.78,.24,1) both; }
+.pg-rows > *:nth-child(1) { animation-delay: 10ms }
+.pg-rows > *:nth-child(2) { animation-delay: 30ms }
+.pg-rows > *:nth-child(3) { animation-delay: 50ms }
+.pg-rows > *:nth-child(4) { animation-delay: 70ms }
+.pg-rows > *:nth-child(5) { animation-delay: 90ms }
+.pg-rows > *:nth-child(6) { animation-delay: 110ms }
+.pg-rows > *:nth-child(7) { animation-delay: 130ms }
+.pg-rows > *:nth-child(8) { animation-delay: 150ms }
+.pg-rows > *:nth-child(n+9) { animation-delay: 170ms }
+
+/* Survol : léger soulèvement sur les cartes cliquables. */
+.pg-lift { transition: transform .18s ease, box-shadow .18s ease; }
+.pg-lift:hover { transform: translateY(-2px); box-shadow: 0 10px 24px -12px rgba(15, 23, 42, .28); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-route, .pg-stagger > *, .pg-rows > * { animation: none !important }
+  .pg-lift { transition: none !important }
+  .pg-lift:hover { transform: none !important }
+}

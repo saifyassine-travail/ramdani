@@ -343,7 +343,7 @@ export default function MedicamentsPage() {
   }, [])
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="pg-stagger p-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-semibold text-gray-800">
           <span className="text-blue-700 border-b border-gray-600 italic">Liste</span>{" "}
@@ -513,7 +513,7 @@ export default function MedicamentsPage() {
               <TableHead className="text-blue-700 font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="pg-rows">
             {loading ? (
               <TableRow>
                 <TableCell colSpan={shownCols.length + (prefs.separate_dosage ? 1 : 0) + (showArchived ? 3 : 2)} className="text-center py-8">
@@ -908,7 +908,7 @@ export default function MedicamentsPage() {
           </DialogHeader>
           <div className="border border-gray-200 rounded-lg overflow-hidden">
             <table className="w-full">
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="pg-rows divide-y divide-gray-200">
                 {selectedMedicament?.type && (
                   <tr>
                     <td className="px-4 py-3 bg-gray-50 text-sm font-medium text-gray-700 w-2/5">Forme</td>

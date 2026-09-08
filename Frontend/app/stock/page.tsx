@@ -223,7 +223,7 @@ export default function StockPage() {
   )
 
   return (
-    <div className="p-6">
+    <div className="pg-stagger p-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-2xl font-semibold text-gray-800">
           <span className="text-blue-700 border-b border-gray-600 italic">Gestion</span>{" "}
@@ -293,7 +293,7 @@ export default function StockPage() {
               <TableHead className="text-blue-700 font-bold">Actions</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="pg-rows">
             {loading ? (
               <TableRow>
                 <TableCell colSpan={showArchived ? 8 : 7} className="text-center py-8">

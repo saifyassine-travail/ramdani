@@ -279,7 +279,7 @@ export default function PatientsPage() {
 
   return (
     <div className="p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="pg-stagger max-w-7xl mx-auto">
         {/* Header - Always visible */}
         <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -352,7 +352,7 @@ export default function PatientsPage() {
           </div>
 
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="pg-rows grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-gray-500">Sexe</Label>
                 <Select value={genderFilter} onValueChange={setGenderFilter}>
@@ -487,7 +487,7 @@ export default function PatientsPage() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="pg-rows bg-white divide-y divide-gray-200">
                   {loading ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-12 text-center">

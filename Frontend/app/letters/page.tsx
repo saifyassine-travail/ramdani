@@ -54,7 +54,7 @@ export default function LettersHubPage() {
   }, [fetchLetters])
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="pg-stagger min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm">
         <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-2 text-2xl font-bold text-gray-800">
@@ -96,11 +96,11 @@ export default function LettersHubPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
+          <div className="pg-rows space-y-3">
             {letters.map((letter) => (
               <Card
                 key={letter.id}
-                className="shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                className="pg-lift shadow-sm hover:shadow-md transition-shadow cursor-pointer"
                 onClick={() => router.push(`/letters/${letter.id}`)}
               >
                 <CardContent className="p-4">

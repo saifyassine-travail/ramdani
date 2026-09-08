@@ -802,7 +802,7 @@ export default function AppointmentDetailsPage() {
   }
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="pg-stagger p-8 max-w-6xl mx-auto">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
         <div>

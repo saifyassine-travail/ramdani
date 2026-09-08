@@ -1601,7 +1601,7 @@ export default function AppointmentDetailsPage() {
   }
 
   return (
-    <div className="p-4 max-w-[1800px] mx-auto">
+    <div className="pg-stagger p-4 max-w-[1800px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-blue-700 flex items-center">

@@ -317,7 +317,7 @@ export default function RadiologyPage() {
   const hasInput = mode === "ct" ? !!file : !!preview
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="pg-stagger p-6 max-w-7xl mx-auto space-y-6">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">

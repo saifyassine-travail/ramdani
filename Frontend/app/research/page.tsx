@@ -132,7 +132,7 @@ export default function ResearchPage() {
 
   return (
     <div className="p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="pg-stagger max-w-6xl mx-auto">
         {/* Header */}
         <div className="mb-6 rounded-xl bg-gradient-to-r from-purple-700 to-violet-600 text-white p-5 shadow-lg">
           <div className="flex items-start gap-3">

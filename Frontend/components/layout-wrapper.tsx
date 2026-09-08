@@ -10,6 +10,7 @@ import { useEffect } from "react"
 import { GlobalSyncProvider } from "./global-sync-provider"
 import { ChatProvider } from "@/components/chat-provider"
 import ChatDrawer from "./chat-drawer"
+import { PageTransition } from "./page-transition"
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth()
@@ -51,7 +52,9 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             <MedicalSidebar currentPage="dashboard" user={defaultUser} />
             <div className="flex-1 flex flex-col pl-64 bg-blue-100">
               <MedicalHeader />
-              <main className="flex-1 overflow-auto">{children}</main>
+              <main className="flex-1 overflow-auto">
+                <PageTransition>{children}</PageTransition>
+              </main>
             </div>
           </div>
           <ChatDrawer />
@@ -60,5 +63,5 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return <>{children}</>
+  return <PageTransition>{children}</PageTransition>
 }

@@ -191,7 +191,7 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pl-64">
-      <div className="p-6">
+      <div className="pg-stagger p-6">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
             <UserIcon />
