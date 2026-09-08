@@ -17,6 +17,7 @@ import OrdonnanceLayoutEditor from "@/components/ordonnance-layout-editor"
 import FactureLayoutEditor from "@/components/facture-layout-editor"
 import CertificateLayoutEditor from "@/components/certificate-layout-editor"
 import ActivityLogPanel from "@/components/activity-log-panel"
+import ClosedDaysManager from "@/components/closed-days-manager"
 import { CERTIFICATE_VARIABLES, DEFAULT_CERTIFICATE_TEMPLATE } from "@/lib/certificate-template"
 import { useAuth } from "@/hooks/use-auth"
 
@@ -503,6 +504,9 @@ export default function SettingsPage() {
 
         {/* Preferences Tab */}
         <TabsContent value="preferences" className="space-y-6">
+          {/* Congés et absences — réservé au compte médecin */}
+          {isAdmin && <ClosedDaysManager />}
+
           {/* Case Description Configuration */}
           <Card>
             <CardHeader>

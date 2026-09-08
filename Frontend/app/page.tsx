@@ -54,7 +54,9 @@ const PAL: Record<Col, Palette> = {
   canceled:  { accent: "#dc2626", tint: "#fef2f2", tintStrong: "#fee2e2", border: "#fecaca", badgeBg: "#fee2e2", badgeFg: "#b91c1c" },
 }
 
-const CAP: Partial<Record<Col, number>> = { preparing: 1, consulting: 1 }
+// La préparation peut traiter deux patients de front (constantes, pesée) ;
+// la salle de consultation reste à un seul patient à la fois.
+const CAP: Partial<Record<Col, number>> = { preparing: 2, consulting: 1 }
 const TITLES: Record<Col, string> = {
   scheduled: "Programmé", waiting: "Salle d'attente", preparing: "En préparation",
   consulting: "En consultation", completed: "Terminé", canceled: "Annulé",
@@ -93,6 +95,30 @@ const byQueue = (a: Appointment, b: Appointment) => {
   const qb = b.queue_number ?? Number.MAX_SAFE_INTEGER
   if (qa !== qb) return qa - qb
   return String(a.start_time || "").localeCompare(String(b.start_time || ""))
+}
+
+/** Définition d'une mesure ajoutée par le cabinet (Réglages → Mesures). */
+interface CustomMeasure {
+  name: string
+  short: string | null
+  min_value: string | number | null
+  max_value: string | number | null
+  choices: string | null
+  color: string | null
+}
+
+/**
+ * Les valeurs personnalisées arrivent tantôt en objet, tantôt en chaîne JSON
+ * selon le chemin d'écriture ; un tableau vide signifie « rien de saisi ».
+ */
+const parseCustomValues = (raw: unknown): Record<string, string> => {
+  if (!raw) return {}
+  let v: any = raw
+  if (typeof v === "string") {
+    try { v = JSON.parse(v) } catch { return {} }
+  }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {}
+  return v as Record<string, string>
 }
 
 const D_EDIT = "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
@@ -135,6 +161,19 @@ const Dashboard = () => {
   useEffect(() => {
     const t = setInterval(() => setNowTick(Date.now()), 30000)
     return () => clearInterval(t)
+  }, [])
+
+  // Mesures définies par le cabinet : sans ces définitions, les valeurs
+  // enregistrées dans la fiche du cas resteraient invisibles sur les cartes.
+  const [customMeasures, setCustomMeasures] = useState<CustomMeasure[]>([])
+  useEffect(() => {
+    apiClient.getUserSettings?.()
+      .then((r: any) => {
+        const raw = (r?.data ?? r)?.custom_measures
+        const list = typeof raw === "string" ? JSON.parse(raw || "[]") : raw
+        if (Array.isArray(list)) setCustomMeasures(list)
+      })
+      .catch(() => {})
   }, [])
 
   const [localData, setLocalData] = useState<AppointmentsByStatus>({
@@ -457,6 +496,32 @@ const Dashboard = () => {
     return null
   }, [])
 
+  /**
+   * Remet un rendez-vous annulé en « Programmé ».
+   *
+   * Une annulation par erreur est fréquente en salle : la corriger doit coûter
+   * un clic, pas une recréation du rendez-vous (qui perdrait l'historique et
+   * le numéro de dossier).
+   */
+  const restoreCancelled = useCallback(async (apt: Appointment) => {
+    const name = formatName(apt.patient?.first_name || "", apt.patient?.last_name || "")
+    moveLocal(apt.ID_RV, "canceled", "scheduled")
+    flashColumn("scheduled", "land")
+    try {
+      const r = await updateAppointmentStatus(apt.ID_RV, "scheduled")
+      if (r.success) {
+        showNotification(`${name} remis en « Programmé »`, "success")
+      } else {
+        showNotification(r.message || "Erreur", "error")
+        moveLocal(apt.ID_RV, "scheduled", "canceled")
+      }
+    } catch (err) {
+      console.error(err)
+      showNotification("Erreur serveur", "error")
+      moveLocal(apt.ID_RV, "scheduled", "canceled")
+    }
+  }, [moveLocal, flashColumn, updateAppointmentStatus, showNotification])
+
   const handleConfirmDelete = async () => {
     if (!deletingAppointmentId) return
     const id = deletingAppointmentId
@@ -563,7 +628,7 @@ const Dashboard = () => {
     void nowTick
     const elapsed = live ? elapsedOf(raw.consultation_started_at) : null
 
-    const vitals: { l: string; v: string }[] = []
+    const vitals: { l: string; v: string; alert?: boolean }[] = []
     if (cd && typeof cd === "object") {
       if (cd.blood_pressure) vitals.push({ l: "TA", v: String(cd.blood_pressure) })
       if (cd.pulse) vitals.push({ l: "Pouls", v: `${cd.pulse}` })
@@ -571,7 +636,34 @@ const Dashboard = () => {
       if (cd.spo2) vitals.push({ l: "SpO₂", v: `${cd.spo2}%` })
       if (cd.weight) vitals.push({ l: "Poids", v: `${cd.weight} kg` })
       if (cd.tall) vitals.push({ l: "Taille", v: `${cd.tall} m` })
+
+      // Mesures définies par le cabinet (Réglages → Mesures personnalisées).
+      // On part des VALEURS enregistrées dans la fiche, pas de la liste des
+      // définitions : celle-ci vient d'un second appel réseau, et tant qu'il
+      // n'avait pas répondu la carte n'affichait rien. La définition ne sert
+      // plus qu'à embellir (libellé court, bornes) quand elle est là.
+      const custom = parseCustomValues(cd.custom_measures_values)
+      for (const [name, val] of Object.entries(custom)) {
+        if (val === undefined || val === null || String(val).trim() === "") continue
+        const def = customMeasures.find((d) => d.name === name)
+        const num = Number(val)
+        const min = def?.min_value == null || def.min_value === "" ? null : Number(def.min_value)
+        const max = def?.max_value == null || def.max_value === "" ? null : Number(def.max_value)
+        const outOfRange =
+          !Number.isNaN(num) && String(val).trim() !== "" &&
+          ((min !== null && !Number.isNaN(min) && num < min) ||
+            (max !== null && !Number.isNaN(max) && num > max))
+        const label = (def?.short || name).trim()
+        const norm = (x: string) => x.toLowerCase().replace(/[₂2]/g, "2").replace(/[^a-z0-9]/g, "")
+        // SpO₂ existe déjà comme constante fixe : ne pas l'afficher deux fois.
+        if (vitals.some((x) => norm(x.l) === norm(label) || norm(x.l) === norm(name))) continue
+        vitals.push({ l: label, v: String(val), alert: outOfRange })
+      }
     }
+    // Prescriptions rattachées au rendez-vous (table pivot : dosage,
+    // fréquence, durée). Vide tant que rien n'a été prescrit.
+    const meds: any[] = Array.isArray(raw.medicaments) ? raw.medicaments : []
+
     const flags: { t: string; bg: string; fg: string }[] = []
     if (pt.allergies) flags.push({ t: `Allergie · ${pt.allergies}`, bg: "#fef2f2", fg: "#b91c1c" })
     if (pt.chronic_conditions) flags.push({ t: pt.chronic_conditions, bg: "#fff7ed", fg: "#c2410c" })
@@ -584,7 +676,7 @@ const Dashboard = () => {
         draggable
         onContextMenu={(e) => handleRightClick(e, apt, col)}
         onDoubleClick={() => handleDoubleClick(apt)}
-        className="group relative flex h-full cursor-grab select-none flex-col overflow-hidden rounded-xl border bg-white transition-shadow active:cursor-grabbing hover:shadow-[0_10px_24px_rgba(20,24,26,0.12)]"
+        className="group relative flex min-h-0 flex-1 cursor-grab select-none flex-col overflow-hidden rounded-xl border bg-white transition-shadow active:cursor-grabbing hover:shadow-[0_10px_24px_rgba(20,24,26,0.12)]"
         style={{ borderColor: p.border, color: p.accent }}
       >
         <span className="absolute left-0 top-0 h-full w-[3px]" style={{ background: p.accent }} />
@@ -624,13 +716,17 @@ const Dashboard = () => {
         </div>
 
         {/* scrollable detail — fills whatever space is left */}
-        <div className="dc-scroll min-h-0 flex-1 space-y-2 px-3 pb-2 pl-3.5 pt-2">
+        <div className="dc-scroll min-h-0 flex-1 space-y-2 overflow-y-auto px-3 pb-2 pl-3.5 pt-2">
           {vitals.length > 0 ? (
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))" }}>
               {vitals.map(v => (
-                <div key={v.l} className="rounded-lg px-2 py-1.5" style={{ background: p.tint }}>
-                  <div className="text-[9.5px] font-medium uppercase tracking-[0.05em] text-gray-400">{v.l}</div>
-                  <div className="text-[13.5px] font-bold leading-tight text-gray-800">{v.v}</div>
+                <div key={v.l} className="rounded-lg px-2 py-1.5"
+                     style={{ background: v.alert ? "#fef2f2" : p.tint }}
+                     title={v.alert ? "Hors des bornes définies pour cette mesure" : undefined}>
+                  <div className="text-[9.5px] font-medium uppercase tracking-[0.05em]"
+                       style={{ color: v.alert ? "#dc2626" : "#9ca3af" }}>{v.l}</div>
+                  <div className="text-[13.5px] font-bold leading-tight"
+                       style={{ color: v.alert ? "#b91c1c" : "#1f2937" }}>{v.v}</div>
                 </div>
               ))}
             </div>
@@ -645,6 +741,38 @@ const Dashboard = () => {
               {flags.map((f, i) => (
                 <span key={i} className="rounded-md px-2 py-[3px] text-[11px] font-semibold" style={{ background: f.bg, color: f.fg }}>{f.t}</span>
               ))}
+            </div>
+          )}
+
+          {/* Ce qui a déjà été prescrit pendant cette consultation : sans cela
+              le médecin doit rouvrir le dossier pour se le rappeler. */}
+          {meds.length > 0 && (
+            <div className="rounded-lg border px-2.5 py-2" style={{ borderColor: p.border, background: "#fff" }}>
+              <div className="mb-1 flex items-center gap-1.5">
+                <svg className="h-3 w-3" style={{ color: p.accent }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <span className="text-[9.5px] font-semibold uppercase tracking-[0.05em]" style={{ color: p.accent }}>
+                  Traitement prescrit
+                </span>
+                <span className="ml-auto rounded-full px-1.5 text-[10px] font-bold"
+                      style={{ background: p.badgeBg, color: p.badgeFg }}>{meds.length}</span>
+              </div>
+              <ul className="space-y-1">
+                {meds.map((m: any, i: number) => {
+                  const posology = [m?.pivot?.dosage, m?.pivot?.frequence, m?.pivot?.duree]
+                    .filter(Boolean).join(" · ")
+                  return (
+                    <li key={m?.ID_Medicament ?? i} className="leading-snug">
+                      <span className="text-[12px] font-semibold text-gray-800">{m?.name}</span>
+                      {posology && (
+                        <span className="ml-1.5 text-[11px] text-gray-500">{posology}</span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
           )}
 
@@ -860,9 +988,9 @@ const Dashboard = () => {
                       background: p.tint, borderColor: p.border,
                       animation: rejectCol === col ? "dc-shake .4s ease" : landedCol === col ? "dc-dropPop .5s cubic-bezier(.2,.9,.25,1)" : undefined,
                     }}>
-                    <ColHeader col={col} count={items.length} cap={1} />
-                    <div className="min-h-0 flex-1 px-2.5 pb-2.5">
-                      {items.length > 0 ? renderActiveCard(items[0], col) : (
+                    <ColHeader col={col} count={items.length} cap={CAP[col] ?? 1} />
+                    <div className="flex min-h-0 flex-1 flex-col gap-2 px-2.5 pb-2.5">
+                      {items.length > 0 ? items.map((a) => renderActiveCard(a, col)) : (
                         <div data-placeholder="Aucun patient"
                           className="flex h-full items-center justify-center rounded-xl border-2 border-dashed text-[11.5px] font-medium text-gray-400"
                           style={{ borderColor: p.border }}>Aucun patient</div>
@@ -886,10 +1014,29 @@ const Dashboard = () => {
           }}>
           <span className="h-2 w-2 flex-none rounded-full bg-red-600" />
           <span className="flex-none whitespace-nowrap text-[12.5px] font-semibold text-red-800">Annulé ({cancelled.length})</span>
-          <span className="flex-none text-[11px] text-red-400">Glissez une carte ici pour annuler</span>
-          <span className="ml-auto truncate text-right text-[11.5px] text-red-400">
-            {cancelled.map(p => formatName(p.patient?.first_name || "", p.patient?.last_name || "")).join(" · ")}
+          <span className="flex-none text-[11px] text-red-400">
+            Glissez une carte ici pour annuler{cancelled.length > 0 ? " · cliquez un nom pour le remettre" : ""}
           </span>
+          {/* Une annulation se corrige d'un clic : le patient repart en
+              « Programmé », sans avoir à recréer le rendez-vous. */}
+          <div className="dc-scroll ml-auto flex min-w-0 flex-1 justify-end gap-1.5 overflow-x-auto">
+            {cancelled.map((a) => (
+              <button
+                key={a.ID_RV}
+                onClick={() => restoreCancelled(a)}
+                onDoubleClick={(e) => { e.stopPropagation(); handleDoubleClick(a) }}
+                title="Remettre ce rendez-vous en « Programmé »"
+                className="group flex flex-none items-center gap-1 rounded-full border border-red-200 bg-white/70 px-2.5 py-1 text-[11.5px] font-medium text-red-700 transition-colors hover:border-red-400 hover:bg-white"
+              >
+                <svg className="h-3 w-3 opacity-50 transition-opacity group-hover:opacity-100" fill="none"
+                     stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M3 10h10a5 5 0 010 10h-2M3 10l4-4M3 10l4 4" />
+                </svg>
+                {formatName(a.patient?.first_name || "", a.patient?.last_name || "")}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -47,13 +47,74 @@ interface StatsData {
         name: string
         value: number
     }>
-    ai_insights: Array<{
-        type: string
-        title: string
-        description: string
-        confidence: number
-        icon: string
-    }>
+    /**
+     * Pilotage du cabinet — indicateurs mesurés sur les rendez-vous réels.
+     * Remplace les anciens « insights prédictifs », dont les taux de confiance
+     * étaient écrits en dur côté serveur.
+     */
+    practice_insights?: {
+        periode: { du: string; au: string; jours: number }
+        kpis: Array<{
+            key: string
+            label: string
+            value: number | null
+            unit: string | null
+            previous: number | null
+            hint: string
+        }>
+        charge_jour: Array<{ label: string; count: number }>
+        charge_heure: Array<{ label: string; count: number }>
+        actions: Array<{ tone: "info" | "warning"; label: string; detail: string }>
+    }
+}
+
+/**
+ * Barres horizontales simples : la valeur la plus haute donne l'echelle, si
+ * bien qu'on lit tout de suite le pic sans avoir a comparer des chiffres.
+ */
+function LoadBars({
+    rows,
+    accent,
+    compact = false,
+}: {
+    rows: Array<{ label: string; count: number }>
+    accent: string
+    compact?: boolean
+}) {
+    const max = Math.max(1, ...rows.map((r) => r.count))
+    const top = rows.reduce((a, b) => (b.count > a.count ? b : a), rows[0])
+    return (
+        <div className={compact ? "space-y-1" : "space-y-1.5"}>
+            {rows.map((r) => {
+                const pct = (r.count / max) * 100
+                const isTop = r.count > 0 && r.label === top.label
+                return (
+                    <div key={r.label} className="flex items-center gap-2">
+                        <span className="w-9 flex-none text-right font-mono text-[11px] tabular-nums text-gray-500">
+                            {r.label}
+                        </span>
+                        <div className="h-4 flex-1 overflow-hidden rounded bg-gray-100">
+                            <div
+                                className="h-full rounded transition-[width] duration-500"
+                                style={{
+                                    width: `${pct}%`,
+                                    background: accent,
+                                    opacity: isTop ? 1 : 0.45,
+                                }}
+                            />
+                        </div>
+                        <span
+                            className={`w-7 flex-none text-right font-mono text-[11px] tabular-nums ${
+                                isTop ? "font-bold text-gray-900" : "text-gray-400"
+                            }`}
+                        >
+                            {r.count}
+                        </span>
+                    </div>
+                )
+            })}
+        </div>
+    )
 }
 
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444"]
@@ -321,7 +382,7 @@ export default function StatisticsPage() {
     ]
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto space-y-8">
+        <div className="pg-stagger p-8 max-w-[1600px] mx-auto space-y-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-800">Tableau de Bord IA & Statistiques</h1>
@@ -643,56 +704,128 @@ export default function StatisticsPage() {
                     </div>
                 </Card>
 
-                {/* AI Insights & Recommendations */}
-                <div className="lg:col-span-2 space-y-6">
-                    <h2 className="text-xl font-bold text-gray-800 flex items-center">
-                        <TrendingUp className="w-5 h-5 mr-2 text-blue-600" />
-                        Insights Prédictifs
-                    </h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {data.ai_insights.map((insight, index) => (
-                            <Card key={index} className="overflow-hidden border-none shadow-md hover:shadow-lg transition-all duration-300">
-                                <div className={`h-1 w-full ${insight.type === 'prediction' ? 'bg-blue-500' :
-                                    insight.type === 'growth' ? 'bg-green-500' :
-                                        'bg-purple-500'
-                                    }`}></div>
-                                <CardContent className="p-5">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div className={`p-2 rounded-full ${insight.type === 'prediction' ? 'bg-blue-100 text-blue-600' :
-                                            insight.type === 'growth' ? 'bg-green-100 text-green-600' :
-                                                'bg-purple-100 text-purple-600'
-                                            }`}>
-                                            {insight.icon === 'TrendingUp' && <TrendingUp className="w-5 h-5" />}
-                                            {insight.icon === 'Zap' && <Zap className="w-5 h-5" />}
-                                            {insight.icon === 'Activity' && <Activity className="w-5 h-5" />}
-                                            {insight.icon === 'Users' && <Users className="w-5 h-5" />}
-                                        </div>
-                                        <div className="text-right">
-                                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Confiance</span>
-                                            <div className="text-lg font-bold text-gray-800">{insight.confidence}%</div>
-                                        </div>
-                                    </div>
-                                    <h3 className="text-lg font-bold text-gray-900 mb-2">{insight.title}</h3>
-                                    <p className="text-sm text-gray-600 leading-relaxed">
-                                        {insight.description}
-                                    </p>
-                                </CardContent>
-                            </Card>
-                        ))}
+                {/* Pilotage du cabinet — que des chiffres mesures */}
+                <div className="lg:col-span-2 space-y-4">
+                    <div className="flex items-baseline gap-3">
+                        <h2 className="flex items-center text-xl font-bold text-gray-800">
+                            <Activity className="mr-2 h-5 w-5 text-blue-600" />
+                            Pilotage du cabinet
+                        </h2>
+                        {data.practice_insights && (
+                            <span className="text-[12.5px] text-gray-500">
+                                30 derniers jours · charge mesuree sur 90 jours
+                            </span>
+                        )}
                     </div>
 
-                    <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg">
-                        <CardContent className="p-6">
-                            <div className="flex items-center mb-4">
-                                <AlertCircle className="w-6 h-6 mr-2 opacity-80" />
-                                <h3 className="font-bold text-lg">Note Importante</h3>
+                    {!data.practice_insights ? (
+                        <Card><CardContent className="p-6 text-sm text-gray-500">
+                            Indicateurs indisponibles.
+                        </CardContent></Card>
+                    ) : (
+                        <>
+                            {/* 4 indicateurs, chacun avec ce qui le justifie */}
+                            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                                {data.practice_insights.kpis.map((k) => {
+                                    const delta =
+                                        k.previous != null && k.previous > 0 && k.value != null
+                                            ? Math.round(((k.value - k.previous) / k.previous) * 100)
+                                            : null
+                                    return (
+                                        <Card key={k.key} className="border-gray-200 shadow-sm transition-shadow hover:shadow-md">
+                                            <CardContent className="p-4">
+                                                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                                                    {k.label}
+                                                </div>
+                                                <div className="mt-1 flex items-baseline gap-1.5">
+                                                    <span className="font-mono text-[26px] font-bold tabular-nums leading-none text-gray-900">
+                                                        {k.value == null
+                                                            ? "—"
+                                                            : k.value.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}
+                                                    </span>
+                                                    {k.unit && <span className="text-[13px] font-medium text-gray-400">{k.unit}</span>}
+                                                    {delta != null && (
+                                                        <span
+                                                            className={`ml-auto rounded-md px-1.5 py-[2px] text-[11px] font-bold ${
+                                                                delta > 0
+                                                                    ? "bg-emerald-50 text-emerald-700"
+                                                                    : delta < 0
+                                                                    ? "bg-red-50 text-red-700"
+                                                                    : "bg-gray-100 text-gray-500"
+                                                            }`}
+                                                        >
+                                                            {delta > 0 ? "+" : ""}
+                                                            {delta} %
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="mt-2 text-[11.5px] leading-snug text-gray-500">{k.hint}</p>
+                                            </CardContent>
+                                        </Card>
+                                    )
+                                })}
                             </div>
-                            <p className="text-blue-100 text-sm">
-                                Ces analyses sont générées par des algorithmes d'apprentissage automatique basés sur vos données historiques. Elles s'affineront avec le temps pour vous offrir des prévisions plus précises.
+
+                            {/* Quand le cabinet est charge : la donnee, pas une affirmation */}
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <Card className="border-gray-200 shadow-sm">
+                                    <CardContent className="p-4">
+                                        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                                            Charge par jour de semaine
+                                        </h3>
+                                        <LoadBars rows={data.practice_insights.charge_jour} accent="#3b82f6" />
+                                    </CardContent>
+                                </Card>
+
+                                <Card className="border-gray-200 shadow-sm">
+                                    <CardContent className="p-4">
+                                        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                                            Charge par heure
+                                        </h3>
+                                        <LoadBars rows={data.practice_insights.charge_heure} accent="#8b5cf6" compact />
+                                    </CardContent>
+                                </Card>
+                            </div>
+
+                            {/* Points d'action, chacun adosse a un chiffre */}
+                            {data.practice_insights.actions.length > 0 && (
+                                <Card className="border-gray-200 shadow-sm">
+                                    <CardContent className="p-4">
+                                        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-400">
+                                            A suivre
+                                        </h3>
+                                        <ul className="space-y-2">
+                                            {data.practice_insights.actions.map((a, i) => (
+                                                <li
+                                                    key={i}
+                                                    className={`flex gap-3 rounded-lg border p-3 ${
+                                                        a.tone === "warning"
+                                                            ? "border-amber-200 bg-amber-50/60"
+                                                            : "border-blue-200 bg-blue-50/50"
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className={`mt-1.5 h-2 w-2 flex-none rounded-full ${
+                                                            a.tone === "warning" ? "bg-amber-500" : "bg-blue-500"
+                                                        }`}
+                                                    />
+                                                    <div className="min-w-0">
+                                                        <div className="text-[13.5px] font-semibold text-gray-900">{a.label}</div>
+                                                        <div className="mt-0.5 text-[12px] text-gray-600">{a.detail}</div>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            <p className="px-1 text-[11.5px] leading-relaxed text-gray-400">
+                                Tous ces chiffres sont calcules a partir de vos rendez-vous enregistres.
+                                Aucune projection ni estimation n'est affichee.
                             </p>
-                        </CardContent>
-                    </Card>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -824,7 +957,7 @@ export default function StatisticsPage() {
                                     </TableHead>
                                 </TableRow>
                             </TableHeader>
-                            <TableBody>
+                            <TableBody className="pg-rows">
                                 {detailLoading ? (
                                     <TableRow>
                                         <TableCell colSpan={7} className="text-center py-10">

@@ -33,7 +33,10 @@ class AppointmentController extends Controller
                 $parsedDate = Carbon::now()->format('Y-m-d');
             }
 
-            $appointments = Appointment::with(['patient', 'caseDescription'])
+            // `medicaments` alimente le traitement affiché sur la carte
+            // « En consultation » : le médecin voit ce qu'il a déjà prescrit
+            // sans avoir à ouvrir le dossier.
+            $appointments = Appointment::with(['patient', 'caseDescription', 'medicaments'])
                 ->whereDate('appointment_date', $parsedDate)
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -747,6 +750,41 @@ if (!empty($caseData)) {
     /**
      * POST /api/appointments (create a new appointment) — simpler version
      */
+    /**
+     * Le cabinet est-il ferme ce jour-la ?
+     *
+     * Le controle vit ici, cote serveur, et pas seulement dans l'interface :
+     * masquer un bouton n'empeche pas un appel direct a l'API, et une prise de
+     * rendez-vous un jour de conge se decouvre le jour meme, en salle d'attente.
+     */
+    private function closedDayResponse($date)
+    {
+        if (!$date) {
+            return null;
+        }
+        try {
+            $day = Carbon::parse($date)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $closed = \App\Http\Controllers\ClosedDayController::isClosed($day);
+        if (!$closed) {
+            return null;
+        }
+
+        $label = Carbon::parse($day)->locale('fr')->isoFormat('dddd D MMMM YYYY');
+        $reason = $closed->reason ? " ({$closed->reason})" : '';
+
+        return response()->json([
+            'success' => false,
+            'closed_day' => true,
+            'date' => $day,
+            'reason' => $closed->reason,
+            'message' => "Le cabinet est ferme le {$label}{$reason}. Choisissez une autre date.",
+        ], 422);
+    }
+
     public function storeV1(Request $request)
 {
     try {
@@ -756,6 +794,10 @@ if (!empty($caseData)) {
             'appointment_date' => 'required|date|after_or_equal:today',
             'notes' => 'nullable|string|max:1000',
         ]);
+
+        if ($closed = $this->closedDayResponse($validated['appointment_date'])) {
+            return $closed;
+        }
 
         $patient = Patient::where('ID_patient', $validated['patient_id'])
             ->where('archived', false)
@@ -828,6 +870,10 @@ public function store(Request $request)
                 'message' => 'Le patient sélectionné n\'existe pas',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        if ($closed = $this->closedDayResponse($request->input('appointment_date'))) {
+            return $closed;
         }
 
         $validated = $request->validate([
@@ -917,6 +963,15 @@ public function store(Request $request)
                 if ($date->isSunday()) {
                     $date->addDay();
                 }
+                // Un controle place automatiquement saute les jours fermes.
+                $guard = 0;
+                while (\App\Http\Controllers\ClosedDayController::isClosed($date->toDateString()) && $guard++ < 30) {
+                    $date->addDay();
+                }
+            }
+
+            if ($closed = $this->closedDayResponse($date->toDateString())) {
+                return $closed;
             }
 
             $appointment = Appointment::create([
@@ -991,6 +1046,11 @@ public function update(Request $request, $id)
             'notes' => 'nullable|string|max:1000',
             'status' => 'nullable|string|in:Programmé,Salle dattente,En préparation,En consultation,Terminé,Annulé',
         ]);
+
+        if (!empty($validated['appointment_date'])
+            && $closed = $this->closedDayResponse($validated['appointment_date'])) {
+            return $closed;
+        }
 
         if (isset($validated['type'])) {
             $appointment->type = $validated['type'];
@@ -1075,6 +1135,11 @@ public function quickAddAppointment(Request $request)
             'patient_id' => 'required|integer|exists:patients,ID_patient',
             'days_from_now' => 'required|integer|min:0',
         ]);
+
+        if ($closed = $this->closedDayResponse(
+            Carbon::today()->addDays((int) $validated['days_from_now'])->toDateString())) {
+            return $closed;
+        }
 
         $patient = Patient::where('ID_patient', $validated['patient_id'])
             ->where('archived', false)

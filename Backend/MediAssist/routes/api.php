@@ -13,6 +13,7 @@ use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\MedecinController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CertificateController;
+use App\Http\Controllers\ClosedDayController;
 use App\Http\Controllers\CustomDocumentController;
 use App\Http\Controllers\StatisticsController;
 use App\Http\Controllers\ResearchCaseController;
@@ -240,3 +241,15 @@ Route::prefix('backup')->middleware('auth:sanctum')->group(function () {
 // ACTUALITÉS MÉDICALES — agrégation des sources officielles marocaines
 // (ANAM, CNSS, medicament.ma). Mise en cache 30 min côté serveur.
 Route::get('/news', [App\Http\Controllers\NewsController::class, 'index']);
+
+// JOURS DE FERMETURE — congés / absences du médecin.
+// La lecture est ouverte (l'interface de prise de RDV doit griser ces jours) ;
+// seul un compte médecin (role admin) peut fermer ou rouvrir une journée.
+Route::prefix('closed-days')->controller(ClosedDayController::class)->group(function () {
+    Route::get('/', 'index');
+    Route::get('/impact/{date}', 'impact');
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/', 'store');
+        Route::delete('/{date}', 'destroy');
+    });
+});

@@ -152,6 +152,24 @@ export interface NewsSourceStatus {
   home?: string
 }
 
+/** Jour de fermeture du cabinet. */
+export interface ClosedDay {
+  date: string
+  reason: string | null
+  /** RDV encore programmes ce jour-la (ni annules ni termines). */
+  pending?: number
+}
+
+/** Rendez-vous touche par une fermeture — a replanifier par telephone. */
+export interface ImpactedAppointment {
+  ID_RV: number
+  ID_patient: number
+  status: string
+  type: string
+  start_time: string | null
+  patient: { first_name: string; last_name: string; phone_num: string | null }
+}
+
 /** Article d.actualité médicale, normalisé quelle que soit la source. */
 export interface MedicalNewsItem {
   source: string
@@ -1106,6 +1124,55 @@ class ApiClient {
       sources: r.data?.sources ?? {},
       fetched_at: r.data?.fetched_at ?? null,
     }
+  }
+
+  // ── Jours de fermeture du cabinet ────────────────────────────────────
+
+  /** Jours fermés sur une période, avec le nombre de RDV encore programmés. */
+  async getClosedDays(from?: string, to?: string): Promise<ClosedDay[]> {
+    const qs = new URLSearchParams()
+    if (from) qs.set("from", from)
+    if (to) qs.set("to", to)
+    const suffix = qs.toString() ? "?" + qs.toString() : ""
+    const r = await this.request<{ closed_days?: ClosedDay[] }>(`/closed-days${suffix}`, {}, true)
+    return r.data?.closed_days ?? []
+  }
+
+  /** Qui est déjà programmé ce jour-là — la liste à appeler avant de fermer. */
+  async getClosedDayImpact(date: string): Promise<{ count: number; appointments: ImpactedAppointment[] }> {
+    const r = await this.request<{ count?: number; appointments?: ImpactedAppointment[] }>(
+      `/closed-days/impact/${date}`, {}, true)
+    return { count: r.data?.count ?? 0, appointments: r.data?.appointments ?? [] }
+  }
+
+  /** Ferme une journée. Renvoie les RDV à replanifier avec les patients. */
+  async closeDay(date: string, reason?: string): Promise<{
+    success: boolean
+    message?: string
+    pending_count: number
+    appointments: ImpactedAppointment[]
+  }> {
+    const r = await this.request<{
+      message?: string
+      pending_count?: number
+      appointments?: ImpactedAppointment[]
+    }>("/closed-days", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, reason }),
+    }, true)
+    return {
+      success: r.success,
+      message: r.data?.message ?? r.message,
+      pending_count: r.data?.pending_count ?? 0,
+      appointments: r.data?.appointments ?? [],
+    }
+  }
+
+  /** Rouvre une journée. */
+  async reopenDay(date: string): Promise<{ success: boolean; message?: string }> {
+    const r = await this.request<{ message?: string }>(`/closed-days/${date}`, { method: "DELETE" }, true)
+    return { success: r.success, message: r.data?.message ?? r.message }
   }
 
   /** Recherche dans la base nationale, pour importer dans le catalogue. */

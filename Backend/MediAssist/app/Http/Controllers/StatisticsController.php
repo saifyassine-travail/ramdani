@@ -148,8 +148,8 @@ class StatisticsController extends Controller
                     ['name' => '50+', 'value' => $ageStats['50+'] ?? 0],
                 ];
 
-                // 4. AI Insights
-                $insights = $this->generateAIInsights($totalAppointments, $appointmentsThisMonth);
+                // 4. Pilotage du cabinet (indicateurs mesures)
+                $insights = $this->buildPracticeInsights();
 
                 return [
                     'kpi' => [
@@ -162,7 +162,7 @@ class StatisticsController extends Controller
                     'trends' => $trends,
                     'revenue' => $revenue,
                     'demographics' => $ageGroups,
-                    'ai_insights' => $insights
+                    'practice_insights' => $insights
                 ];
             });
 
@@ -176,49 +176,161 @@ class StatisticsController extends Controller
         }
     }
 
-    private function generateAIInsights($total, $monthCount)
+    /**
+     * Pilotage du cabinet : des indicateurs calcules sur les donnees reelles.
+     *
+     * Remplace les anciens « insights predictifs », dont les taux de confiance
+     * (85 %, 92 %, 95 %) etaient des constantes ecrites en dur et dont la
+     * prevision etait annotee « mock data » dans le code. Afficher un chiffre
+     * invente comme un resultat d'algorithme n'a pas sa place dans un outil
+     * medical : tout ce qui suit est mesure, ou n'est pas affiche.
+     */
+    private function buildPracticeInsights(): array
     {
-        $insights = [];
+        $driver = config('database.default');
+        $now = Carbon::now();
 
-        // Insight 1: Busy Days Prediction
-        // Simple logic: If Monday is the busiest day historically (mock data for now)
-        $insights[] = [
-            'type' => 'prediction',
-            'title' => 'Prévision de Charge',
-            'description' => 'Basé sur l\'historique, les lundis et jeudis seront probabalement les jours les plus chargés le mois prochain.',
-            'confidence' => 85,
-            'icon' => 'TrendingUp'
-        ];
+        // 30 derniers jours vs les 30 precedents, pour situer la tendance.
+        $curFrom = $now->copy()->subDays(29)->startOfDay();
+        $prevFrom = $now->copy()->subDays(59)->startOfDay();
+        $prevTo = $now->copy()->subDays(30)->endOfDay();
 
-        // Insight 2: Growth Analysis
-        if ($monthCount > 0 && $monthCount > ($total / 12)) {
-             $insights[] = [
-                'type' => 'growth',
-                'title' => 'Croissance d\'Activité',
-                'description' => 'Votre activité ce mois-ci est supérieure à la moyenne mensuelle. Tendance positive détectée.',
-                'confidence' => 92,
-                'icon' => 'Zap'
+        $cur = Appointment::whereBetween('appointment_date', [$curFrom->toDateString(), $now->toDateString()]);
+        $curTotal = (clone $cur)->count();
+        $prevTotal = Appointment::whereBetween('appointment_date', [$prevFrom->toDateString(), $prevTo->toDateString()])->count();
+
+        // ── Charge par jour de semaine (0 = dimanche) ────────────────────
+        $dowExpr = $driver === 'pgsql'
+            ? "EXTRACT(DOW FROM appointment_date)"
+            : "DAYOFWEEK(appointment_date) - 1";
+        $dowRows = Appointment::whereBetween('appointment_date', [$now->copy()->subDays(89)->toDateString(), $now->toDateString()])
+            ->selectRaw("{$dowExpr} AS dow, COUNT(*) AS n")
+            ->groupBy('dow')
+            ->pluck('n', 'dow');
+
+        $dowLabels = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+        $byDay = [];
+        for ($i = 0; $i < 7; $i++) {
+            $byDay[] = ['label' => $dowLabels[$i], 'count' => (int) ($dowRows[$i] ?? $dowRows[(string) $i] ?? 0)];
+        }
+        $busiest = collect($byDay)->sortByDesc('count')->first();
+
+        // ── Charge par heure (sur start_time quand il est renseigne) ─────
+        $hourExpr = $driver === 'pgsql'
+            ? "EXTRACT(HOUR FROM start_time)"
+            : "HOUR(start_time)";
+        $hourRows = Appointment::whereNotNull('start_time')
+            ->whereBetween('appointment_date', [$now->copy()->subDays(89)->toDateString(), $now->toDateString()])
+            ->selectRaw("{$hourExpr} AS h, COUNT(*) AS n")
+            ->groupBy('h')
+            ->pluck('n', 'h');
+
+        $byHour = [];
+        for ($h = 7; $h <= 20; $h++) {
+            $byHour[] = ['label' => sprintf('%02dh', $h), 'count' => (int) ($hourRows[$h] ?? $hourRows[(string) $h] ?? 0)];
+        }
+        $peak = collect($byHour)->sortByDesc('count')->first();
+
+        // ── Suivi des rendez-vous sur la periode ─────────────────────────
+        $done = (clone $cur)->where('status', 'Terminé')->count();
+        $cancelled = (clone $cur)->where('status', 'Annulé')->count();
+        $closed = $done + $cancelled;
+        $showRate = $closed > 0 ? round(100 * $done / $closed, 1) : null;
+
+        // ── Argent : encaisse et impayes reellement en attente ───────────
+        $collected = (float) ((clone $cur)->where('status', 'Terminé')->sum('payement'));
+        $outstanding = (float) Appointment::where('credit', '>', 0)->sum('credit');
+        $patientsWithCredit = Appointment::where('credit', '>', 0)->distinct('ID_patient')->count('ID_patient');
+
+        // ── Patients a relancer : vus une fois, plus rien depuis 6 mois ──
+        $sixMonths = $now->copy()->subMonths(6)->toDateString();
+        $toRecall = Patient::where('archived', false)
+            ->whereHas('Appointment', fn ($q) => $q->where('status', 'Terminé'))
+            ->whereDoesntHave('Appointment', fn ($q) => $q->where('appointment_date', '>=', $sixMonths))
+            ->count();
+
+        // ── Fidelisation : part des patients revus au moins deux fois ────
+        $seen = Patient::whereHas('Appointment', fn ($q) => $q->where('status', 'Terminé'))->count();
+        $returning = Patient::whereHas('Appointment', fn ($q) => $q->where('status', 'Terminé'), '>=', 2)->count();
+        $retention = $seen > 0 ? round(100 * $returning / $seen, 1) : null;
+
+        // ── Actions : uniquement ce qui repose sur un chiffre mesure ─────
+        $actions = [];
+        if ($outstanding > 0) {
+            $actions[] = [
+                'tone' => 'warning',
+                'label' => number_format($outstanding, 2, ',', ' ') . ' DH de crédit en attente',
+                'detail' => $patientsWithCredit . ' patient(s) concerné(s) — à relancer au prochain passage.',
             ];
-        } else {
-             $insights[] = [
-                'type' => 'info',
-                'title' => 'Activité Stable',
-                'description' => 'Le volume de rendez-vous est conforme à votre moyenne habituelle.',
-                'confidence' => 95,
-                'icon' => 'Activity'
+        }
+        if ($toRecall > 0) {
+            $actions[] = [
+                'tone' => 'info',
+                'label' => $toRecall . ' patient(s) sans visite depuis 6 mois',
+                'detail' => 'Candidats à un rappel de contrôle.',
+            ];
+        }
+        if ($showRate !== null && $showRate < 85 && $closed >= 10) {
+            $actions[] = [
+                'tone' => 'warning',
+                'label' => 'Taux de présence de ' . $showRate . ' %',
+                'detail' => $cancelled . ' annulation(s) sur 30 jours — un rappel la veille réduit ce chiffre.',
+            ];
+        }
+        if ($busiest && $busiest['count'] > 0) {
+            $actions[] = [
+                'tone' => 'info',
+                'label' => 'Pic d\'activité le ' . $busiest['label'] . ($peak && $peak['count'] > 0 ? ' vers ' . $peak['label'] : ''),
+                'detail' => 'Mesuré sur les 90 derniers jours — utile pour placer les créneaux longs.',
             ];
         }
 
-        // Insight 3: Retention (Simulated)
-        $insights[] = [
-            'type' => 'retention',
-            'title' => 'Fidélisation Patients',
-            'description' => '70% de vos patients sont revenus pour une consultation de suivi dans les 6 derniers mois.',
-            'confidence' => 78,
-            'icon' => 'Users'
+        return [
+            'periode' => [
+                'du' => $curFrom->toDateString(),
+                'au' => $now->toDateString(),
+                'jours' => 30,
+            ],
+            'kpis' => [
+                [
+                    'key' => 'volume',
+                    'label' => 'Rendez-vous (30 j)',
+                    'value' => $curTotal,
+                    'unit' => null,
+                    'previous' => $prevTotal,
+                    'hint' => 'Comparé aux 30 jours précédents',
+                ],
+                [
+                    'key' => 'presence',
+                    'label' => 'Taux de présence',
+                    'value' => $showRate,
+                    'unit' => '%',
+                    'previous' => null,
+                    'hint' => $closed > 0
+                        ? "{$done} honoré(s), {$cancelled} annulé(s)"
+                        : 'Aucun rendez-vous clôturé sur la période',
+                ],
+                [
+                    'key' => 'encaisse',
+                    'label' => 'Encaissé (30 j)',
+                    'value' => round($collected, 2),
+                    'unit' => 'DH',
+                    'previous' => null,
+                    'hint' => 'Consultations terminées uniquement',
+                ],
+                [
+                    'key' => 'fidelisation',
+                    'label' => 'Patients revenus',
+                    'value' => $retention,
+                    'unit' => '%',
+                    'previous' => null,
+                    'hint' => $seen > 0 ? "{$returning} sur {$seen} patients vus" : 'Aucun patient vu',
+                ],
+            ],
+            'charge_jour' => $byDay,
+            'charge_heure' => $byHour,
+            'actions' => $actions,
         ];
-
-        return $insights;
     }
 
     public function getAvailableRange()
