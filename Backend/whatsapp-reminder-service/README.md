@@ -16,8 +16,8 @@ time, it's a walk-in queue. So this is the closest honest equivalent of a
   time has reached the configured hour; once it has, it runs the batch.
 - The batch (`reminders/services/reminder_job.py`) reads tomorrow's
   non-cancelled appointments directly from the shared `mediassist` Postgres
-  DB (read-only), normalizes each patient's phone number, and sends a plain
-  text reminder via a self-hosted **Open-WA** gateway
+  DB (read-only), normalizes each patient's phone number, and sends the
+  reminder as an approved template via Meta's **WhatsApp Cloud API**
   (`reminders/services/whatsapp_client.py`).
 - Every appointment reminded (successfully or not) is recorded in this
   service's own SQLite table (`sent_reminders`), so nobody gets reminded
@@ -25,27 +25,49 @@ time, it's a walk-in queue. So this is the closest honest equivalent of a
   (the WhatsApp session mid-reconnect) is deliberately not recorded, so
   it's retried on the next poll instead of being given up on permanently.
 
-## WhatsApp provider: Open-WA (unofficial) — know the tradeoff
+## WhatsApp provider: Meta Cloud API (official)
 
-This drives a real WhatsApp Web session via [Open-WA](https://openwa.dev),
-not Meta's official Cloud API: **no** business verification, **no**
-message-template approval, free. In exchange: it **violates WhatsApp's
-Terms of Service**, and the linked number can be suspended or banned by
-WhatsApp at any time, with no appeal. Chosen deliberately anyway — if that
-tradeoff ever needs to flip back to the compliant, template-based Meta
-Cloud API, that implementation is still straightforward to restore (git
-history / ask to re-add it) — the parts that would change are just
-`whatsapp_client.py` and the `OPENWA_*` env vars, nothing else in this
-service.
+This used to drive a real WhatsApp Web session via [Open-WA](https://openwa.dev)
+— free, freeform text, no approvals, but it **violated WhatsApp's Terms of
+Service** and the clinic's number could be banned at any time with no
+appeal. Not a risk worth running on a medical practice's only number, so
+the service now uses Meta's official Cloud API instead.
+
+What that costs us, and it is not nothing:
+
+- **No freeform text.** A reminder goes to a patient who has not messaged
+  the clinic, so it falls outside Meta's 24-hour *customer service window*,
+  where only a pre-approved **template** may be sent. The French wording
+  lives in the template on the WABA, not in `whatsapp_client.py`. Changing
+  the wording means creating a new template and waiting for approval again
+  (usually minutes, up to 24h) — it is no longer a one-line edit.
+- **It is billed.** Utility templates are free only *inside* an open
+  service window, which a reminder never is. Every delivered reminder is
+  charged, so the WhatsApp Business Account needs a payment method or
+  sends start failing.
+- **Rate tier.** The number starts at `TIER_250` (250 unique recipients per
+  rolling 24h). Fine for ~40 patients/day; Meta raises it automatically as
+  volume and quality build.
 
 ## Required setup (you do this once, outside this repo)
 
-An Open-WA instance must already be running and linked (QR-code scan with
-the clinic's WhatsApp, once) — see `~/OpenWA` on this machine, or
-https://openwa.dev/docs/getting-started for a fresh setup elsewhere. Then
-see `.env.example` for `OPENWA_URL`/`OPENWA_API_KEY`/`OPENWA_SESSION_ID`.
-Nothing sends until those are set; until then the poller just logs
-"WhatsApp not configured" and does nothing destructive.
+Everything lives on the clinic's WhatsApp Business Account. You need a
+**System User** token (not a Graph Explorer one — those expire within the
+hour), the sending number's **phone number ID**, and an **APPROVED**
+template. See `.env.example` for exactly where each comes from.
+
+Nothing sends until `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID` are
+set; until then the poller just logs "WhatsApp not configured" and does
+nothing destructive. If the template is still `PENDING`, sends fail with
+Meta error `132001` — that is the template, not the config.
+
+Check the template's state at any time:
+
+```bash
+curl -sG "https://graph.facebook.com/v21.0/<WABA_ID>/message_templates" \
+     --data-urlencode "fields=name,status,category,language" \
+     -H "Authorization: Bearer $WHATSAPP_TOKEN"
+```
 
 ## Manual testing
 

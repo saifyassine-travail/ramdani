@@ -54,11 +54,6 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - default
-      # The Open-WA gateway (a separate project, ~/OpenWA) lives on this
-      # network under the "openwa-api" hostname. Its published port is
-      # bound to 127.0.0.1 on the host, so host.docker.internal can't
-      # reach it — joining its network directly is the fix.
-      - openwa-network
     volumes:
       # This service's own sent-reminder dedup log (SQLite) — must survive
       # container recreation or reminders would be re-sent.
@@ -75,12 +70,14 @@ services:
       DB_PASSWORD: root
       CLINIC_TIMEZONE: Africa/Casablanca
       DEFAULT_COUNTRY_CODE: "212"
-      # Open-WA (unofficial, self-hosted) — see Backend/whatsapp-reminder-service/
-      # .env.example for the tradeoff and where these values come from. The
-      # service safely no-ops (logs only) until both are set.
-      OPENWA_URL: "${OPENWA_URL:-http://openwa-api:2785}"
-      OPENWA_API_KEY: "${OPENWA_API_KEY:-}"
-      OPENWA_SESSION_ID: "${OPENWA_SESSION_ID:-}"
+      # Meta WhatsApp Cloud API (official) — see Backend/whatsapp-reminder-service/
+      # .env.example for where these come from. WHATSAPP_TOKEN must be a System
+      # User token (never expires); a Graph Explorer one dies within the hour.
+      # The service safely no-ops (logs only) until the first two are set.
+      WHATSAPP_TOKEN: "${WHATSAPP_TOKEN:-}"
+      WHATSAPP_PHONE_NUMBER_ID: "${WHATSAPP_PHONE_NUMBER_ID:-}"
+      WHATSAPP_TEMPLATE_NAME: "${WHATSAPP_TEMPLATE_NAME:-rappel_rendez_vous}"
+      WHATSAPP_TEMPLATE_LANG: "${WHATSAPP_TEMPLATE_LANG:-fr}"
     # No published port: internal only (manual testing via `docker exec`, see README).
 
   patient-summary:
@@ -148,8 +145,3 @@ volumes:
 
 networks:
   default: {}
-  # Created by the separate ~/OpenWA project — not managed here, must
-  # already exist (docker network ls | grep openwa-network) before `docker
-  # compose up` on this project.
-  openwa-network:
-    external: true

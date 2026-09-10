@@ -3,8 +3,9 @@
 #  - points the backend at that container
 #  - Ollama is NOT installed: extraction runs in Tesseract-only OCR mode and
 #    the patient-summary service is not started.
-#  - whatsapp-reminder is not started; the external openwa-network is created
-#    manually (docker network create openwa-network).
+#  - whatsapp-reminder is not started here; it now talks to Meta's Cloud API
+#    over the internet, so it needs no extra docker network — just the
+#    WHATSAPP_* values from Backend/whatsapp-reminder-service/.env.example.
 services:
 
   db:
