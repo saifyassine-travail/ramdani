@@ -44,7 +44,43 @@ Deux réglages dans **Réglages → Affichage** (colonnes `user_settings`) :
 
 ---
 
-## 2. Reconstruire la base de référence nationale
+## 2. Installer la base sur un nouveau poste
+
+C'est le cas courant : on veut la base, pas la refaire. Elle est versionnée
+compressée dans le dépôt, donc un clone suffit.
+
+```bash
+git clone https://github.com/saifyassine-travail/ramdani.git MediAssist
+cd MediAssist
+docker compose up -d db          # la base doit tourner
+cd scripts/med-scraper
+./load_postgres.sh dist/medicaments_ma.sql.gz med_ref mediassist_db
+```
+
+Le script lit le `.gz` tel quel et recrée le schéma `med_ref`. Environ une
+minute. Il finit par afficher les effectifs ; ils doivent correspondre :
+
+```
+ medicament       |  5030
+ remboursement    | 17894
+ substance        |  1471
+ rembourses CNSS  |  5261
+ rembourses CNOPS |  5196
+```
+
+Il reste ensuite à remplir le catalogue du cabinet à partir de cette
+référence — voir la section 3.
+
+> Sous Windows, lancer ces commandes depuis Git Bash : `load_postgres.sh` est
+> un script bash et utilise `docker exec -i`, ce que PowerShell ne reproduit
+> pas tel quel.
+
+---
+
+## 2 bis. Reconstruire la base de référence nationale
+
+Uniquement pour rafraîchir les données (nouveaux produits, nouveaux prix) —
+inutile pour une simple installation.
 
 Prérequis : Docker.
 
@@ -78,6 +114,8 @@ Durée typique : 20–40 min selon le débit (≈ 5 000 pages produit).
 cd scripts/med-scraper
 ./load_postgres.sh out/medicaments_ma.sql med_ref mediassist_db
 ```
+
+(Le script accepte aussi bien un `.sql` qu'un `.sql.gz`.)
 
 Le script recrée le schéma `med_ref` et y charge tout. **La table `medicaments`
 de l'application n'est jamais touchée.** À la fin il affiche un récapitulatif :

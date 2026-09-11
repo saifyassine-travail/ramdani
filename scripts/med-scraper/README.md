@@ -150,11 +150,26 @@ dénombrables.
 ## Base pré-construite (`dist/`)
 
 `dist/medicaments_ma.sql.gz` est la base déjà construite, versionnée pour ne pas
-avoir à relancer un scrape de 40 minutes pour une simple installation.
+avoir à relancer un scrape de 40 minutes pour une simple installation. C'est le
+chemin à suivre pour installer MediAssist sur un nouveau poste.
 
 ```bash
-gunzip -c dist/medicaments_ma.sql.gz > out/medicaments_ma.sql
-./load_postgres.sh out/medicaments_ma.sql med_ref mediassist_db
+./load_postgres.sh dist/medicaments_ma.sql.gz med_ref mediassist_db
+```
+
+Le script lit le `.gz` directement — pas de décompression préalable, donc rien
+à créer à la main. (Une version antérieure de ce README demandait de faire
+`gunzip -c ... > out/...` : `out/` étant gitignoré, il est absent d'un clone
+neuf et la commande échouait avec « No such file or directory ».)
+
+Récapitulatif attendu en fin de chargement :
+
+```
+ medicament       |  5030
+ remboursement    | 17894
+ substance        |  1471
+ rembourses CNSS  |  5261
+ rembourses CNOPS |  5196
 ```
 
 `dist/quality_report.txt` donne la couverture des champs et la qualité des

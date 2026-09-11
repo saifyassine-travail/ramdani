@@ -5,10 +5,16 @@
 # own `medicaments` table is never touched. Re-runnable: the schema is dropped
 # and rebuilt from the generated SQL.
 #
-#   ./load_postgres.sh out/medicaments_ma.sql [schema] [container]
+#   ./load_postgres.sh dist/medicaments_ma.sql.gz [schema] [container]
+#   ./load_postgres.sh out/medicaments_ma.sql     [schema] [container]
+#
+# Accepts the .gz straight from dist/ so a fresh clone needs no intermediate
+# file — out/ is gitignored and therefore absent on a new machine, which used
+# to make the documented `gunzip -c ... > out/...` fail with "No such file or
+# directory" before anything was loaded.
 set -euo pipefail
 
-SQL_FILE="${1:-out/medicaments_ma.sql}"
+SQL_FILE="${1:-dist/medicaments_ma.sql.gz}"
 SCHEMA="${2:-med_ref}"
 CONTAINER="${3:-mediassist_db}"
 DB="${PGDATABASE:-mediassist}"
@@ -23,8 +29,14 @@ CREATE SCHEMA $SCHEMA;
 SQL
 
 echo "==> loading $SQL_FILE"
+# Read compressed or plain, so dist/*.sql.gz works without unpacking first.
+case "$SQL_FILE" in
+  *.gz) READ_SQL=(gzip -dc "$SQL_FILE") ;;
+  *)    READ_SQL=(cat "$SQL_FILE") ;;
+esac
+
 # search_path makes the unqualified CREATE/INSERT statements land in $SCHEMA.
-{ echo "SET search_path TO $SCHEMA;"; cat "$SQL_FILE"; } \
+{ echo "SET search_path TO $SCHEMA;"; "${READ_SQL[@]}"; } \
   | docker exec -i "$CONTAINER" psql -U "$USER" -d "$DB" -v ON_ERROR_STOP=1 -q
 
 echo "==> done"
